@@ -1,0 +1,13 @@
+.env
+!.env.example
+.env.local
+.env.*
+!.env.example
+!.env.*.example
+node_modules/
+dist/
+build/
+coverage/
+DS_Store
+.npm_cache
+secrets.yml
