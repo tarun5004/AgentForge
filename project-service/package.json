@@ -1,12 +1,14 @@
 {
   "name": "project-service",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "AgentForge project lifecycle and orchestration service",
+  "main": "dist/server.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "tsx watch --clear-screen=false ./src/server.ts"
+    "dev": "tsx watch --clear-screen=false ./src/server.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js"
   },
   "keywords": [],
   "author": "",
