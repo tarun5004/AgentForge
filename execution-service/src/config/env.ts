@@ -33,6 +33,22 @@ function parseEnum<T extends string>(
   return candidate as T;
 }
 
+function parseRedisUrl(value: string | undefined): string {
+  const redisUrl = value ?? "redis://127.0.0.1:6379";
+
+  try {
+    const parsedUrl = new URL(redisUrl);
+
+    if (!["redis:", "rediss:"].includes(parsedUrl.protocol)) {
+      throw new Error();
+    }
+
+    return redisUrl;
+  } catch {
+    throw new Error("REDIS_URL must be a valid redis:// or rediss:// URL");
+  }
+}
+
 export const env = Object.freeze({
   NODE_ENV: parseEnum<NodeEnvironment>(
     "NODE_ENV",
@@ -42,4 +58,5 @@ export const env = Object.freeze({
   ),
   PORT: parsePort(process.env.PORT),
   LOG_LEVEL: parseEnum<LogLevel>("LOG_LEVEL", process.env.LOG_LEVEL, logLevels, "info"),
+  REDIS_URL: parseRedisUrl(process.env.REDIS_URL),
 });
