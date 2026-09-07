@@ -10,6 +10,8 @@ The repository currently contains a working Cursor-inspired frontend prototype, 
 
 The Next.js workspace currently provides:
 
+- dedicated login and registration UI routes
+- root navigation that starts at the login screen
 - Cursor-inspired dark developer interface
 - chat history, local prompt composer, and Markdown response rendering
 - selectable code tabs with line numbers
@@ -20,6 +22,8 @@ The Next.js workspace currently provides:
 - explicit local-demo labels wherever backend behavior is not connected
 
 The sample prompts, files, tasks, and terminal output live in `workspace-data.ts`. They demonstrate the UI only and are not claimed as real AI output.
+
+The authentication forms currently validate input in the browser but deliberately do not send or store credentials. The next milestone is choosing and implementing the secure browser-to-Auth-Service cookie/token flow.
 
 ### Backend foundations
 
@@ -64,16 +68,21 @@ nextjs-boilerplate/
 ├── app/
 │   ├── globals.css
 │   ├── layout.tsx
-│   └── page.tsx
-└── components/workspace/
-    ├── WorkspaceShell.tsx
-    ├── ChatPanel.tsx
-    ├── CodeWorkspace.tsx
-    ├── EditorPanel.tsx
-    ├── TerminalPanel.tsx
-    ├── ChangesPanel.tsx
-    ├── ResizeHandle.tsx
-    └── workspace-data.ts
+│   ├── page.tsx               Redirects `/` to `/login`
+│   ├── login/page.tsx
+│   ├── register/page.tsx
+│   └── workspace/page.tsx
+└── components/
+    ├── auth/AuthForm.tsx
+    └── workspace/
+        ├── WorkspaceShell.tsx
+        ├── ChatPanel.tsx
+        ├── CodeWorkspace.tsx
+        ├── EditorPanel.tsx
+        ├── TerminalPanel.tsx
+        ├── ChangesPanel.tsx
+        ├── ResizeHandle.tsx
+        └── workspace-data.ts
 ```
 
 ## Technology choices
@@ -127,7 +136,7 @@ npm run dev:project
 npm run dev:execution
 ```
 
-Open the frontend at `http://localhost:3001`.
+Open the frontend at `http://localhost:3001`. The root route redirects to `/login`; the standalone workspace prototype is available at `/workspace`.
 
 ## Verification commands
 
@@ -152,14 +161,15 @@ npm --workspace execution-service run typecheck
 
 ## Beginner-first implementation order
 
-1. Finish and understand the workspace UI.
-2. Connect login/register UI to the existing Auth Service.
-3. Implement a real Project create endpoint and persistence.
-4. Send one prompt from Project Service to one AI provider.
-5. Display real generated files in the workspace.
-6. Add Execution Service runs and status tracking.
-7. Add BullMQ/Redis for background work.
-8. Add restricted Kubernetes build and preview workloads.
+1. **Complete:** build and understand the workspace UI.
+2. **Complete:** build login/register UI with local form validation.
+3. **Next:** connect login/register safely to the existing Auth Service.
+4. Implement a real Project create endpoint and persistence.
+5. Send one prompt from Project Service to one AI provider.
+6. Display real generated files in the workspace.
+7. Add Execution Service runs and status tracking.
+8. Add BullMQ/Redis for background work.
+9. Add restricted Kubernetes build and preview workloads.
 
 This order keeps every stage runnable and explainable instead of introducing the full distributed architecture at once.
 

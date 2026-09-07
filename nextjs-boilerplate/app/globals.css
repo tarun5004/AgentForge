@@ -29,11 +29,13 @@ body {
 }
 
 button,
+input,
 textarea {
   font: inherit;
 }
 
 button:focus-visible,
+input:focus-visible,
 textarea:focus-visible {
   outline: 1px solid #a8a8ad;
   outline-offset: 2px;
