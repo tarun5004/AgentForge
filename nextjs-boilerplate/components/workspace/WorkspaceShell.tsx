@@ -1,15 +1,35 @@
 "use client";
 
-import { Bot, GitBranch, Play } from "lucide-react";
+import { Bot, GitBranch, LogOut, Play } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Group, Panel } from "react-resizable-panels";
+
+import { useAuth } from "@/components/auth/AuthProvider";
 
 import { ChatPanel } from "./ChatPanel";
 import { CodeWorkspace } from "./CodeWorkspace";
 import { ResizeHandle } from "./ResizeHandle";
 
 export function WorkspaceShell() {
+  const router = useRouter();
+  const { user, logout } = useAuth();
   const [isDesktop, setIsDesktop] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState("");
+
+  async function handleSignOut() {
+    setIsSigningOut(true);
+    setSignOutError("");
+
+    try {
+      await logout();
+      router.replace("/login");
+    } catch {
+      setSignOutError("Could not sign out. Please try again.");
+      setIsSigningOut(false);
+    }
+  }
 
   useEffect(() => {
     const desktopScreen = window.matchMedia("(min-width: 1280px)");
@@ -39,12 +59,25 @@ export function WorkspaceShell() {
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          <span className="hidden text-[10px] text-[#929298] lg:inline">
+            {user?.name}
+          </span>
           <span className="hidden items-center gap-1.5 text-[10px] text-[#77777c] md:flex">
             <GitBranch size={12} /> main
           </span>
           <span className="rounded border border-[#353539] bg-[#222224] px-2 py-1 text-[10px] text-[#929298]">
             Local UI
           </span>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            disabled={isSigningOut}
+            title="Sign out"
+            aria-label="Sign out"
+            className="grid size-7 place-items-center rounded-md border border-[#353539] text-[#929298] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <LogOut size={13} />
+          </button>
           <button
             type="button"
             disabled
@@ -55,6 +88,15 @@ export function WorkspaceShell() {
           </button>
         </div>
       </header>
+
+      {signOutError && (
+        <p
+          role="alert"
+          className="fixed top-14 right-3 z-50 rounded-md border border-[#5a3030] bg-[#241616] px-3 py-2 text-xs text-[#ffaaaa] shadow-lg"
+        >
+          {signOutError}
+        </p>
+      )}
 
       {isDesktop ? (
         <div className="h-[calc(100dvh-44px)]">

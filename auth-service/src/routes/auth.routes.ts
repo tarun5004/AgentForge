@@ -17,21 +17,21 @@ export function createAuthRouter(): Router {
   /**
    * POST /api/auth/register
    * Request body: { name: string, email: string, password: string }
-   * Response: { user: { id, name, email }, accessToken: string, refreshToken: string }
+   * Response: { user: { id, name, email }, accessToken: string }
    */
   router.post("/register", register);
 
   /**
    * POST /api/auth/login
    * Request body: { email: string, password: string }
-   * Response: { user: { id, name, email }, accessToken: string, refreshToken: string }
+   * Response: { user: { id, name, email }, accessToken: string }
    */
   router.post("/login", login);
 
   /**
    * POST /api/auth/refresh
    * Request body: none (expects refreshToken cookie)
-   * Response: { user: { id, name, email }, accessToken: string, refreshToken: string }
+   * Response: { user: { id, name, email }, accessToken: string }
    */
   router.post("/refresh", refresh);
 

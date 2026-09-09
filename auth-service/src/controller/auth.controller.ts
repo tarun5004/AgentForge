@@ -59,46 +59,6 @@ function validateRequiredString(value: unknown, fieldName: string): string {
 }
 
 /**
- * Builds a response payload with access and refresh tokens for auth responses.
- *
- * @param res - Express response instance.
- * @param user - Authenticated user payload.
- */
-function issueTokens(res: Response, user: { id: string; email: string; name: string }): void {
-  const accessToken = signToken(
-    {
-      sub: user.id,
-      email: user.email,
-      name: user.name,
-    },
-    env.ACCESS_TOKEN_SECRET,
-    env.ACCESS_TOKEN_EXPIRY,
-  );
-
-  const refreshToken = signToken(
-    {
-      sub: user.id,
-      email: user.email,
-      name: user.name,
-    },
-    env.REFRESH_TOKEN_SECRET,
-    env.REFRESH_TOKEN_EXPIRY,
-  );
-
-  res.setHeader("Authorization", `Bearer ${accessToken}`);
-  res.cookie("refreshToken", refreshToken, getRefreshTokenCookieOptions());
-  res.status(200).json({
-    user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-    },
-    accessToken,
-    refreshToken,
-  });
-}
-
-/**
  * Registers a new user and issues both tokens.
  *
  * @route POST /api/auth/register
@@ -173,7 +133,6 @@ export async function register(
     res.status(201).json({
       user: safeUser,
       accessToken,
-      refreshToken,
     });
   } catch (error) {
     next(error);
@@ -248,7 +207,6 @@ export async function login(
     res.status(200).json({
       user: safeUser,
       accessToken,
-      refreshToken,
     });
   } catch (error) {
     next(error);
@@ -329,7 +287,6 @@ export async function refresh(
         email: user.email,
       },
       accessToken,
-      refreshToken: rotatedRefreshToken,
     });
   } catch (error) {
     next(error);

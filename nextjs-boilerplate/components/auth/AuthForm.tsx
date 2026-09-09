@@ -2,24 +2,55 @@
 
 import { ArrowRight, Bot, Code2, Eye, EyeOff, PanelsTopLeft } from "lucide-react";
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState, type FormEvent } from "react";
+
+import { useAuth } from "./AuthProvider";
 
 type AuthFormProps = {
   mode: "login" | "register";
 };
 
 export function AuthForm({ mode }: AuthFormProps) {
+  const router = useRouter();
+  const { user, isCheckingSession, login, register } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
-  const [notice, setNotice] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   const isRegister = mode === "register";
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  useEffect(() => {
+    if (!isCheckingSession && user) {
+      router.replace("/workspace");
+    }
+  }, [isCheckingSession, router, user]);
 
-    // This checkpoint builds only the UI. Credentials are deliberately not
-    // stored or sent until the secure Auth Service connection is implemented.
-    setNotice("UI check passed. Your credentials were not sent or stored.");
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setErrorMessage("");
+    setIsSubmitting(true);
+
+    const formData = new FormData(event.currentTarget);
+    const email = String(formData.get("email") ?? "").trim();
+    const password = String(formData.get("password") ?? "");
+
+    try {
+      if (isRegister) {
+        const name = String(formData.get("name") ?? "").trim();
+        await register({ name, email, password });
+      } else {
+        await login({ email, password });
+      }
+
+      router.replace("/workspace");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Authentication request failed.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -97,8 +128,9 @@ export function AuthForm({ mode }: AuthFormProps) {
                   autoComplete="name"
                   minLength={2}
                   required
+                  disabled={isSubmitting}
                   placeholder="Tarun Gaur"
-                  className="h-11 w-full rounded-lg border border-[#343438] bg-[#18181a] px-3 text-sm outline-none placeholder:text-[#55555a] focus:border-[#74747a]"
+                  className="h-11 w-full rounded-lg border border-[#343438] bg-[#18181a] px-3 text-sm outline-none placeholder:text-[#55555a] focus:border-[#74747a] disabled:cursor-not-allowed disabled:opacity-60"
                 />
               </div>
             )}
@@ -113,8 +145,9 @@ export function AuthForm({ mode }: AuthFormProps) {
                 type="email"
                 autoComplete="email"
                 required
+                disabled={isSubmitting}
                 placeholder="you@example.com"
-                className="h-11 w-full rounded-lg border border-[#343438] bg-[#18181a] px-3 text-sm outline-none placeholder:text-[#55555a] focus:border-[#74747a]"
+                className="h-11 w-full rounded-lg border border-[#343438] bg-[#18181a] px-3 text-sm outline-none placeholder:text-[#55555a] focus:border-[#74747a] disabled:cursor-not-allowed disabled:opacity-60"
               />
             </div>
 
@@ -130,12 +163,14 @@ export function AuthForm({ mode }: AuthFormProps) {
                   autoComplete={isRegister ? "new-password" : "current-password"}
                   minLength={8}
                   required
+                  disabled={isSubmitting}
                   placeholder="Minimum 8 characters"
-                  className="h-11 w-full rounded-lg border border-[#343438] bg-[#18181a] px-3 pr-11 text-sm outline-none placeholder:text-[#55555a] focus:border-[#74747a]"
+                  className="h-11 w-full rounded-lg border border-[#343438] bg-[#18181a] px-3 pr-11 text-sm outline-none placeholder:text-[#55555a] focus:border-[#74747a] disabled:cursor-not-allowed disabled:opacity-60"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((currentValue) => !currentValue)}
+                  disabled={isSubmitting}
                   aria-label={showPassword ? "Hide password" : "Show password"}
                   className="absolute inset-y-0 right-0 grid w-11 place-items-center text-[#6f6f74] hover:text-[#c7c7ca]"
                 >
@@ -146,16 +181,25 @@ export function AuthForm({ mode }: AuthFormProps) {
 
             <button
               type="submit"
-              className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#dddddf] text-sm font-medium text-[#111112] transition hover:bg-white"
+              disabled={isSubmitting || isCheckingSession}
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#dddddf] text-sm font-medium text-[#111112] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isRegister ? "Check registration form" : "Check sign-in form"}
+              {isCheckingSession
+                ? "Checking session..."
+                : isSubmitting
+                  ? isRegister
+                    ? "Creating account..."
+                    : "Signing in..."
+                  : isRegister
+                    ? "Create account"
+                    : "Sign in"}
               <ArrowRight size={15} />
             </button>
           </form>
 
-          {notice && (
-            <p role="status" className="mt-4 rounded-lg border border-[#34432f] bg-[#182016] px-3 py-2.5 text-xs leading-5 text-[#b6f09c]">
-              {notice}
+          {errorMessage && (
+            <p role="alert" className="mt-4 rounded-lg border border-[#5a3030] bg-[#241616] px-3 py-2.5 text-xs leading-5 text-[#ffaaaa]">
+              {errorMessage}
             </p>
           )}
 
@@ -169,11 +213,9 @@ export function AuthForm({ mode }: AuthFormProps) {
             </Link>
           </p>
 
-          <div className="mt-8 border-t border-[#29292c] pt-6 text-center">
-            <Link href="/workspace" className="text-xs text-[#77777c] hover:text-[#d0d0d3]">
-              Open workspace UI demo →
-            </Link>
-          </div>
+          <p className="mt-8 border-t border-[#29292c] pt-6 text-center text-[11px] text-[#5f5f64]">
+            Your session uses a secure HttpOnly refresh cookie.
+          </p>
         </div>
       </section>
     </main>

@@ -10,8 +10,11 @@ The repository currently contains a working Cursor-inspired frontend prototype, 
 
 The Next.js workspace currently provides:
 
-- dedicated login and registration UI routes
+- login and registration routes connected to the Auth Service
 - root navigation that starts at the login screen
+- same-origin `/api/auth/*` proxy to the independent Auth Service
+- in-memory access token handling and HttpOnly refresh-cookie sessions
+- session restoration, protected workspace access, and logout
 - Cursor-inspired dark developer interface
 - chat history, local prompt composer, and Markdown response rendering
 - selectable code tabs with line numbers
@@ -23,7 +26,9 @@ The Next.js workspace currently provides:
 
 The sample prompts, files, tasks, and terminal output live in `workspace-data.ts`. They demonstrate the UI only and are not claimed as real AI output.
 
-The authentication forms currently validate input in the browser but deliberately do not send or store credentials. The next milestone is choosing and implementing the secure browser-to-Auth-Service cookie/token flow.
+The authentication forms validate input and call the Auth Service through the same-origin proxy. The short-lived access token stays only in React memory, while the refresh token stays in an HttpOnly cookie. Reloading the page restores the session through `/api/auth/refresh`, and unauthenticated workspace visits return to `/login`.
+
+The frontend route guard is a user-experience check; every future protected backend endpoint must still validate the access token independently.
 
 ### Backend foundations
 
@@ -163,7 +168,7 @@ npm --workspace execution-service run typecheck
 
 1. **Complete:** build and understand the workspace UI.
 2. **Complete:** build login/register UI with local form validation.
-3. **Next:** connect login/register safely to the existing Auth Service.
+3. **Complete:** secure frontend-to-Auth-Service login, registration, refresh, logout, and workspace protection.
 4. Implement a real Project create endpoint and persistence.
 5. Send one prompt from Project Service to one AI provider.
 6. Display real generated files in the workspace.
