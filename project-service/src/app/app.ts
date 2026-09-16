@@ -1,26 +1,26 @@
-import express from "express"
-import morgan from "morgan"
-import router from "./index.routes.js"
-import type { Request, Response } from "express"
+import express from "express";
+import morgan from "morgan";
 
+import { errorHandler, notFoundHandler } from "../middlewares/error.middleware.js";
+import router from "./index.routes.js";
 
-const app = express()
+export function createApp() {
+  const app = express();
 
+  app.use(morgan("dev"));
+  app.use(express.json({ limit: "16kb" }));
 
-app.use(morgan("dev"))
-app.use('/api/projects', router)
+  app.get("/_status/healthz", (_req, res) => {
+    res.status(200).json({ ok: true, service: "project-service" });
+  });
 
-app.get("/_status/healthz", (req: Request, res: Response) => {
-    res.status(200).json({
-        message: "Server is Healthy"
-    })
-})
+  app.get("/_status/readyz", (_req, res) => {
+    res.status(200).json({ ok: true, service: "project-service" });
+  });
 
-app.get("/_status/readyz", (req: Request, res: Response) => {
-    res.status(200).json({
-        message: "Server is Healthy"
-    })
-})
+  app.use("/api/projects", router);
+  app.use(notFoundHandler);
+  app.use(errorHandler);
 
-
-export default app
+  return app;
+}

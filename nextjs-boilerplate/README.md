@@ -16,7 +16,7 @@ Start the frontend on `http://localhost:3001`:
 npm run dev
 ```
 
-The Auth Service must be running at the `AUTH_SERVICE_URL` configured in `.env.local`.
+The Auth Service and Project Service must be running at the server-only URLs configured in `.env.local`.
 
 ## Authentication flow
 
@@ -31,3 +31,5 @@ Independent Auth Service
 ```
 
 The access token is kept in React memory. The refresh token is set and rotated by the Auth Service as an HttpOnly cookie, so frontend JavaScript cannot read it.
+
+Authenticated workspace prompts call `POST /api/projects`. The Project Service validates the access token and prompt, then saves a draft project before any AI generation begins.

@@ -1,11 +1,10 @@
 import { Router } from "express";
-import { createPodController } from "../controllers/project.controller.js"
 
+import { createProjectController } from "../controllers/project.controller.js";
+import { authenticate } from "../middlewares/auth.middleware.js";
 
-const projectRouter = Router()
+const projectRouter = Router();
 
+projectRouter.post("/", authenticate, createProjectController);
 
-projectRouter.get('/', createPodController)
-
-
-export default projectRouter
+export default projectRouter;

@@ -27,6 +27,14 @@ Base path: /api/v1. Every protected route requires an access token. Responses in
 | GET | /projects/{projectId}/revisions | List revisions |
 | GET | /projects/{projectId}/revisions/{revisionId} | Read revision files |
 
+Version Zero create-project request (currently exposed at `POST /api/projects`):
+
+~~~json
+{ "prompt": "Build a portfolio for a frontend developer" }
+~~~
+
+Successful response: HTTP 201 with a `project` containing `id`, derived `name`, `initialPrompt`, `template`, `status`, and `createdAt`. The authenticated user's id becomes the internal `ownerId` and is never accepted from the request body.
+
 Create generation request:
 
 ~~~json

@@ -17,6 +17,7 @@ The Next.js workspace currently provides:
 - session restoration, protected workspace access, and logout
 - Cursor-inspired dark developer interface
 - chat history, local prompt composer, and Markdown response rendering
+- authenticated prompt submission that creates a persisted draft project
 - selectable code tabs with line numbers
 - Terminal and Problems panels
 - changed-files list and sample agent plan
@@ -35,11 +36,13 @@ The frontend route guard is a user-experience check; every future protected back
 | Service | Port | Current status |
 | --- | ---: | --- |
 | Auth Service | `4000` | Register, login, refresh, logout, and authenticated profile endpoints |
-| Project Service | `3000` | Early orchestration foundation; still contains the original Kubernetes experiment |
+| Project Service | `3000` | Authenticated draft-project creation with MongoDB persistence |
 | Execution Service | `5000` | Health endpoints, environment validation, run request schema, and reusable body validation |
 | AI Orchestrator | — | Planned after the frontend-to-project flow is understood |
 
-The Execution Service does **not** expose a completed `POST /runs` workflow yet. BullMQ, Redis-backed workers, and Kubernetes execution will be introduced only after the simpler request flow works end to end.
+The Project Service no longer creates Kubernetes Pods. Runtime isolation belongs to the Execution Service and will be introduced only after the simpler project and generation flows work end to end. The Execution Service does **not** expose a completed `POST /runs` workflow yet.
+
+Version Zero temporarily verifies Auth Service access tokens with a shared `ACCESS_TOKEN_SECRET`. The documented V1 target replaces this with asymmetric signing and JWKS verification so services never share a private signing secret.
 
 ## Workspace layout
 
@@ -98,7 +101,7 @@ nextjs-boilerplate/
 - **react-resizable-panels:** constrained, keyboard-accessible IDE panel resizing
 - **Lucide React:** consistent lightweight icons
 - **Express + TypeScript:** backend services
-- **MongoDB:** authentication data; project persistence is planned
+- **MongoDB:** authentication and project persistence
 - **Redis + BullMQ:** planned background generation/execution jobs
 - **Kubernetes:** planned isolated build and preview workloads
 
@@ -110,7 +113,7 @@ Monaco Editor is intentionally deferred. Version Zero uses a readable code viewe
 
 - Node.js `22` or newer
 - npm
-- MongoDB for the Auth Service
+- MongoDB for the Auth Service and Project Service
 - Redis will be required later when BullMQ workers are connected
 
 ### Install
@@ -169,8 +172,8 @@ npm --workspace execution-service run typecheck
 1. **Complete:** build and understand the workspace UI.
 2. **Complete:** build login/register UI with local form validation.
 3. **Complete:** secure frontend-to-Auth-Service login, registration, refresh, logout, and workspace protection.
-4. Implement a real Project create endpoint and persistence.
-5. Send one prompt from Project Service to one AI provider.
+4. **Complete:** create authenticated draft projects from the workspace and persist them in MongoDB.
+5. **Next:** send a saved project prompt from Project Service to one AI provider.
 6. Display real generated files in the workspace.
 7. Add Execution Service runs and status tracking.
 8. Add BullMQ/Redis for background work.

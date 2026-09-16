@@ -1,11 +1,21 @@
-import type { Request, Response } from "express"
-import { createPod } from "../service/kubernetes.service.js"
+import type { NextFunction, Request, Response } from "express";
 
-export const createPodController = async (req: Request, res: Response) => {
+import { AppError } from "../middlewares/error.middleware.js";
+import { createProject } from "../services/project.service.js";
 
-    await createPod()
+export async function createProjectController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    if (!req.user) {
+      throw new AppError(401, "Authentication required.");
+    }
 
-    res.status(200).json({
-        message: "Pod created successfully"
-    })
+    const project = await createProject(req.user.id, req.body);
+    res.status(201).json({ project });
+  } catch (error) {
+    next(error);
+  }
 }
