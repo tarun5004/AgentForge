@@ -28,4 +28,7 @@ export const env = {
   NODE_ENV: nodeEnv as "development" | "production" | "test",
   MONGODB_URI: getRequiredEnv("MONGODB_URI"),
   ACCESS_TOKEN_SECRET: getRequiredEnv("ACCESS_TOKEN_SECRET"),
+  AI_ORCHESTRATOR_URL:
+    process.env.AI_ORCHESTRATOR_URL?.trim() || "http://localhost:6000",
+  INTERNAL_SERVICE_TOKEN: getRequiredEnv("INTERNAL_SERVICE_TOKEN"),
 };

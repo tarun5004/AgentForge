@@ -4,7 +4,7 @@ import { ArrowUp, MessageSquarePlus, Sparkles } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import { useAuth } from "@/components/auth/AuthProvider";
-import { createProject } from "@/lib/project-api";
+import { createProject, generateProject } from "@/lib/project-api";
 
 const recentChats = ["Developer portfolio", "Analytics dashboard", "Coffee shop website"];
 
@@ -12,6 +12,11 @@ type CreatedProjectMessage = {
   id: string;
   prompt: string;
   projectName: string;
+  status: "generating" | "ready" | "failed";
+  summary?: string;
+  fileCount?: number;
+  totalTokens?: number;
+  model?: string;
 };
 
 export function ChatPanel() {
@@ -19,7 +24,7 @@ export function ChatPanel() {
   const [prompt, setPrompt] = useState("");
   const [createdProjects, setCreatedProjects] = useState<CreatedProjectMessage[]>([]);
   const [notice, setNotice] = useState(
-    "A valid prompt creates a draft project. AI generation is not connected yet.",
+    "Describe a frontend page. AgentForge will save the project, then generate its files.",
   );
   const [errorMessage, setErrorMessage] = useState("");
   const [isCreatingProject, setIsCreatingProject] = useState(false);
@@ -43,10 +48,48 @@ export function ChatPanel() {
       const project = await createProject(cleanedPrompt, accessToken);
       setCreatedProjects((currentProjects) => [
         ...currentProjects,
-        { id: project.id, prompt: cleanedPrompt, projectName: project.name },
+        {
+          id: project.id,
+          prompt: cleanedPrompt,
+          projectName: project.name,
+          status: "generating",
+        },
       ]);
       setPrompt("");
-      setNotice(`Draft project "${project.name}" created. AI generation is the next step.`);
+      setNotice(`Project "${project.name}" saved. AI is generating the files...`);
+
+      try {
+        const generation = await generateProject(project.id, accessToken);
+
+        setCreatedProjects((currentProjects) =>
+          currentProjects.map((currentProject) =>
+            currentProject.id === project.id
+              ? {
+                  ...currentProject,
+                  status: "ready",
+                  summary: generation.summary,
+                  fileCount: generation.files.length,
+                  totalTokens: generation.usage.totalTokens,
+                  model: generation.model,
+                }
+              : currentProject,
+          ),
+        );
+        setNotice(`Generation complete: ${generation.files.length} files saved as revision 1.`);
+      } catch (generationError) {
+        setCreatedProjects((currentProjects) =>
+          currentProjects.map((currentProject) =>
+            currentProject.id === project.id
+              ? { ...currentProject, status: "failed" }
+              : currentProject,
+          ),
+        );
+        setErrorMessage(
+          generationError instanceof Error
+            ? generationError.message
+            : "Could not generate the project files.",
+        );
+      }
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Could not create the project.",
@@ -120,9 +163,28 @@ export function ChatPanel() {
                   <p className="mb-2 text-[10px] font-semibold tracking-wide text-[#747479] uppercase">
                     AgentForge
                   </p>
-                  <p className="rounded-lg border border-[#34432f] bg-[#182016] px-3 py-2.5 text-xs leading-5 text-[#b6f09c]">
-                    Draft project “{project.projectName}” saved. AI generation is the next step.
-                  </p>
+                  <div
+                    className={`rounded-lg border px-3 py-2.5 text-xs leading-5 ${
+                      project.status === "failed"
+                        ? "border-[#5a3030] bg-[#241616] text-[#ffaaaa]"
+                        : "border-[#34432f] bg-[#182016] text-[#b6f09c]"
+                    }`}
+                  >
+                    {project.status === "generating" && (
+                      <p>Project saved. Generating frontend files...</p>
+                    )}
+                    {project.status === "failed" && (
+                      <p>Project was saved, but code generation failed.</p>
+                    )}
+                    {project.status === "ready" && (
+                      <div className="space-y-1">
+                        <p>{project.summary}</p>
+                        <p className="text-[10px] text-[#8fa781]">
+                          {project.fileCount} files · {project.totalTokens} tokens · {project.model}
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             ))

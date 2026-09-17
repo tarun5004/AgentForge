@@ -35,7 +35,17 @@ Version Zero create-project request (currently exposed at `POST /api/projects`):
 
 Successful response: HTTP 201 with a `project` containing `id`, derived `name`, `initialPrompt`, `template`, `status`, and `createdAt`. The authenticated user's id becomes the internal `ownerId` and is never accepted from the request body.
 
-Create generation request:
+Version Zero create-generation request (currently exposed at `POST /api/projects/{projectId}/generations`):
+
+- Requires the normal bearer access token.
+- Requires an `Idempotency-Key` header (maximum 100 characters).
+- Has no request body because the owned project's saved prompt is the source of truth.
+
+Successful response: HTTP 201 with a ready generation, immutable `revisionId`, summary, validated files, provider/model metadata, latency, and token usage. Repeating a completed request with the same idempotency key returns the saved result instead of calling the model again.
+
+The internal call from Project Service to AI Orchestrator is `POST /internal/generations`. It requires `X-Internal-Service-Token` and is not a browser-facing API.
+
+Planned V1 asynchronous request:
 
 ~~~json
 {
@@ -45,7 +55,7 @@ Create generation request:
 }
 ~~~
 
-Successful asynchronous response: HTTP 202 with generationId, status queued, and a status URL.
+The V1 queue-backed response will use HTTP 202 with generationId, status queued, and a status URL.
 
 ## Execution service
 

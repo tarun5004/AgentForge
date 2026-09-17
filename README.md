@@ -2,7 +2,7 @@
 
 AgentForge is a learning-focused, microservice-based AI frontend generation platform. The long-term product lets a user describe a website, review generated files, inspect terminal output, and launch an isolated preview from one developer workspace.
 
-The repository currently contains a working Cursor-inspired frontend prototype, a functional authentication service, and early Project/Execution service foundations. AI generation, background queues, and Kubernetes previews are intentionally not presented as complete yet.
+The repository currently contains a working Cursor-inspired frontend, authentication, project persistence, and the first synchronous AI code-generation flow. Background queues and Kubernetes previews are intentionally not presented as complete yet.
 
 ## Current Version Zero
 
@@ -18,6 +18,7 @@ The Next.js workspace currently provides:
 - Cursor-inspired dark developer interface
 - chat history, local prompt composer, and Markdown response rendering
 - authenticated prompt submission that creates a persisted draft project
+- AI generation progress, success, failure, file-count, model, and token feedback
 - selectable code tabs with line numbers
 - Terminal and Problems panels
 - changed-files list and sample agent plan
@@ -36,9 +37,9 @@ The frontend route guard is a user-experience check; every future protected back
 | Service | Port | Current status |
 | --- | ---: | --- |
 | Auth Service | `4000` | Register, login, refresh, logout, and authenticated profile endpoints |
-| Project Service | `3000` | Authenticated draft-project creation with MongoDB persistence |
+| Project Service | `3000` | Authenticated projects, generation records, and immutable revisions in MongoDB |
 | Execution Service | `5000` | Health endpoints, environment validation, run request schema, and reusable body validation |
-| AI Orchestrator | — | Planned after the frontend-to-project flow is understood |
+| AI Orchestrator | `6000` | Internal Vercel AI Gateway call with schema and safe-file validation |
 
 The Project Service no longer creates Kubernetes Pods. Runtime isolation belongs to the Execution Service and will be introduced only after the simpler project and generation flows work end to end. The Execution Service does **not** expose a completed `POST /runs` workflow yet.
 
@@ -63,6 +64,7 @@ Desktop separators can resize the chat width, changes width, and terminal height
 ```text
 auth-service/          Express authentication service
 project-service/       Project lifecycle and orchestration service
+ai-orchestrator-service/  Model call, output schema, and generated-file safety policy
 execution-service/     Isolated run and preview service foundation
 nextjs-boilerplate/    Next.js AgentForge workspace UI
 docs/                  Product, architecture, API, security, and phase docs
@@ -102,6 +104,7 @@ nextjs-boilerplate/
 - **Lucide React:** consistent lightweight icons
 - **Express + TypeScript:** backend services
 - **MongoDB:** authentication and project persistence
+- **Vercel AI SDK + AI Gateway:** structured model output through one provider-neutral API
 - **Redis + BullMQ:** planned background generation/execution jobs
 - **Kubernetes:** planned isolated build and preview workloads
 
@@ -127,6 +130,7 @@ Copy only the environment templates for the services you want to run. On PowerSh
 ```powershell
 Copy-Item auth-service/.env.example auth-service/.env
 Copy-Item project-service/.env.example project-service/.env
+Copy-Item ai-orchestrator-service/.env.example ai-orchestrator-service/.env
 Copy-Item execution-service/.env.example execution-service/.env
 Copy-Item nextjs-boilerplate/.env.example nextjs-boilerplate/.env.local
 ```
@@ -141,6 +145,7 @@ Run each required application in its own terminal:
 npm run dev:web
 npm run dev:auth
 npm run dev:project
+npm run dev:ai
 npm run dev:execution
 ```
 
@@ -152,6 +157,7 @@ Open the frontend at `http://localhost:3001`. The root route redirects to `/logi
 npm run build:web
 npm run build:auth
 npm run build:project
+npm run build:ai
 npm run build:execution
 ```
 
@@ -173,8 +179,8 @@ npm --workspace execution-service run typecheck
 2. **Complete:** build login/register UI with local form validation.
 3. **Complete:** secure frontend-to-Auth-Service login, registration, refresh, logout, and workspace protection.
 4. **Complete:** create authenticated draft projects from the workspace and persist them in MongoDB.
-5. **Next:** send a saved project prompt from Project Service to one AI provider.
-6. Display real generated files in the workspace.
+5. **Complete:** send a saved prompt through Project Service to the AI Orchestrator and persist a validated revision.
+6. **Next:** display the saved revision's real files in the workspace editor.
 7. Add Execution Service runs and status tracking.
 8. Add BullMQ/Redis for background work.
 9. Add restricted Kubernetes build and preview workloads.

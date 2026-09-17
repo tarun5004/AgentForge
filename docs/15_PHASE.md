@@ -27,6 +27,8 @@ This is the official roadmap. Do not create duplicate root-level phase files.
 - Implement Auto, Economy, and Quality product modes.
 - Exit: deterministic fixture and low-budget real-provider generation produce a validated file manifest.
 
+Version Zero checkpoint: one Economy path now uses Vercel AI Gateway, strict structured output, safe frontend-file rules, token usage persistence, and failure state persistence. Provider failover and Auto/Quality modes remain V1 work.
+
 ## P4 — Next.js web application
 
 - Replace starter screen with auth, dashboard, project workspace, prompt panel, file tree/editor, revision list, diagnostics, and run state.

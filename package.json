@@ -5,16 +5,19 @@
   "workspaces": [
     "auth-service",
     "project-service",
+    "ai-orchestrator-service",
     "execution-service",
     "nextjs-boilerplate"
   ],
   "scripts": {
     "dev:auth": "npm --workspace auth-service run dev",
     "dev:project": "npm --workspace project-service run dev",
+    "dev:ai": "npm --workspace ai-orchestrator-service run dev",
     "dev:execution": "npm --workspace execution-service run dev",
     "dev:web": "npm --workspace nextjs-boilerplate run dev",
     "build:auth": "npm --workspace auth-service run build",
     "build:project": "npm --workspace project-service run build",
+    "build:ai": "npm --workspace ai-orchestrator-service run build",
     "build:execution": "npm --workspace execution-service run build",
     "build:web": "npm --workspace nextjs-boilerplate run build"
   }
