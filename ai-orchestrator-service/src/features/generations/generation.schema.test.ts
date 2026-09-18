@@ -40,3 +40,17 @@ test("rejects backend routes and server actions", () => {
     }),
   );
 });
+
+test("rejects duplicate file paths", () => {
+  assert.throws(
+    () =>
+      validateManifest({
+        summary: "This output contains the same frontend file twice.",
+        files: [
+          { path: "app/page.tsx", content: "export default function Page() {}" },
+          { path: "app/page.tsx", content: "export default function OtherPage() {}" },
+        ],
+      }),
+    /same file twice/,
+  );
+});
