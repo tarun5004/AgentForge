@@ -7,23 +7,26 @@ import { ChangesPanel } from "./ChangesPanel";
 import { EditorPanel } from "./EditorPanel";
 import { ResizeHandle } from "./ResizeHandle";
 import { TerminalPanel } from "./TerminalPanel";
-import { workspaceFiles } from "./workspace-data";
+import { workspaceFiles, type WorkspaceFile } from "./workspace-data";
 
 type CodeWorkspaceProps = {
   isResizable: boolean;
+  files?: WorkspaceFile[];
 };
 
-export function CodeWorkspace({ isResizable }: CodeWorkspaceProps) {
-  const [activeFilePath, setActiveFilePath] = useState(workspaceFiles[0].path);
+export function CodeWorkspace({ isResizable, files }: CodeWorkspaceProps) {
+  // Demo files keep the workspace useful before the first successful generation.
+  const visibleFiles = files?.length ? files : workspaceFiles;
+  const [activeFilePath, setActiveFilePath] = useState(visibleFiles[0].path);
 
   // Editor tabs and Changes panel use one shared selected file.
   const activeFile =
-    workspaceFiles.find((file) => file.path === activeFilePath) ?? workspaceFiles[0];
+    visibleFiles.find((file) => file.path === activeFilePath) ?? visibleFiles[0];
 
   const editor = (
     <EditorPanel
       activeFile={activeFile}
-      files={workspaceFiles}
+      files={visibleFiles}
       onFileSelect={setActiveFilePath}
     />
   );
@@ -31,7 +34,7 @@ export function CodeWorkspace({ isResizable }: CodeWorkspaceProps) {
   const changes = (
     <ChangesPanel
       activeFile={activeFile}
-      files={workspaceFiles}
+      files={visibleFiles}
       onFileSelect={setActiveFilePath}
     />
   );

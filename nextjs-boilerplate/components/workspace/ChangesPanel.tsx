@@ -20,7 +20,7 @@ export function ChangesPanel({ activeFile, files, onFileSelect }: ChangesPanelPr
             {files.length}
           </span>
         </div>
-        <p className="mt-1 text-[10px] text-[#6f6f74]">Sample workspace files</p>
+        <p className="mt-1 text-[10px] text-[#6f6f74]">Workspace files</p>
       </header>
 
       <div className="border-b border-[#2b2b2e] p-2">

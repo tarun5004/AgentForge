@@ -4,7 +4,11 @@ import { ArrowUp, MessageSquarePlus, Sparkles } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import { useAuth } from "@/components/auth/AuthProvider";
-import { createProject, generateProject } from "@/lib/project-api";
+import {
+  createProject,
+  generateProject,
+  type GeneratedFile,
+} from "@/lib/project-api";
 
 const recentChats = ["Developer portfolio", "Analytics dashboard", "Coffee shop website"];
 
@@ -19,7 +23,12 @@ type CreatedProjectMessage = {
   model?: string;
 };
 
-export function ChatPanel() {
+type ChatPanelProps = {
+  onFilesGenerated: (files: GeneratedFile[]) => void;
+  onWorkspaceReset: () => void;
+};
+
+export function ChatPanel({ onFilesGenerated, onWorkspaceReset }: ChatPanelProps) {
   const { accessToken } = useAuth();
   const [prompt, setPrompt] = useState("");
   const [createdProjects, setCreatedProjects] = useState<CreatedProjectMessage[]>([]);
@@ -60,6 +69,8 @@ export function ChatPanel() {
 
       try {
         const generation = await generateProject(project.id, accessToken);
+
+        onFilesGenerated(generation.files);
 
         setCreatedProjects((currentProjects) =>
           currentProjects.map((currentProject) =>
@@ -104,6 +115,7 @@ export function ChatPanel() {
     setPrompt("");
     setErrorMessage("");
     setNotice("New conversation started. Your next prompt will create a draft project.");
+    onWorkspaceReset();
   }
 
   return (

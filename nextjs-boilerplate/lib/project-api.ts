@@ -7,6 +7,11 @@ export type Project = {
   createdAt: string;
 };
 
+export type GeneratedFile = {
+  path: string;
+  content: string;
+};
+
 export type Generation = {
   id: string;
   status: "ready";
@@ -15,7 +20,7 @@ export type Generation = {
   provider: string;
   model: string;
   summary: string;
-  files: Array<{ path: string; content: string }>;
+  files: GeneratedFile[];
   usage: {
     inputTokens: number;
     outputTokens: number;

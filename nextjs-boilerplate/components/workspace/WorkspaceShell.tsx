@@ -6,10 +6,15 @@ import { useEffect, useState } from "react";
 import { Group, Panel } from "react-resizable-panels";
 
 import { useAuth } from "@/components/auth/AuthProvider";
+import type { GeneratedFile } from "@/lib/project-api";
 
 import { ChatPanel } from "./ChatPanel";
 import { CodeWorkspace } from "./CodeWorkspace";
 import { ResizeHandle } from "./ResizeHandle";
+import {
+  createWorkspaceFiles,
+  type WorkspaceFile,
+} from "./workspace-data";
 
 export function WorkspaceShell() {
   const router = useRouter();
@@ -17,6 +22,15 @@ export function WorkspaceShell() {
   const [isDesktop, setIsDesktop] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState("");
+  const [generatedFiles, setGeneratedFiles] = useState<WorkspaceFile[]>([]);
+
+  function showGeneratedFiles(files: GeneratedFile[]): void {
+    setGeneratedFiles(createWorkspaceFiles(files));
+  }
+
+  function resetWorkspace(): void {
+    setGeneratedFiles([]);
+  }
 
   async function handleSignOut() {
     setIsSigningOut(true);
@@ -108,21 +122,27 @@ export function WorkspaceShell() {
               maxSize="40%"
               groupResizeBehavior="preserve-pixel-size"
             >
-              <ChatPanel />
+              <ChatPanel
+                onFilesGenerated={showGeneratedFiles}
+                onWorkspaceReset={resetWorkspace}
+              />
             </Panel>
 
             <ResizeHandle direction="horizontal" />
 
             <Panel id="workspace" minSize={720}>
-              <CodeWorkspace isResizable />
+              <CodeWorkspace isResizable files={generatedFiles} />
             </Panel>
           </Group>
         </div>
       ) : (
         // Small screens keep the original stacked layout without drag handles.
         <div className="grid min-h-[calc(100dvh-44px)] grid-cols-1">
-          <ChatPanel />
-          <CodeWorkspace isResizable={false} />
+          <ChatPanel
+            onFilesGenerated={showGeneratedFiles}
+            onWorkspaceReset={resetWorkspace}
+          />
+          <CodeWorkspace isResizable={false} files={generatedFiles} />
         </div>
       )}
     </main>

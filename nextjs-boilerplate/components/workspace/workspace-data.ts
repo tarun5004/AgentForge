@@ -1,3 +1,5 @@
+import type { GeneratedFile } from "@/lib/project-api";
+
 // Keeping demo content outside the UI components makes it easy to replace
 // this data with real backend responses later.
 
@@ -8,6 +10,28 @@ export type WorkspaceFile = {
   status: "A" | "M";
   content: string;
 };
+
+const languageByExtension: Record<string, string> = {
+  css: "CSS",
+  js: "JavaScript",
+  jsx: "JSX",
+  ts: "TypeScript",
+  tsx: "TSX",
+};
+
+export function createWorkspaceFiles(files: GeneratedFile[]): WorkspaceFile[] {
+  return files.map((file) => {
+    const extension = file.path.split(".").pop()?.toLowerCase() ?? "";
+
+    return {
+      name: file.path.split("/").pop() ?? file.path,
+      path: file.path,
+      language: languageByExtension[extension] ?? "Text",
+      status: "A",
+      content: file.content,
+    };
+  });
+}
 
 export const workspaceFiles: WorkspaceFile[] = [
   {

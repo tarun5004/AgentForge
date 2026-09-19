@@ -19,6 +19,7 @@ The Next.js workspace currently provides:
 - chat history, local prompt composer, and Markdown response rendering
 - authenticated prompt submission that creates a persisted draft project
 - AI generation progress, success, failure, file-count, model, and token feedback
+- successful AI-generated files replace the editor's demo files immediately
 - selectable code tabs with line numbers
 - Terminal and Problems panels
 - changed-files list and sample agent plan
@@ -26,7 +27,7 @@ The Next.js workspace currently provides:
 - stacked layout on smaller screens
 - explicit local-demo labels wherever backend behavior is not connected
 
-The sample prompts, files, tasks, and terminal output live in `workspace-data.ts`. They demonstrate the UI only and are not claimed as real AI output.
+The initial sample files, tasks, and terminal output live in `workspace-data.ts` and remain clearly demo-only. After a successful generation, the returned revision files replace the sample editor tabs for the current browser session.
 
 The authentication forms validate input and call the Auth Service through the same-origin proxy. The short-lived access token stays only in React memory, while the refresh token stays in an HttpOnly cookie. Reloading the page restores the session through `/api/auth/refresh`, and unauthenticated workspace visits return to `/login`.
 
@@ -180,10 +181,11 @@ npm --workspace execution-service run typecheck
 3. **Complete:** secure frontend-to-Auth-Service login, registration, refresh, logout, and workspace protection.
 4. **Complete:** create authenticated draft projects from the workspace and persist them in MongoDB.
 5. **Complete:** send a saved prompt through Project Service to the AI Orchestrator and persist a validated revision.
-6. **Next:** display the saved revision's real files in the workspace editor.
-7. Add Execution Service runs and status tracking.
-8. Add BullMQ/Redis for background work.
-9. Add restricted Kubernetes build and preview workloads.
+6. **Complete:** display a successful generation's real files in the workspace editor.
+7. **Next:** reload saved revision files after a browser refresh.
+8. Add Execution Service runs and status tracking.
+9. Add BullMQ/Redis for background work.
+10. Add restricted Kubernetes build and preview workloads.
 
 This order keeps every stage runnable and explainable instead of introducing the full distributed architecture at once.
 
