@@ -8,6 +8,8 @@ import {
 import {
   findLatestRevision,
   findLatestRevisions,
+  findProjectRevision,
+  listProjectRevisions,
   type RevisionSummaryRecord,
 } from "../repositories/revision.repository.js";
 import {
@@ -16,6 +18,7 @@ import {
   validateObjectId,
   validateProjectQuery,
   validateQueryKeys,
+  validateRevisionQuery,
 } from "./project-read.validation.js";
 
 const MAX_PROMPT_LENGTH = 1000;
@@ -122,5 +125,44 @@ export async function getProject(ownerId: string, rawProjectId: unknown, query: 
   if (!project) throw new AppError(404, "Project not found.");
   const result = projectDetails(project, await findLatestRevision(projectId));
   assertReadResponseSize({ project: result });
+  return result;
+}
+
+export async function listRevisions(ownerId: string, rawProjectId: unknown, query: Record<string, unknown>) {
+  const projectId = validateObjectId(rawProjectId, "projectId");
+  const { limit, beforeVersion } = validateRevisionQuery(query);
+  const project = await findOwnedProjectForRead(projectId, ownerId);
+  if (!project) throw new AppError(404, "Project not found.");
+
+  const records = await listProjectRevisions(projectId, limit, beforeVersion);
+  const page = records.slice(0, limit);
+  const last = page.at(-1);
+  const response = {
+    revisions: page.map(revisionSummary),
+    nextCursor: records.length > limit && last ? String(last.version) : null,
+  };
+  assertReadResponseSize(response);
+  return response;
+}
+
+export async function getRevision(
+  ownerId: string,
+  rawProjectId: unknown,
+  rawRevisionId: unknown,
+  query: Record<string, unknown>,
+) {
+  const projectId = validateObjectId(rawProjectId, "projectId");
+  const revisionId = validateObjectId(rawRevisionId, "revisionId");
+  validateQueryKeys(query, []);
+  const project = await findOwnedProjectForRead(projectId, ownerId);
+  if (!project) throw new AppError(404, "Project not found.");
+
+  const revision = await findProjectRevision(projectId, revisionId);
+  if (!revision) throw new AppError(404, "Revision not found.");
+  const result = {
+    ...revisionSummary(revision),
+    files: revision.files.map((file) => ({ path: file.path, content: file.content })),
+  };
+  assertReadResponseSize({ revision: result });
   return result;
 }

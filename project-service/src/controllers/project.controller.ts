@@ -1,7 +1,13 @@
 import type { NextFunction, Request, Response } from "express";
 
 import { AppError } from "../middlewares/error.middleware.js";
-import { createProject, getProject, listProjects } from "../services/project.service.js";
+import {
+  createProject,
+  getProject,
+  getRevision,
+  listProjects,
+  listRevisions,
+} from "../services/project.service.js";
 import { createGeneration } from "../services/generation.service.js";
 
 export async function listProjectsController(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -18,6 +24,25 @@ export async function getProjectController(req: Request, res: Response, next: Ne
     if (!req.user) throw new AppError(401, "Authentication required.");
     const project = await getProject(req.user.id, req.params.projectId, req.query);
     res.status(200).json({ project });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function listRevisionsController(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!req.user) throw new AppError(401, "Authentication required.");
+    res.status(200).json(await listRevisions(req.user.id, req.params.projectId, req.query));
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getRevisionController(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!req.user) throw new AppError(401, "Authentication required.");
+    const revision = await getRevision(req.user.id, req.params.projectId, req.params.revisionId, req.query);
+    res.status(200).json({ revision });
   } catch (error) {
     next(error);
   }

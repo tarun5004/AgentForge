@@ -61,3 +61,14 @@ export function validateProjectQuery(query: Record<string, unknown>) {
   validateQueryKeys(query, ["limit", "cursor"]);
   return { limit: readLimit(query.limit), cursor: readProjectCursor(query.cursor) };
 }
+
+export function validateRevisionQuery(query: Record<string, unknown>) {
+  validateQueryKeys(query, ["limit", "beforeVersion"]);
+  const limit = readLimit(query.limit);
+  if (query.beforeVersion === undefined) return { limit, beforeVersion: null };
+  const value = query.beforeVersion;
+  if (typeof value !== "string" || !/^[1-9]\d{0,15}$/.test(value) || !Number.isSafeInteger(Number(value))) {
+    throw new AppError(400, "beforeVersion must be a positive safe integer.");
+  }
+  return { limit, beforeVersion: Number(value) };
+}
