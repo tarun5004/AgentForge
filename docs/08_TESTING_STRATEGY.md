@@ -1,5 +1,45 @@
 # AgentForge V1 — Testing Strategy
 
+## Implemented Slice 1 checks (2026-10-10)
+
+The remaining sections describe future V1 coverage. Slice 1 uses existing Node test/tsx tooling; no new package or production test-provider mode was added.
+
+From the repository root:
+
+```powershell
+npm run test --workspace=project-service
+
+# Set this explicitly to your separate local agentforge_test_* database.
+# Never copy MONGODB_URI from the application's .env for testing.
+$env:AGENTFORGE_TEST_MONGODB_URI = 'mongodb://127.0.0.1:27017/agentforge_test_slice1_local'
+npm run test:integration --workspace=project-service
+
+npm run typecheck --workspace=project-service
+npm run build --workspace=project-service
+```
+
+Integration tests fail closed if `AGENTFORGE_TEST_MONGODB_URI` is missing. The test URI must use a localhost/127.0.0.1 `mongodb://` endpoint, an explicit `agentforge_test_*` database, and no credentials or URI options. Verify the database is dedicated to these fixtures before running. The tests do not fall back to application dotenv settings. Test secrets/configuration are assigned before importing the app. Use one run per dedicated database; fixtures use deterministic IDs and are not intended for overlapping runs sharing a database.
+
+Tests run the real Express Project API against real MongoDB. A localhost HTTP fixture replaces only the AI Orchestrator network boundary for the unchanged initial-generation regression check; it is not model-quality or real-provider evidence. Cleanup targets only known fixture project IDs and their revisions/generations, never `dropDatabase` or a normal application database. Collections/indexes remain in the isolated test database.
+
+| Actual check | Result |
+| --- | --- |
+| Baseline Project typecheck | Passed before edits. |
+| Initial project integration RED | 7 failures: GET routes were absent (404 instead of expected protected/read responses). |
+| Initial validation RED | Missing validation module, as expected. |
+| Response-bound RED | Oversized project metadata returned 200 instead of 413 before the guard existed. |
+| Revision integration RED | 6 failures: revision GET routes were absent. |
+| Revision validation RED | Missing `validateRevisionQuery` export, as expected. |
+| `npm run test --workspace=project-service` | Passed, 5/5 unit tests. |
+| `npm run test:integration --workspace=project-service` | Passed, 15/15 HTTP/Mongo integration tests. |
+| Project typecheck and build | Passed, exit 0. |
+| Diff/staged-diff whitespace and scope checks | Passed before each implementation commit. |
+| Final isolated DB record-count probe | Zero Project, Revision, and Generation records remained. |
+
+The unit tests cover strict IDs, canonical cursors/defaults/limits, rejection of unknown/non-scalar query input, positive safe-integer history boundaries, and UTF-8/JSON-escape byte limits. HTTP tests cover all four routes' missing/invalid/expired authentication, owner-only data, same-timestamp project pagination, one batched latest query rather than N+1, latest derived from saved revisions despite stale status/counters, missing/foreign 404s, empty pages, newest-first history and exclusive boundaries, exact saved files, unknown/recorded provenance, GET immutability, private-field/file-summary exclusion, and oversized legacy responses. Existing project creation and initial generation remain readable; replay preserves the saved revision identity and makes no second fixture AI call.
+
+No frontend, browser, paid-provider, load benchmark, dependency-security audit, transaction, follow-up, or generation-publication race suite was run for this slice. Existing generation replay formatting/publication behavior is not redesigned or fully validated here. An existing Mongoose `new`-option deprecation warning appeared on the generation path and remains outside the read-API change.
+
 ## 1. Test pyramid
 
 | Layer | Focus | Examples |
