@@ -8,7 +8,9 @@
     "dev": "tsx watch --clear-screen=false ./src/server.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "test": "tsx --test src/services/project-read.validation.test.ts",
+    "test:integration": "tsx --test src/routes/project.routes.integration.test.ts"
   },
   "keywords": [],
   "author": "",
