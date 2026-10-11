@@ -46,6 +46,12 @@ The Project Service no longer creates Kubernetes Pods. Runtime isolation belongs
 
 Version Zero temporarily verifies Auth Service access tokens with a shared `ACCESS_TOKEN_SECRET`. The documented V1 target replaces this with asymmetric signing and JWKS verification so services never share a private signing secret.
 
+### Project history progress (2026-10-12)
+
+Owner-scoped project/revision reads and safe initial-generation replay are implemented. The next internal boundary is also ready: AI receives an optional bounded selected snapshot and returns complete changed files plus explicit deletion paths. Project Service independently merges these into a full snapshot, preserves omitted files, and computes added/modified/deleted changes without mutating the parent. Functions include short purpose/why comments; start with `project-service/src/services/revision-files.ts` and the AI `generation.prompt.ts` helper.
+
+Public follow-up generation is **still gated** until reliable revision publication/concurrency/recovery is connected. The frontend still shows generated files for the current session; backend history APIs do not yet mean browser history restoration works. Static manifest validation does not prove generated code builds or runs. See [the current history plan](docs/PROJECT_HISTORY_REVISION_PLAN.md) and [verified test results](docs/08_TESTING_STRATEGY.md) for exact progress and limits.
+
 ## Workspace layout
 
 ```text

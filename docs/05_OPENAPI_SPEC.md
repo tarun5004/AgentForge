@@ -57,9 +57,23 @@ Replays look for the saved Revision by project and generation ID, rather than tr
 
 Errors retain `{ message }` and may add `code` and `generationId`. Owner/project/revision hiding remains 404.
 
-**Intentional gate:** a new key on a project that already has a revision requires a change prompt and base (`400 BASE_REVISION_REQUIRED` if absent). An explicit base must belong to the owned project; a missing/foreign base returns 404. A valid owned base currently returns `409 FOLLOW_UP_NOT_AVAILABLE`. Follow-up context/merge is not implemented, so no prompt is silently treated as an original-prompt regeneration. Replay is resolved before this new-request gate.
+**Intentional gate:** a new key on a project that already has a revision requires a change prompt and base (`400 BASE_REVISION_REQUIRED` if absent). An explicit base must belong to the owned project; a missing/foreign base returns 404. A valid owned base currently returns `409 FOLLOW_UP_NOT_AVAILABLE`. Public follow-up publication is not implemented; the internal context/merge boundary is available in Slice 3 below. No prompt is silently treated as an original-prompt regeneration. Replay is resolved before this new-request gate.
 
 This is an initial-generation identity slice, not the complete revision loop. New `expectedVersion` is 1 because only initial attempts are admitted; it is preparatory metadata, **not yet publication authority**. The existing revision-counter allocation/publication path, different-key concurrency, crash recovery before publication, and saved-result publication retries still require the later publication slice. No queue, status GET, frontend, provider integration change, or schema backfill was added.
+
+## Implemented Slice 3 — internal context and file-change boundary (2026-10-12)
+
+This slice changes the **internal** Project↔AI contract, not browser follow-up availability. `POST /internal/generations` retains internal-token authentication and existing `requestId`, `projectId`, `prompt`, `template: "nextjs"`, and `mode: "economy"`. An optional `baseRevision` has exactly `{ id, version, files }`: a 24-hex ID, positive safe-integer version, and a complete nonempty generated-file snapshot. Project Service must load that owned revision itself when the later publication slice enables follow-ups; browser-supplied files remain prohibited.
+
+Both services validate frontend paths/content and reject ambiguous path aliases/case duplicates. Limits remain 12 files, 120-character paths, 30,000 characters per file, 120,000 total snapshot characters, and 1,000-character user prompts. The serialized internal request must be at most **240,000 UTF-8 bytes**, below the unchanged 256 KiB AI parser ceiling. Oversize input is rejected, never truncated. Project Client checks before fetch; AI returns 413 `CONTEXT_TOO_LARGE` for the context or parser ceiling.
+
+Initial model prompts remain the original user prompt. Follow-up prompts encode only `{ changePrompt, baseRevision }` as JSON; file contents are untrusted data, not higher-priority instructions. Model output retains `summary` and `files`, where internal `files` now means **complete-content upserts** (add/replace), plus `deletedPaths`. Omitted files are preserved. An absent `deletedPaths` defaults to `[]` for compatibility. Deletion-only follow-ups are valid, but missing/duplicate deletion targets, overlapping update/delete operations, case-only aliases, no-ops, and empty or oversized final snapshots are rejected. Initial output must contain files and cannot delete anything.
+
+The AI response adds `validation: { policyVersion: "frontend-manifest-v1", status: "manifest_validated" }`. This is a bounded static manifest policy, not a complete JavaScript security scan, build result, or execution proof. Old initial responses may omit validation metadata; Project Service does not fabricate it.
+
+Project Client correlates the returned `requestId`, independently validates/merges operations, and returns a local `snapshot: { files, fileChanges }` to its caller. Changes are deterministic A/M/D entries (added/modified/deleted), with no entry for unchanged files. Parent input is not mutated. Initial publication now saves this locally validated full snapshot; public `generation.files` remains the complete snapshot and exposes neither internal deletion operations nor the local helper wrapper. Invalid AI output cannot create a Revision. Current generation error handling still maps initial-generation failures to its existing sanitized 502 response; precise publication/failure recovery remains a later slice.
+
+No database schema/index, public route, frontend, dependency, model selection, queue, or execution change was made. Public follow-ups remain gated until reliable revision publication is implemented. Selected-base context was verified through local contract/prompt/HTTP fixtures, not a paid provider or browser revision loop.
 
 ## Auth service
 

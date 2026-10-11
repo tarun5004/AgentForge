@@ -1,5 +1,14 @@
 # AgentForge V1 — Testing Strategy
 
+## Slice 3 verification (2026-10-12)
+
+- `npm run test --workspace=project-service`: 24 passing local unit/contract tests, including a localhost AI transport fixture. Coverage adds immutable complete snapshots, deterministic A/M/D, omitted-file preservation, deletion-only output, invalid/no-op/empty changes, canonical frontend paths, final count/content limits, request-ID correlation, old initial responses, and escaped/UTF-8 request-byte limits before fetch.
+- `npm run test --workspace=ai-orchestrator-service`: 14 passing schema/prompt/HTTP checks. The HTTP app rejects wrong internal tokens, unsafe bases, oversized serialized context, and parser-sized bodies without making a model call. Prompt tests verify exactly the selected snapshot, escaping and no unrelated history. Generated manifests are checked independently against the same file/deletion policy.
+- `npm run test:integration --workspace=project-service`: 27 passing real HTTP/Mongo regressions. Two added cases prove new internal metadata preserves initial public/stored/replayed snapshots and unsafe/mismatched model output creates no Revision. Existing owner isolation, legacy reads/replays and same-key concurrency regressions still pass.
+- Both affected services' typecheck and build commands passed. New merge/prompt tests were observed failing on missing modules before implementation. No dependency was added and the installed AI SDK's bundled documentation/source was checked rather than guessing APIs.
+
+Mongo tests use the positively identified, initially empty local `agentforge_test_slice3_20261012` database. Cleanup is fixture-scoped; no normal application records are used. Local HTTP fixtures are not a real provider smoke. Browser UI, provider quality, complete public follow-up publication, different-key publication conflicts, crash recovery, and generated-code builds/execution remain unverified/outside this slice. Historical results below retain their original dates/counts.
+
 ## Slice 2 verification (2026-10-11)
 
 The existing commands below now run **11 unit tests** and **25 HTTP/Mongo/service integration tests**. The latest typecheck/build passed. The final integration suite passed three consecutive runs after adding a deterministic stale-snapshot regression. The new request-helper suite initially failed because the module did not exist; six focused integration cases initially failed for missing identity/replay behavior. Oversized-body and stale-pending-snapshot regressions were also observed failing before their fixes. Typecheck caught test-only undefined-array access and widened status-literal issues; both were corrected before commit.

@@ -4,7 +4,13 @@
 
 **Purpose:** Convert the current synchronous generation demo into a reliable, explainable code-generation platform through small, verifiable milestones.
 
-## Implementation progress — 2026-10-11
+## Implementation progress — 2026-10-12
+
+Slice 3 is implemented: bounded optional selected-base context, pure initial/follow-up prompts, explicit deletion/upsert output, and independent immutable snapshot merge/diff validation. Initial publication consumes the locally validated full snapshot. Verification: 24 Project local tests, 14 AI tests, 27 isolated HTTP/Mongo regressions, and both service typechecks/builds passed. No paid provider/browser/execution proof is claimed.
+
+**Next small slice:** reliable immutable Revision publication, selected-base ownership/loading, concurrency conflicts and replay recovery. Public follow-up requests remain gated until this integration is complete; M1 and frontend restoration are still unfinished.
+
+## Historical implementation progress — 2026-10-11
 
 - Slice 1: owner-scoped project/revision read APIs are implemented and integration-tested; the frontend still does not restore selected projects.
 - Slice 2: initial-generation request identity, exact same-key race handling, complete replay/version output, and legacy/stale-snapshot compatibility are implemented. Explicit initial prompts are recorded and used; follow-up attempts are gated until base-context and merge support exist.
