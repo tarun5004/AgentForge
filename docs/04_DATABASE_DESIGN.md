@@ -1,5 +1,18 @@
 # AgentForge V1 — Database Design
 
+## Implemented Slice 4 publication model (2026-10-12)
+
+This section supersedes the older allocator/optional-lineage descriptions in the dated slice notes below. Current production code uses existing unique indexes, not multi-document transactions or a mutable latest-revision pointer.
+
+- A new Generation captures normalized source prompt/base/fingerprint/policy and `expectedVersion = actual highest Revision version + 1` before AI. The owned parent may be historical; parentage is independent of version order.
+- Save the independently validated full result, deterministic A/M/D and local `manifest_validated` policy before publishing. Ambiguous writes preserve the attempt/key and return 503 rather than claiming model failure.
+- A single Revision insert is the authoritative commit. Existing unique `generationId` and `(projectId, version)` indexes arbitrate same-attempt recovery and competing publications. An intervening head change conflicts; losers are not reassigned the next version. Failed attempts reserve no version.
+- New snapshots record nullable `parentRevisionId`, `sourcePrompt`, `fileChanges`, provider/model, usage/latency, validation and `schemaVersion: 2`. These fields are optional for legacy records; no inferred parent/prompt, destructive backfill, collection rewrite or new index. Published payload fields are Mongoose-immutable and there is no revision update API; direct database operators are outside this application guarantee.
+- Generation ready/failed metadata includes optional completion/failure timestamps. Ready status, its revision pointer and Project status/counter are secondary bookkeeping. Repair uses `$max` for the Project counter so it never moves backwards; latest reads continue to derive from Revision records.
+- POST replay first checks for a committed Revision, then can publish already-saved validated output using its captured version without another AI call. A legacy saved result without captured intent/version is uncertain, never guessed. GET generation status is read-only and does not publish or repair anything.
+
+There is no background recovery worker: a crash before result saving may leave pending work requiring reconciliation/user action. Tests use only the isolated local `agentforge_test_slice4_20261012` database; normal application records/indexes were not modified by verification.
+
 ## Implemented Slice 1 read model (2026-10-10)
 
 The sections below retain long-term V1 targets. Current Project Service uses `projects`, `generations`, and `revisions`; this slice adds read paths only and makes no model/index changes or record migrations.
