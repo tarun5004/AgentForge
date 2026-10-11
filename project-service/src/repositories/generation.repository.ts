@@ -35,6 +35,11 @@ export async function findGenerationByKey(
   return Generation.findOne({ projectId, ownerId, idempotencyKey }).lean<GenerationReadRecord | null>();
 }
 
+// The controller's caller already proved project ownership; never fetch an attempt by ID alone.
+export async function findOwnedGeneration(projectId: string, ownerId: string, generationId: string) {
+  return Generation.findOne({ _id: generationId, projectId, ownerId }).lean<GenerationReadRecord | null>();
+}
+
 // Store identity in the same insert as the pending state; a racing request cannot overwrite it.
 export async function insertPendingGeneration(input: NewGenerationAttempt) {
   const generation = await Generation.create({ ...input, status: "pending" });
@@ -45,7 +50,11 @@ export async function saveGenerationResult(
   generationId: string,
   result: GenerationResult,
 ): Promise<void> {
-  await Generation.updateOne({ _id: generationId }, { $set: { result } });
+  const saved = await Generation.updateOne(
+    { _id: generationId, status: "pending", result: { $exists: false } },
+    { $set: { result } }, { runValidators: true },
+  );
+  if (saved.matchedCount !== 1) throw new Error("The pending generation result could not be stored.");
 }
 
 export async function markGenerationReady(
@@ -53,8 +62,9 @@ export async function markGenerationReady(
   revisionId: string,
 ): Promise<void> {
   await Generation.updateOne(
-    { _id: generationId },
-    { $set: { status: "ready", revisionId }, $unset: { errorCode: 1 } },
+    // Normal replay leaves completedAt stable; a stale pointer still needs repair.
+    { _id: generationId, $or: [{ status: { $ne: "ready" } }, { revisionId: { $ne: revisionId } }] },
+    { $set: { status: "ready", revisionId, completedAt: new Date() }, $unset: { errorCode: 1, failedAt: 1 } },
   );
 }
 
@@ -63,7 +73,7 @@ export async function markGenerationFailed(
   errorCode: string,
 ): Promise<void> {
   await Generation.updateOne(
-    { _id: generationId },
-    { $set: { status: "failed", errorCode } },
+    { _id: generationId, status: "pending" },
+    { $set: { status: "failed", errorCode, failedAt: new Date() } },
   );
 }

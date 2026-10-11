@@ -11,6 +11,9 @@ export type TokenUsage = {
   totalTokens: number;
 };
 
+export type GeneratedFileChange = { path: string; status: "A" | "M" | "D" };
+export type ManifestValidation = { policyVersion: "frontend-manifest-v1"; status: "manifest_validated" };
+
 export type GenerationResult = {
   provider: string;
   model: string;
@@ -18,6 +21,8 @@ export type GenerationResult = {
   files: GeneratedFile[];
   usage: TokenUsage;
   latencyMs: number;
+  fileChanges?: GeneratedFileChange[];
+  validation?: ManifestValidation;
 };
 
 export type GenerationStatus = "pending" | "ready" | "failed";
@@ -35,6 +40,8 @@ export type GenerationDocument = {
   result?: GenerationResult;
   revisionId?: Types.ObjectId;
   errorCode?: string;
+  completedAt?: Date;
+  failedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -46,6 +53,16 @@ const generatedFileSchema = new Schema<GeneratedFile>(
   },
   { _id: false },
 );
+
+// Reused by Generation and Revision; missing legacy metadata stays unknown, not an empty diff.
+export const fileChangeSchema = new Schema<GeneratedFileChange>({
+  path: { type: String, required: true, maxlength: 120 },
+  status: { type: String, required: true, enum: ["A", "M", "D"] },
+}, { _id: false });
+export const manifestValidationSchema = new Schema<ManifestValidation>({
+  policyVersion: { type: String, required: true, enum: ["frontend-manifest-v1"] },
+  status: { type: String, required: true, enum: ["manifest_validated"] },
+}, { _id: false });
 
 const generationResultSchema = new Schema<GenerationResult>(
   {
@@ -59,6 +76,8 @@ const generationResultSchema = new Schema<GenerationResult>(
       totalTokens: { type: Number, required: true, min: 0 },
     },
     latencyMs: { type: Number, required: true, min: 0 },
+    fileChanges: { type: [fileChangeSchema], default: undefined },
+    validation: { type: manifestValidationSchema, required: false },
   },
   { _id: false },
 );
@@ -82,6 +101,8 @@ const generationSchema = new Schema<GenerationDocument>(
     result: { type: generationResultSchema, required: false },
     revisionId: { type: Schema.Types.ObjectId, ref: "Revision" },
     errorCode: { type: String },
+    completedAt: { type: Date },
+    failedAt: { type: Date },
   },
   { timestamps: true },
 );

@@ -4,6 +4,7 @@ import { mongo } from "mongoose";
 
 import { createGenerationIntent, validateGenerationBody, validateIdempotencyKey } from "./generation-request.js";
 import { isGenerationKeyDuplicate } from "../repositories/generation.repository.js";
+import { isRevisionVersionDuplicate } from "../repositories/revision.repository.js";
 
 const projectId = "100000000000000000000001";
 const initialPrompt = "Build a developer portfolio page";
@@ -58,4 +59,15 @@ test("only the exact generation idempotency index is treated as a replay race", 
   assert.equal(isGenerationKeyDuplicate(new mongo.MongoServerError({ message: "other index", code: 11000, keyPattern: { _id: 1 } })), false);
   assert.equal(isGenerationKeyDuplicate(new Error("not a duplicate")), false);
   assert.equal(isGenerationKeyDuplicate({ code: 11000 }), false);
+});
+
+test("only the exact project/version constraint is a revision conflict", () => {
+  assert.equal(isRevisionVersionDuplicate(new mongo.MongoServerError({
+    message: "duplicate version", code: 11000, keyPattern: { projectId: 1, version: 1 },
+  })), true);
+  for (const error of [
+    new mongo.MongoServerError({ message: "same generation", code: 11000, keyPattern: { generationId: 1 } }),
+    new mongo.MongoServerError({ message: "other", code: 11000, keyPattern: { _id: 1 } }),
+    { code: 11000, keyPattern: { projectId: 1, version: 1 } }, new Error("unrelated"),
+  ]) assert.equal(isRevisionVersionDuplicate(error), false);
 });

@@ -162,6 +162,15 @@ export async function getRevision(
   const result = {
     ...revisionSummary(revision),
     files: revision.files.map((file) => ({ path: file.path, content: file.content })),
+    fileChanges: revision.fileChanges?.map((change) => ({ path: change.path, status: change.status })) ?? null,
+    provider: revision.provider ?? null,
+    model: revision.model ?? null,
+    usage: revision.usage ? {
+      inputTokens: revision.usage.inputTokens, outputTokens: revision.usage.outputTokens, totalTokens: revision.usage.totalTokens,
+    } : null,
+    latencyMs: revision.latencyMs ?? null,
+    validation: revision.validation ? { policyVersion: revision.validation.policyVersion, status: revision.validation.status } : null,
+    schemaVersion: revision.schemaVersion ?? null,
   };
   assertReadResponseSize({ revision: result });
   return result;

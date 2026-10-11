@@ -1,25 +1,23 @@
 import { requestProjectGeneration } from "../clients/ai-orchestrator.client.js";
 import { AppError } from "../middlewares/error.middleware.js";
 import type { GenerationResult } from "../models/generation.model.js";
+import { prepareGenerationRequest, type GenerationInput } from "../clients/generation.contract.js";
 import {
   findGenerationByKey,
+  findOwnedGeneration,
   insertPendingGeneration,
   isGenerationKeyDuplicate,
   type GenerationReadRecord,
-  markGenerationFailed,
-  markGenerationReady,
   saveGenerationResult,
 } from "../repositories/generation.repository.js";
 import {
   findOwnedProject,
-  reserveNextRevisionNumber,
   setProjectStatus,
 } from "../repositories/project.repository.js";
 import {
   findLatestRevision,
   findProjectRevision,
   findRevisionForGeneration,
-  insertRevision,
   type RevisionReadRecord,
 } from "../repositories/revision.repository.js";
 import {
@@ -27,12 +25,20 @@ import {
   validateGenerationBody,
   validateIdempotencyKey,
 } from "./generation-request.js";
-import { validateObjectId } from "./project-read.validation.js";
+import { assertReadResponseSize, validateObjectId, validateQueryKeys } from "./project-read.validation.js";
+import {
+  logGenerationBookkeepingFailure, publishGeneration, recordGenerationFailure,
+  repairPublishedGeneration, unknownGenerationOutcome,
+} from "./generation.publication.js";
 
 // Build a public response from the committed snapshot, not from a stale pointer/status.
 // Explicit fields keep database implementation details out of the browser response.
 function formatCompletedGeneration(generation: GenerationReadRecord, revision: RevisionReadRecord) {
-  if (!generation.result) {
+  // New revisions carry their own metadata. Legacy revisions may use the linked Generation.
+  const metadata = revision.provider && revision.model && revision.usage && typeof revision.latencyMs === "number"
+    ? { provider: revision.provider, model: revision.model, usage: revision.usage, latencyMs: revision.latencyMs }
+    : generation.result;
+  if (!metadata) {
     throw new AppError(
       503,
       "Saved generation metadata is unavailable. Retry with the same key.",
@@ -46,16 +52,20 @@ function formatCompletedGeneration(generation: GenerationReadRecord, revision: R
     status: "ready" as const,
     revisionId: revision._id.toString(),
     revisionVersion: revision.version,
-    provider: generation.result.provider,
-    model: generation.result.model,
+    parentRevisionId: revision.parentRevisionId?.toString() ?? null,
+    sourcePrompt: revision.sourcePrompt ?? null,
+    fileChanges: revision.fileChanges?.map((change) => ({ path: change.path, status: change.status })) ?? null,
+    validation: revision.validation ? { policyVersion: revision.validation.policyVersion, status: revision.validation.status } : null,
+    provider: metadata.provider,
+    model: metadata.model,
     summary: revision.summary,
     files: revision.files.map((file) => ({ path: file.path, content: file.content })),
     usage: {
-      inputTokens: generation.result.usage.inputTokens,
-      outputTokens: generation.result.usage.outputTokens,
-      totalTokens: generation.result.usage.totalTokens,
+      inputTokens: metadata.usage.inputTokens,
+      outputTokens: metadata.usage.outputTokens,
+      totalTokens: metadata.usage.totalTokens,
     },
-    latencyMs: generation.result.latencyMs,
+    latencyMs: metadata.latencyMs,
   };
 }
 
@@ -79,18 +89,24 @@ export async function replayGeneration(
     );
   }
 
-  const revision = await findRevisionForGeneration(generation.projectId.toString(), generation._id.toString());
+  let revision: RevisionReadRecord | null;
+  try { revision = await findRevisionForGeneration(generation.projectId.toString(), generation._id.toString()); }
+  catch { throw unknownGenerationOutcome(generation._id.toString()); }
   if (revision) {
     // A pending snapshot may be older than the revision we just found. Refresh metadata once,
     // rather than returning false uncertainty while the winner has already saved its output.
     let recorded = generation;
-    if (!recorded.result) {
-      const refreshed = await findGenerationByKey(
-        generation.projectId.toString(), generation.ownerId, generation.idempotencyKey,
-      );
-      if (refreshed?._id.toString() === generation._id.toString()) recorded = refreshed;
+    if (!recorded.result && !revision.provider) {
+      try {
+        const refreshed = await findGenerationByKey(
+          generation.projectId.toString(), generation.ownerId, generation.idempotencyKey,
+        );
+        if (refreshed?._id.toString() === generation._id.toString()) recorded = refreshed;
+      } catch { throw unknownGenerationOutcome(generation._id.toString()); }
     }
-    return formatCompletedGeneration(recorded, revision);
+    const response = formatCompletedGeneration(recorded, revision);
+    await repairPublishedGeneration(recorded, revision);
+    return response;
   }
 
   if (generation.status === "ready") {
@@ -102,12 +118,19 @@ export async function replayGeneration(
     );
   }
   if (generation.status === "failed") {
+    if (generation.errorCode === "REVISION_CONFLICT") {
+      throw new AppError(409, "The project changed while this generation was running.", "REVISION_CONFLICT", generation._id.toString());
+    }
     throw new AppError(
       409,
       "This generation failed. Send a new Idempotency-Key to retry.",
       "GENERATION_FAILED",
       generation._id.toString(),
     );
+  }
+  if (generation.result) {
+    const committed = await publishGeneration(generation);
+    return formatCompletedGeneration(generation, committed);
   }
   throw new AppError(
     409,
@@ -146,19 +169,29 @@ export async function createGeneration(
     return replayGeneration(existingGeneration, intent.requestFingerprint, emptyBody);
   }
 
-  // Do not pretend to apply a base until the AI context/merge contract is implemented.
-  if (intent.baseRevisionId) {
-    const base = await findProjectRevision(projectId, intent.baseRevisionId);
-    if (!base) throw new AppError(404, "Revision not found.");
-    throw new AppError(409, "Follow-up generation is not available yet.", "FOLLOW_UP_NOT_AVAILABLE");
-  }
+  // Parentage and version order differ: an explicitly selected older owned revision is allowed.
+  const base = intent.baseRevisionId ? await findProjectRevision(projectId, intent.baseRevisionId) : null;
+  if (intent.baseRevisionId && !base) throw new AppError(404, "Revision not found.");
   const head = await findLatestRevision(projectId);
-  if (head) {
+  if (head && !base) {
     // The winner may have finished between our first key lookup and this head read.
     // Recheck before rejecting a retry as a new request against an existing revision.
     const winner = await findGenerationByKey(projectId, ownerId, idempotencyKey);
     if (winner) return replayGeneration(winner, intent.requestFingerprint, emptyBody);
     throw new AppError(400, "A new generation requires a change prompt and baseRevisionId.", "BASE_REVISION_REQUIRED");
+  }
+  const expectedVersion = (head?.version ?? 0) + 1;
+  if (!Number.isSafeInteger(expectedVersion)) throw new AppError(503, "Project revision version is unavailable.", "OUTCOME_UNKNOWN");
+  // Validate the owned context before creating an attempt or spending model tokens.
+  const input = {
+    projectId, prompt: intent.sourcePrompt,
+    ...(base ? { baseRevision: { id: base._id.toString(), version: base.version, files: base.files.map((file) => ({ path: file.path, content: file.content })) } } : {}),
+  };
+  // Use the real ID's 24-character length so preflight and fetch have identical byte overhead.
+  try { prepareGenerationRequest({ ...input, requestId: "000000000000000000000000" }); }
+  catch (error) {
+    if (error instanceof AppError && error.statusCode === 413) throw error;
+    throw new AppError(400, "Selected revision cannot be used as generated frontend context.", "BASE_REVISION_INVALID");
   }
 
   // The unique index is the final race guard: both requests can pass the earlier lookup.
@@ -170,25 +203,36 @@ export async function createGeneration(
       ownerId,
       idempotencyKey,
       ...intent,
-      expectedVersion: 1, // Initial-only for now; captured version becomes authoritative in publication work.
+      expectedVersion,
       requestPolicyVersion: "generation-request-v1",
     });
   } catch (error) {
-    if (!isGenerationKeyDuplicate(error)) throw error;
+    if (!isGenerationKeyDuplicate(error)) throw new AppError(503, "Generation outcome is unknown. Retry with the same key.", "OUTCOME_UNKNOWN");
     const winner = await findGenerationByKey(projectId, ownerId, idempotencyKey);
     if (!winner) throw new AppError(503, "Generation outcome is unknown. Retry with the same key.", "OUTCOME_UNKNOWN");
     return replayGeneration(winner, intent.requestFingerprint, emptyBody);
   }
   const generationId = generation._id.toString();
-  await setProjectStatus(projectId, "generating");
+  try { await setProjectStatus(projectId, "generating"); }
+  catch (error) { logGenerationBookkeepingFailure("generating_hint", generationId, error); }
 
+  const savedResult = await generateFilesForAttempt(generation, { ...input, requestId: generationId });
+
+  // Save paid output separately. An uncertain DB write stays pending, never "AI failed".
   try {
-    const aiResult = await requestProjectGeneration({
-      requestId: generationId,
-      projectId,
-      prompt: intent.sourcePrompt,
-    });
-    const savedResult: GenerationResult = {
+    await saveGenerationResult(generationId, savedResult);
+  } catch { throw unknownGenerationOutcome(generationId); }
+  generation.result = savedResult;
+  const revision = await publishGeneration(generation);
+  return formatCompletedGeneration(generation, revision);
+}
+
+// Only errors at the AI boundary mean generation failed. Persistence has its own recovery path.
+async function generateFilesForAttempt(generation: GenerationReadRecord, input: GenerationInput): Promise<GenerationResult> {
+  const generationId = generation._id.toString();
+  try {
+    const aiResult = await requestProjectGeneration(input);
+    return {
       provider: aiResult.provider,
       model: aiResult.model,
       summary: aiResult.summary,
@@ -196,33 +240,45 @@ export async function createGeneration(
       files: aiResult.snapshot.files,
       usage: aiResult.usage,
       latencyMs: aiResult.latencyMs,
-    };
-
-    // Save the model result before publishing a revision so paid output is never lost.
-    await saveGenerationResult(generationId, savedResult);
-
-    const version = await reserveNextRevisionNumber(projectId);
-    const revision = await insertRevision({
-      projectId,
-      generationId,
-      version,
-      summary: savedResult.summary,
-      files: savedResult.files,
-    });
-
-    await markGenerationReady(generationId, revision._id.toString());
-    await setProjectStatus(projectId, "ready");
-
-    return {
-      id: generationId,
-      status: "ready" as const,
-      revisionId: revision._id.toString(),
-      revisionVersion: version,
-      ...savedResult,
+      fileChanges: aiResult.snapshot.fileChanges,
+      // Local validation ran even when the old AI response omitted policy metadata.
+      validation: { policyVersion: "frontend-manifest-v1", status: "manifest_validated" },
     };
   } catch (error) {
-    await markGenerationFailed(generationId, "AI_GENERATION_FAILED");
-    await setProjectStatus(projectId, "failed");
-    throw new AppError(502, "Code generation failed. Please try again.");
+    const code = error instanceof AppError ? error.code ?? "AI_GENERATION_FAILED" : "AI_GENERATION_FAILED";
+    await recordGenerationFailure(generation, code);
+    if (error instanceof AppError && error.statusCode === 413) {
+      throw new AppError(413, error.message, code, generationId);
+    }
+    throw new AppError(502, "Code generation failed. Please try again.", code, generationId);
   }
+}
+
+// A status read never starts AI or writes publication/bookkeeping; it reports persisted evidence.
+export async function getGeneration(ownerId: string, rawProjectId: unknown, rawGenerationId: unknown, query: Record<string, unknown>) {
+  const projectId = validateObjectId(rawProjectId, "projectId");
+  const generationId = validateObjectId(rawGenerationId, "generationId");
+  validateQueryKeys(query, []);
+  if (!await findOwnedProject(projectId, ownerId)) throw new AppError(404, "Project not found.");
+  const generation = await findOwnedGeneration(projectId, ownerId, generationId);
+  if (!generation) throw new AppError(404, "Generation not found.");
+  let revision: RevisionReadRecord | null;
+  try { revision = await findRevisionForGeneration(projectId, generationId); }
+  catch { throw unknownGenerationOutcome(generationId); }
+  if (revision) {
+    const response = formatCompletedGeneration(generation, revision);
+    assertReadResponseSize({ generation: response });
+    return response;
+  }
+  if (generation.status !== "pending" && generation.status !== "failed") throw unknownGenerationOutcome(generationId);
+  // Old database error strings must not become an unbounded public response.
+  const safeCodes = ["REVISION_CONFLICT", "AI_GENERATION_FAILED", "AI_OUTPUT_INVALID", "CONTEXT_TOO_LARGE", "SNAPSHOT_TOO_LARGE"];
+  const response = {
+    id: generationId, status: generation.status, hasSavedResult: !!generation.result,
+    errorCode: generation.status === "failed"
+      ? (safeCodes.includes(generation.errorCode ?? "") ? generation.errorCode : "GENERATION_FAILED")
+      : null,
+  };
+  assertReadResponseSize({ generation: response });
+  return response;
 }

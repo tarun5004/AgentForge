@@ -1,6 +1,9 @@
 import { Schema, Types, model } from "mongoose";
 
-import type { GeneratedFile } from "./generation.model.js";
+import {
+  fileChangeSchema, manifestValidationSchema,
+  type GeneratedFile, type GeneratedFileChange, type ManifestValidation, type TokenUsage,
+} from "./generation.model.js";
 
 export type RevisionDocument = {
   projectId: Types.ObjectId;
@@ -8,6 +11,15 @@ export type RevisionDocument = {
   version: number;
   summary: string;
   files: GeneratedFile[];
+  parentRevisionId?: Types.ObjectId | null;
+  sourcePrompt?: string;
+  fileChanges?: GeneratedFileChange[];
+  provider?: string;
+  model?: string;
+  usage?: TokenUsage;
+  latencyMs?: number;
+  validation?: ManifestValidation;
+  schemaVersion?: number;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -22,16 +34,31 @@ const revisionFileSchema = new Schema<GeneratedFile>(
 
 const revisionSchema = new Schema<RevisionDocument>(
   {
-    projectId: { type: Schema.Types.ObjectId, ref: "Project", required: true, index: true },
+    projectId: { type: Schema.Types.ObjectId, ref: "Project", required: true, index: true, immutable: true },
     generationId: {
       type: Schema.Types.ObjectId,
       ref: "Generation",
       required: true,
       unique: true,
+      immutable: true,
     },
-    version: { type: Number, required: true, min: 1 },
-    summary: { type: String, required: true, maxlength: 240 },
-    files: { type: [revisionFileSchema], required: true },
+    version: { type: Number, required: true, min: 1, immutable: true },
+    summary: { type: String, required: true, maxlength: 240, immutable: true },
+    files: { type: [revisionFileSchema], required: true, immutable: true },
+    // Optional for legacy reads. New snapshots record all provenance without any backfill.
+    parentRevisionId: { type: Schema.Types.ObjectId, ref: "Revision", immutable: true },
+    sourcePrompt: { type: String, minlength: 10, maxlength: 1000, immutable: true },
+    fileChanges: { type: [fileChangeSchema], default: undefined, immutable: true },
+    provider: { type: String, maxlength: 100, immutable: true },
+    model: { type: String, maxlength: 200, immutable: true },
+    usage: { type: new Schema<TokenUsage>({
+      inputTokens: { type: Number, required: true, min: 0 },
+      outputTokens: { type: Number, required: true, min: 0 },
+      totalTokens: { type: Number, required: true, min: 0 },
+    }, { _id: false }), immutable: true },
+    latencyMs: { type: Number, min: 0, immutable: true },
+    validation: { type: manifestValidationSchema, immutable: true },
+    schemaVersion: { type: Number, enum: [2], immutable: true },
   },
   { timestamps: true },
 );

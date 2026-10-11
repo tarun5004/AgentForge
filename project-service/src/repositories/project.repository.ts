@@ -50,16 +50,10 @@ export async function setProjectStatus(
   await Project.updateOne({ _id: projectId }, { $set: { status } });
 }
 
-export async function reserveNextRevisionNumber(projectId: string): Promise<number> {
-  const project = await Project.findByIdAndUpdate(
-    projectId,
-    { $inc: { currentRevisionNumber: 1 } },
-    { new: true },
-  );
-
-  if (!project) {
-    throw new Error("Project disappeared while creating a revision.");
-  }
-
-  return project.currentRevisionNumber;
+// This is only a cache update AFTER publication. It must never allocate the revision version.
+// $max prevents a delayed completion from moving the counter backwards.
+export async function markProjectRevisionPublished(projectId: string, version: number): Promise<void> {
+  await Project.updateOne({ _id: projectId }, {
+    $max: { currentRevisionNumber: version }, $set: { status: "ready" },
+  });
 }

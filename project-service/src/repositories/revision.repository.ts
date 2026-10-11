@@ -1,6 +1,6 @@
 import { Revision } from "../models/revision.model.js";
-import type { GeneratedFile } from "../models/generation.model.js";
-import { Types } from "mongoose";
+import type { GeneratedFile, GenerationResult } from "../models/generation.model.js";
+import { mongo, Types } from "mongoose";
 
 export type RevisionSummaryRecord = {
   _id: Types.ObjectId;
@@ -14,11 +14,16 @@ export type RevisionSummaryRecord = {
   sourcePrompt?: string | null;
 };
 
-export type RevisionReadRecord = RevisionSummaryRecord & { files: GeneratedFile[] };
+export type RevisionReadRecord = RevisionSummaryRecord & { files: GeneratedFile[]; schemaVersion?: number } &
+  Partial<Pick<GenerationResult, "provider" | "model" | "usage" | "latencyMs" | "fileChanges" | "validation">>;
 
 const REVISION_SUMMARY_FIELDS = {
   _id: 1, projectId: 1, generationId: 1, version: 1, summary: 1,
   createdAt: 1, updatedAt: 1, parentRevisionId: 1, sourcePrompt: 1,
+} as const;
+const REVISION_DETAIL_FIELDS = {
+  ...REVISION_SUMMARY_FIELDS, files: 1, fileChanges: 1, provider: 1, model: 1,
+  usage: 1, latencyMs: 1, validation: 1, schemaVersion: 1,
 } as const;
 
 export async function findLatestRevisions(projectIds: string[]): Promise<RevisionSummaryRecord[]> {
@@ -50,7 +55,7 @@ export async function listProjectRevisions(projectId: string, limit: number, bef
 
 export async function findProjectRevision(projectId: string, revisionId: string) {
   return Revision.findOne({ projectId, _id: revisionId })
-    .select({ ...REVISION_SUMMARY_FIELDS, files: 1 })
+    .select(REVISION_DETAIL_FIELDS)
     .lean<RevisionReadRecord | null>();
 }
 
@@ -58,18 +63,36 @@ export async function findProjectRevision(projectId: string, revisionId: string)
 // Callers must prove project ownership first; both IDs keep the lookup project-scoped.
 export async function findRevisionForGeneration(projectId: string, generationId: string) {
   return Revision.findOne({ projectId, generationId })
-    .select({ ...REVISION_SUMMARY_FIELDS, files: 1 })
+    .select(REVISION_DETAIL_FIELDS)
     .lean<RevisionReadRecord | null>();
 }
 
-type NewRevision = {
+export type NewRevision = {
   projectId: string;
   generationId: string;
   version: number;
   summary: string;
   files: GeneratedFile[];
+  parentRevisionId: string | null;
+  sourcePrompt: string;
+  provider: string;
+  model: string;
+  usage: GenerationResult["usage"];
+  latencyMs: number;
+  fileChanges: NonNullable<GenerationResult["fileChanges"]>;
+  validation: NonNullable<GenerationResult["validation"]>;
+  schemaVersion: 2;
 };
 
+// Classify only the version uniqueness constraint; do not disguise other DB errors as conflicts.
+export function isRevisionVersionDuplicate(error: unknown): boolean {
+  if (!(error instanceof mongo.MongoServerError) || error.code !== 11000) return false;
+  const pattern = error.keyPattern as Record<string, unknown> | undefined;
+  return !!pattern && Object.keys(pattern).length === 2 && pattern.projectId === 1 && pattern.version === 1;
+}
+
+// One insert is the commit point. No subsequent bookkeeping update can unpublish this snapshot.
 export async function insertRevision(input: NewRevision) {
-  return Revision.create(input);
+  const revision = await Revision.create(input);
+  return revision.toObject<RevisionReadRecord>();
 }
