@@ -4,28 +4,22 @@ import { env } from "../../config/env.js";
 import {
   generatedManifestSchema,
   type GenerationRequest,
+  MANIFEST_POLICY_VERSION,
   validateManifest,
 } from "./generation.schema.js";
-
-const SYSTEM_INSTRUCTIONS = `You generate a small frontend-only Next.js App Router page.
-Return only the files needed to satisfy the user's request.
-Use TypeScript, React, accessible HTML, responsive CSS, and simple readable components.
-Use only React, Next.js, and plain CSS; do not add npm dependencies.
-Allowed folders are app, components, and lib.
-Never create API routes, server actions, middleware, environment files, secrets, or backend code.
-Keep the result compact: prefer 3-6 files and avoid repeated code.`;
+import { buildGenerationPrompt, GENERATION_INSTRUCTIONS } from "./generation.prompt.js";
 
 export async function generateProject(request: GenerationRequest) {
   const startedAt = Date.now();
   const result = await generateText({
     model: gateway(env.AI_MODEL),
-    instructions: SYSTEM_INSTRUCTIONS,
-    prompt: request.prompt,
+    instructions: GENERATION_INSTRUCTIONS,
+    prompt: buildGenerationPrompt(request),
     maxOutputTokens: 8_000,
     output: Output.object({ schema: generatedManifestSchema }),
   });
 
-  const manifest = validateManifest(result.output);
+  const manifest = validateManifest(result.output, request.baseRevision?.files);
 
   return {
     requestId: request.requestId,
@@ -33,6 +27,9 @@ export async function generateProject(request: GenerationRequest) {
     model: env.AI_MODEL,
     summary: manifest.summary,
     files: manifest.files,
+    deletedPaths: manifest.deletedPaths,
+    // This proves manifest checks only, never a build or sandbox execution.
+    validation: { policyVersion: MANIFEST_POLICY_VERSION, status: "manifest_validated" as const },
     usage: {
       inputTokens: result.usage.inputTokens ?? 0,
       outputTokens: result.usage.outputTokens ?? 0,

@@ -192,7 +192,8 @@ export async function createGeneration(
       provider: aiResult.provider,
       model: aiResult.model,
       summary: aiResult.summary,
-      files: aiResult.files,
+      // Persist our independently validated full snapshot, never raw changed-file output.
+      files: aiResult.snapshot.files,
       usage: aiResult.usage,
       latencyMs: aiResult.latencyMs,
     };

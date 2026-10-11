@@ -6,7 +6,16 @@ export const notFoundHandler: RequestHandler = (_req, res) => {
 };
 
 export const errorHandler: ErrorRequestHandler = (error, req, res, _next) => {
+  // Preserve the parser's size error; it is not a provider failure.
+  if (error?.type === "entity.too.large" && error.status === 413) {
+    res.status(413).json({ message: "Generation request is too large.", code: "CONTEXT_TOO_LARGE" });
+    return;
+  }
   if (error instanceof ZodError) {
+    if (error.issues.some((issue) => issue.code === "custom" && issue.params?.code === "CONTEXT_TOO_LARGE")) {
+      res.status(413).json({ message: "Generation context is too large.", code: "CONTEXT_TOO_LARGE" });
+      return;
+    }
     res.status(400).json({
       message: "Invalid generation request.",
       issues: error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message })),

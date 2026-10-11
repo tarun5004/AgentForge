@@ -33,6 +33,7 @@ let server: Server;
 let aiFixture: Server;
 let baseUrl: string;
 const aiRequests: Record<string, unknown>[] = [];
+let aiResponseOverride: Record<string, unknown> = {};
 
 async function cleanupFixtures() {
   await Revision.deleteMany({ projectId: { $in: cleanupProjectIds } });
@@ -69,6 +70,7 @@ before(async () => {
             files: [{ path: "app/page.tsx", content: 'export default function Page() { return <main>Portfolio</main>; }' }],
             usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
             latencyMs: 0,
+            ...aiResponseOverride,
           },
         }));
       } catch { response.writeHead(400).end(); }
@@ -88,6 +90,7 @@ before(async () => {
 beforeEach(async () => {
   await cleanupFixtures();
   aiRequests.length = 0;
+  aiResponseOverride = {};
   const january = new Date("2026-01-01T00:00:00.000Z");
   const february = new Date("2026-02-01T00:00:00.000Z");
   await Project.collection.insertMany(projectIds.map((id, index) => ({
@@ -549,4 +552,53 @@ test("replay refreshes an older pending snapshot when output was committed after
   assert.equal(replay.revisionVersion, 1);
   assert.equal(replay.files[0]?.content, "saved-after-lookup");
   assert.equal(aiRequests.length, 0);
+});
+
+test("new internal change metadata keeps initial public files and stored snapshots complete", async () => {
+  const project = await createDraft();
+  aiResponseOverride = {
+    files: [
+      { path: "app/page.tsx", content: "export default function Page() {}" },
+      { path: "app/globals.css", content: "body { color: black; }" },
+    ],
+    deletedPaths: [],
+    validation: { policyVersion: "frontend-manifest-v1", status: "manifest_validated" },
+  };
+  const result = await postGeneration(project.id, "slice-three-initial");
+  assert.equal(result.status, 201);
+  const expectedFiles = [
+    { path: "app/globals.css", content: "body { color: black; }" },
+    { path: "app/page.tsx", content: "export default function Page() {}" },
+  ];
+  assert.deepEqual(result.body.generation.files, expectedFiles);
+  assert.equal("deletedPaths" in result.body.generation, false, "internal operations are not public snapshot data");
+  const saved = await get(`/${project.id}/revisions/${result.body.generation.revisionId}`);
+  assert.deepEqual(saved.body.revision.files, expectedFiles);
+  const replay = await postGeneration(project.id, "slice-three-initial");
+  assert.deepEqual(replay.body.generation, result.body.generation);
+  assert.equal(aiRequests.length, 1);
+});
+
+test("unsafe or mismatched AI output cannot reach revision publication", async () => {
+  // Replace only provider transport; real controllers, validation, repositories and DB still run.
+  const invalidOutputs = [
+    { requestId: "wrong-request-id" },
+    { files: [{ path: "app/api/users/route.ts", content: "backend output must not persist" }] },
+    { files: [{ path: "app/page.tsx", content: '"use server"; export const x = 1;' }] },
+    { deletedPaths: ["app/page.tsx"] },
+    { files: [] },
+  ];
+  for (const [index, output] of invalidOutputs.entries()) {
+    const project = await createDraft();
+    aiResponseOverride = output;
+    const result = await postGeneration(project.id, `invalid-output-${index}`);
+    assert.equal(result.status, 502);
+    assert.equal(await Revision.countDocuments({ projectId: project.id }), 0);
+    const generation = await Generation.findOne({ projectId: project.id }).lean();
+    assert.equal(generation?.status, "failed");
+    assert.equal(generation?.result, undefined);
+    const requestsBeforeReplay = aiRequests.length;
+    assert.equal((await postGeneration(project.id, `invalid-output-${index}`)).body.code, "GENERATION_FAILED");
+    assert.equal(aiRequests.length, requestsBeforeReplay);
+  }
 });
