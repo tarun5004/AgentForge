@@ -362,6 +362,191 @@ test("existing initial generation still publishes readable files and replays wit
   assert.equal(replayResponse.status, 201);
   const replay = await replayResponse.json();
   assert.equal(replay.generation.revisionId, generation.revisionId);
+  assert.deepEqual(replay.generation, generation, "replay must include the same files, metadata and revision version");
   assert.equal(aiRequests.length, 1);
   assert.equal(await Revision.countDocuments({ projectId: project.id }), 1);
+});
+
+// Create through the real API so generation tests also exercise token-derived ownership.
+async function createDraft(prompt = "Build a developer portfolio page") {
+  const response = await fetch(baseUrl, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt }),
+  });
+  assert.equal(response.status, 201);
+  const { project } = await response.json();
+  cleanupProjectIds.push(new Types.ObjectId(project.id));
+  return project as { id: string; initialPrompt: string };
+}
+
+// Reuse the same HTTP request shape as a browser retry; only tests supply deterministic keys.
+async function postGeneration(projectId: string, key: string, body?: unknown, accessToken = token) {
+  const response = await fetch(`${baseUrl}/${projectId}/generations`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Idempotency-Key": key, "Content-Type": "application/json" },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  return { status: response.status, body: await response.json() };
+}
+
+test("generation stores its canonical intent and rejects changed input under the same key", async () => {
+  const project = await createDraft();
+  const prompt = "Build a clean restaurant landing page";
+  const first = await postGeneration(project.id, "intent-key", { prompt: `  ${prompt}  ` });
+  assert.equal(first.status, 201);
+  assert.equal(aiRequests[0]?.prompt, prompt);
+  const attempt = await Generation.findOne({ projectId: project.id }).lean();
+  assert.equal(attempt?.sourcePrompt, prompt);
+  assert.equal(attempt?.baseRevisionId, null);
+  assert.equal(attempt?.expectedVersion, 1);
+  assert.match(attempt?.requestFingerprint ?? "", /^[a-f\d]{64}$/);
+  assert.equal(attempt?.requestPolicyVersion, "generation-request-v1");
+  const replay = await postGeneration(project.id, "intent-key", { prompt });
+  assert.deepEqual(replay, first);
+  const changed = await postGeneration(project.id, "intent-key", { prompt: "Build a completely different portfolio" });
+  assert.equal(changed.status, 409);
+  assert.equal(changed.body.code, "IDEMPOTENCY_MISMATCH");
+  assert.equal(aiRequests.length, 1);
+});
+
+test("concurrent same-key submissions converge on one generation and one AI request", async () => {
+  const project = await createDraft();
+  const replies = await Promise.all(Array.from({ length: 8 }, () => postGeneration(project.id, "race-key")));
+  for (const reply of replies) {
+    assert.equal([201, 409].includes(reply.status), true, JSON.stringify(reply));
+    if (reply.status === 409) {
+      assert.equal(reply.body.code, "GENERATION_IN_PROGRESS");
+      assert.match(reply.body.generationId, /^[a-f\d]{24}$/);
+    }
+  }
+  const finished = await postGeneration(project.id, "race-key");
+  assert.equal(finished.status, 201);
+  assert.equal(finished.body.generation.revisionVersion, 1);
+  assert.equal(aiRequests.length, 1);
+  assert.equal(await Generation.countDocuments({ projectId: project.id }), 1);
+  assert.equal(await Revision.countDocuments({ projectId: project.id }), 1);
+});
+
+test("invalid generation bodies are rejected before database or AI access", async () => {
+  for (const body of [{ ownerId: foreignOwner }, { files: [] }, { prompt: "short" }, { prompt: "x".repeat(1001) },
+    { baseRevisionId: "bad", prompt: "Make the hero darker" }, [], { baseRevisionId: String(revisionIds[0]) }]) {
+    commands.length = 0;
+    const result = await postGeneration(String(projectIds[0]), "invalid-body", body);
+    assert.equal(result.status, 400);
+    assert.equal(commands.length, 0);
+    assert.equal(aiRequests.length, 0);
+  }
+});
+
+test("oversized generation bodies return 413 before database or AI access", async () => {
+  commands.length = 0;
+  const result = await postGeneration(String(projectIds[0]), "oversized-body", { prompt: "x".repeat(20_000) });
+  assert.equal(result.status, 413);
+  assert.equal(result.body.code, "REQUEST_TOO_LARGE");
+  assert.equal(commands.length, 0);
+  assert.equal(aiRequests.length, 0);
+});
+
+test("legacy ready and stale bookkeeping attempts replay only their recorded original empty request", async () => {
+  for (const status of ["ready", "pending", "failed"] as const) {
+    await Generation.collection.insertOne({
+      _id: new Types.ObjectId(`30000000000000000000000${status === "ready" ? 1 : status === "pending" ? 2 : 3}`),
+      projectId: projectIds[0]!, ownerId: owner, idempotencyKey: `legacy-${status}`, status,
+      result: { provider: "legacy-fixture", model: "legacy-model", summary: "Saved output metadata",
+        files: [{ path: "app/page.tsx", content: "not-the-authoritative-snapshot" }],
+        usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 }, latencyMs: 1 },
+      createdAt: new Date(), updatedAt: new Date(),
+    });
+    const result = await postGeneration(String(projectIds[0]), `legacy-${status}`);
+    assert.equal(result.status, 201);
+    assert.equal(result.body.generation.revisionVersion, status === "ready" ? 1 : status === "pending" ? 2 : 3);
+    assert.equal(result.body.generation.files[0].content, `private-file-content-${result.body.generation.revisionVersion}`);
+    const changed = await postGeneration(String(projectIds[0]), `legacy-${status}`, { prompt: "Build a changed portfolio website" });
+    assert.equal(changed.status, 409);
+    assert.equal(changed.body.code, "IDEMPOTENCY_MISMATCH");
+  }
+  assert.equal(aiRequests.length, 0);
+});
+
+test("follow-up is explicitly gated and foreign base files are never used as context", async () => {
+  const missingBase = await postGeneration(String(projectIds[0]), "missing-base");
+  assert.equal(missingBase.status, 400);
+  assert.equal(missingBase.body.code, "BASE_REVISION_REQUIRED");
+  const ownedBase = await postGeneration(String(projectIds[0]), "owned-base", { prompt: "Make the hero darker", baseRevisionId: String(revisionIds[0]) });
+  assert.equal(ownedBase.status, 409);
+  assert.equal(ownedBase.body.code, "FOLLOW_UP_NOT_AVAILABLE");
+  for (const base of [revisionIds[3], revisionIds[4], "ffffffffffffffffffffffff"]) {
+    const result = await postGeneration(String(projectIds[0]), "foreign-base", { prompt: "Make the hero darker", baseRevisionId: String(base) });
+    assert.equal(result.status, 404);
+  }
+  const foreignProject = await postGeneration(String(projectIds[3]), "foreign-project");
+  assert.equal(foreignProject.status, 404);
+  assert.equal(await Generation.countDocuments({ projectId: projectIds[0]! }), 0);
+  assert.equal(aiRequests.length, 0);
+});
+
+test("real Mongo duplicate-key errors are recognized without overwriting the original intent", async () => {
+  const project = await createDraft();
+  const { createGenerationIntent } = await import("../services/generation-request.js");
+  const { isGenerationKeyDuplicate } = await import("../repositories/generation.repository.js");
+  const intent = createGenerationIntent(project.id, project.initialPrompt, {});
+  const input = { projectId: project.id, ownerId: owner, idempotencyKey: "real-duplicate",
+    ...intent, expectedVersion: 1, requestPolicyVersion: "generation-request-v1", status: "pending" as const };
+  const winner = await Generation.create(input);
+  await assert.rejects(Generation.create(input), (error: unknown) => isGenerationKeyDuplicate(error));
+  const pending = await postGeneration(project.id, "real-duplicate");
+  assert.equal(pending.status, 409);
+  assert.equal(pending.body.code, "GENERATION_IN_PROGRESS");
+  assert.equal(pending.body.generationId, winner._id.toString());
+  const mismatch = await postGeneration(project.id, "real-duplicate", { prompt: "Build something completely different" });
+  assert.equal(mismatch.status, 409);
+  assert.equal(mismatch.body.code, "IDEMPOTENCY_MISMATCH");
+  const saved = await Generation.findById(winner._id).lean();
+  assert.equal(saved?.requestFingerprint, intent.requestFingerprint);
+  assert.equal(saved?.sourcePrompt, project.initialPrompt);
+  assert.equal(aiRequests.length, 0);
+});
+
+test("failed and uncertain existing attempts do not start another AI call", async () => {
+  const project = await createDraft();
+  for (const status of ["failed", "ready"] as const) {
+    const attempt = await Generation.create({ projectId: project.id, ownerId: owner, idempotencyKey: `no-revision-${status}`, status });
+    const result = await postGeneration(project.id, `no-revision-${status}`);
+    assert.equal(result.status, status === "failed" ? 409 : 503);
+    assert.equal(result.body.code, status === "failed" ? "GENERATION_FAILED" : "OUTCOME_UNKNOWN");
+    assert.equal(result.body.generationId, attempt._id.toString());
+  }
+  assert.equal(aiRequests.length, 0);
+  assert.equal(await Revision.countDocuments({ projectId: project.id }), 0);
+});
+
+test("committed revision without stored model metadata reports uncertainty instead of fabricating fields", async () => {
+  await Generation.collection.insertOne({ _id: new Types.ObjectId("300000000000000000000001"),
+    projectId: projectIds[0]!, ownerId: owner, idempotencyKey: "missing-metadata", status: "pending", createdAt: new Date(), updatedAt: new Date() });
+  const result = await postGeneration(String(projectIds[0]), "missing-metadata");
+  assert.equal(result.status, 503);
+  assert.equal(result.body.code, "OUTCOME_UNKNOWN");
+  assert.equal("generation" in result.body, false);
+  assert.equal(aiRequests.length, 0);
+});
+
+test("replay refreshes an older pending snapshot when output was committed after the key lookup", async () => {
+  const project = await createDraft();
+  const { createGenerationIntent } = await import("../services/generation-request.js");
+  const { replayGeneration } = await import("../services/generation.service.js");
+  const intent = createGenerationIntent(project.id, project.initialPrompt, {});
+  const attempt = await Generation.create({ projectId: project.id, ownerId: owner,
+    idempotencyKey: "stale-snapshot", ...intent, status: "pending" });
+  const snapshot = attempt.toObject();
+  const result = { provider: "snapshot-fixture", model: "test-model", summary: "Saved output after the initial lookup",
+    files: [{ path: "app/page.tsx", content: "saved-after-lookup" }],
+    usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }, latencyMs: 0 };
+  await Generation.updateOne({ _id: attempt._id }, { $set: { result } });
+  await Revision.create({ projectId: project.id, generationId: attempt._id, version: 1, summary: result.summary, files: result.files });
+  const replay = await replayGeneration(snapshot, intent.requestFingerprint, true);
+  assert.equal(replay.status, "ready");
+  assert.equal(replay.revisionVersion, 1);
+  assert.equal(replay.files[0]?.content, "saved-after-lookup");
+  assert.equal(aiRequests.length, 0);
 });

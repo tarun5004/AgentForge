@@ -54,6 +54,14 @@ export async function findProjectRevision(projectId: string, revisionId: string)
     .lean<RevisionReadRecord | null>();
 }
 
+// A saved revision is stronger evidence than mutable Generation status after a partial failure.
+// Callers must prove project ownership first; both IDs keep the lookup project-scoped.
+export async function findRevisionForGeneration(projectId: string, generationId: string) {
+  return Revision.findOne({ projectId, generationId })
+    .select({ ...REVISION_SUMMARY_FIELDS, files: 1 })
+    .lean<RevisionReadRecord | null>();
+}
+
 type NewRevision = {
   projectId: string;
   generationId: string;

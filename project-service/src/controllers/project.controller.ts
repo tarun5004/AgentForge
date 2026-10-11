@@ -82,6 +82,7 @@ export async function createGenerationController(
       req.user.id,
       projectId,
       req.header("idempotency-key"),
+      req.body,
     );
 
     res.status(201).json({ generation });

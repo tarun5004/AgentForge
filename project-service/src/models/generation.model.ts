@@ -26,6 +26,11 @@ export type GenerationDocument = {
   projectId: Types.ObjectId;
   ownerId: string;
   idempotencyKey: string;
+  sourcePrompt?: string;
+  baseRevisionId?: Types.ObjectId | null;
+  requestFingerprint?: string;
+  expectedVersion?: number;
+  requestPolicyVersion?: string;
   status: GenerationStatus;
   result?: GenerationResult;
   revisionId?: Types.ObjectId;
@@ -63,6 +68,12 @@ const generationSchema = new Schema<GenerationDocument>(
     projectId: { type: Schema.Types.ObjectId, ref: "Project", required: true, index: true },
     ownerId: { type: String, required: true, index: true },
     idempotencyKey: { type: String, required: true, maxlength: 100 },
+    // Optional for old records; new attempts save immutable intent before spending model tokens.
+    sourcePrompt: { type: String, minlength: 10, maxlength: 1000, immutable: true },
+    baseRevisionId: { type: Schema.Types.ObjectId, ref: "Revision", immutable: true },
+    requestFingerprint: { type: String, match: /^[a-f\d]{64}$/, immutable: true },
+    expectedVersion: { type: Number, min: 1, immutable: true },
+    requestPolicyVersion: { type: String, enum: ["generation-request-v1"], immutable: true },
     status: {
       type: String,
       enum: ["pending", "ready", "failed"],
