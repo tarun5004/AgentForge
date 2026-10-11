@@ -2,7 +2,9 @@
 
 **Reviewed:** 2026-10-10
 
-**Status:** Proposed design; application implementation awaits approval.
+**Status:** Slice 1 reads and Slice 2 initial-request identity/replay are implemented; the remaining design is not implemented.
+
+**Progress update (2026-10-11):** Slice 2 records initial prompt/base/fingerprint/expected-version/request-policy intent, handles exact same-key insert races, and replays saved revision files/version despite stale status or an older pending snapshot. New initial prompts are sent as recorded. Follow-ups remain explicitly gated until their context/merge contract exists. `expectedVersion: 1` is preparatory metadata; revision-counter allocation/publication, saved-result publication recovery, different-key conflict protection, and frontend work remain outstanding. Latest verification: 11 unit tests, 25 isolated Mongo/HTTP/service tests (three consecutive final runs), typecheck and build passed. See the implemented sections in `05_OPENAPI_SPEC.md` and `08_TESTING_STRATEGY.md` for current behavior rather than treating the historical gap table below as live status.
 
 **Request:** The supplied “Next Phase: Project History & Revision Loop” instructions, including the mandatory Section 12 approval gate.
 
@@ -435,4 +437,4 @@ The M0 security/dependency findings are still relevant release concerns, but thi
 
 Estimated scope is approximately 34–42 files across application changes, new test/helper files, test tooling, and focused documentation updates. This is more precise than the initial M0 estimate because empty states, deletion handling, replay recovery, and browser verification are now traced. Work should be delivered in the small slices above, not a single large rewrite. A history-list helper component is optional and should be added only if ChatPanel readability warrants it.
 
-**Approval gate:** Stop after this report. Application code, schemas, indexes, dependencies, data, and infrastructure have not been changed. Approval is requested for this concrete history/revision design, including the publication authority, selected historical-base policy, and the browser-test dev dependency. Implementation starts only after explicit plan approval as required by Section 12 of the supplied request.
+**Original planning approval gate (historical):** The review stopped before application changes. Slice 1 and the subsequent initial-request identity slice were later authorized separately and implemented. Remaining slices—including follow-up context/merge, publication redesign, frontend integration, and browser testing—require the user's next-phase direction; progress here does not authorize implementing them automatically.

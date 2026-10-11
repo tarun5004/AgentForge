@@ -4,6 +4,14 @@
 
 **Purpose:** Convert the current synchronous generation demo into a reliable, explainable code-generation platform through small, verifiable milestones.
 
+## Implementation progress — 2026-10-11
+
+- Slice 1: owner-scoped project/revision read APIs are implemented and integration-tested; the frontend still does not restore selected projects.
+- Slice 2: initial-generation request identity, exact same-key race handling, complete replay/version output, and legacy/stale-snapshot compatibility are implemented. Explicit initial prompts are recorded and used; follow-up attempts are gated until base-context and merge support exist.
+- M1 is **not complete**. Next is the bounded base-context/upsert/deletion contract with pure merge/prompt tests; reliable publication and frontend restoration remain separate later slices.
+
+The detailed `PROJECT_HISTORY_REVISION_PLAN.md` refines this original M0 proposal: its standalone-Mongo publication authority and historical-base policy supersede the older mutable-pointer/transaction/stale-base suggestions below. That publication strategy is still a target, not a claim that Slice 2 replaced the existing counter allocator.
+
 ## Relationship to the existing roadmap
 
 `docs/15_PHASE.md` remains the broad product-phase document. This file is the evidence-based engineering sequence produced by M0. It does not mark aspirational features as complete, and each milestone must update the older documents when the implemented contract changes.

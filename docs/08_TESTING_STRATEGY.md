@@ -1,5 +1,13 @@
 # AgentForge V1 — Testing Strategy
 
+## Slice 2 verification (2026-10-11)
+
+The existing commands below now run **11 unit tests** and **25 HTTP/Mongo/service integration tests**. The latest typecheck/build passed. The final integration suite passed three consecutive runs after adding a deterministic stale-snapshot regression. The new request-helper suite initially failed because the module did not exist; six focused integration cases initially failed for missing identity/replay behavior. Oversized-body and stale-pending-snapshot regressions were also observed failing before their fixes. Typecheck caught test-only undefined-array access and widened status-literal issues; both were corrected before commit.
+
+Added coverage: canonical prompt/base fingerprints, strict body/key validation, exact duplicate-index classification against a real Mongo error, complete initial/replay response equality, changed-input mismatch, eight simultaneous same-key requests producing one Generation/Revision/fixture AI call, legacy empty-body replay, saved revisions overriding stale ready/pending/failed bookkeeping, metadata reread after an older pending snapshot, missing metadata/revision uncertainty, failed-attempt handling, safe follow-up gating, foreign-project/base hiding, and correct 413 oversized-JSON behavior.
+
+A fresh, positively identified local `agentforge_test_slice2_*` database was used; normal application data was not used. Test indexes remain, and only known fixture records are cleaned. Provider transport is still a localhost test fixture: no paid provider, real generation quality, browser/frontend loop, different-key publication race, or crash/saved-result publication recovery is verified by this slice. Those require the later approved work. No new dependency was installed.
+
 ## Implemented Slice 1 checks (2026-10-10)
 
 The remaining sections describe future V1 coverage. Slice 1 uses existing Node test/tsx tooling; no new package or production test-provider mode was added.

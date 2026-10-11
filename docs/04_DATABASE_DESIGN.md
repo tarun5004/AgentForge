@@ -22,6 +22,12 @@ Normal application records were not used as test data. Integration tests initial
 
 ## 1. Ownership
 
+### Implemented Generation intent fields (Slice 2, 2026-10-11)
+
+New initial attempts save immutable `sourcePrompt`, nullable `baseRevisionId`, `requestFingerprint`, `expectedVersion: 1`, and `requestPolicyVersion: "generation-request-v1"` in the pending Generation insert. These fields are optional with no fabricated defaults on old records. There is no collection rewrite, new index, or destructive migration. The existing unique `(projectId, idempotencyKey)` index controls same-key insertion races.
+
+Replay queries the actual Revision by both project and Generation IDs and serializes its saved files/version. Stored Generation status and its revision pointer may be stale. `expectedVersion` is currently identity-phase metadata only: the old Project-counter allocation remains until the separate publication redesign. Different-key races and multi-write recovery are not solved by adding these fields.
+
 One managed MongoDB cluster may be used for cost reasons, but each service owns a separate logical database and credentials:
 
 | Database | Owner | Collections |

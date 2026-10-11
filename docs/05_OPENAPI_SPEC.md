@@ -37,6 +37,30 @@ All four read responses have a 1 MiB serialized UTF-8 byte ceiling, including th
 
 These GET routes do not change existing create-project or initial-generation POST contracts. Follow-up generation, generation-status GET, frontend reload/history integration, and `/api/v1` routing are not implemented by Slice 1.
 
+## Implemented Slice 2 — initial request identity and replay (2026-10-11)
+
+`POST /api/projects/{projectId}/generations` still requires a bearer token and an `Idempotency-Key` of 1–100 trimmed characters. An omitted body or `{}` uses the owned Project's saved initial prompt. A new initial attempt may supply `{ "prompt": "Build a restaurant landing page" }`; the trimmed 10–1,000-character prompt is recorded and is the actual prompt sent to AI. Unknown body fields, malformed IDs, and invalid prompts are rejected before database reads. Express retains its 16 KiB JSON-body limit; oversized bodies return 413 `REQUEST_TOO_LARGE` rather than 500.
+
+New attempts save `sourcePrompt`, nullable `baseRevisionId`, a SHA-256 fingerprint of normalized project/prompt/base, `expectedVersion`, and `requestPolicyVersion: "generation-request-v1"` before calling AI. The fingerprint identifies input; it does not encrypt the prompt or replace JWT authorization. Whitespace around a prompt and casing of base IDs normalize consistently.
+
+The same key plus equivalent input resolves the original attempt. Different valid input returns 409 `IDEMPOTENCY_MISMATCH`. A duplicate insert under the exact installed `(projectId, idempotencyKey)` unique index rereads the winner; only the insert winner starts an AI call. Other duplicate constraints are not disguised as retries.
+
+Replays look for the saved Revision by project and generation ID, rather than trusting a mutable status or revision pointer. A saved revision returns HTTP 201 with complete snapshot files, model/usage metadata, and `revisionVersion`, even when bookkeeping still says pending/failed. If a pending snapshot was read before the winner saved output, metadata is reread once. There is no repair of bookkeeping in this slice.
+
+| Existing attempt state | Current replay behavior |
+| --- | --- |
+| Committed revision and result metadata exist | Return saved success; no additional AI call. |
+| Pending without a saved revision | 409 `GENERATION_IN_PROGRESS` with `generationId`; this is a pending record, not a promise that a worker is running. |
+| Failed without a saved revision | 409 `GENERATION_FAILED` with `generationId`. A deliberate new initial attempt on a project without revisions may use a new key. |
+| Ready but revision is absent, or committed revision lacks result metadata | 503 `OUTCOME_UNKNOWN`; retain the key rather than silently starting another model call. |
+| Legacy record without a fingerprint | Only its original omitted/empty body can replay. Explicit input is unverifiable and returns 409 `IDEMPOTENCY_MISMATCH`; no guessed fingerprint/backfill. |
+
+Errors retain `{ message }` and may add `code` and `generationId`. Owner/project/revision hiding remains 404.
+
+**Intentional gate:** a new key on a project that already has a revision requires a change prompt and base (`400 BASE_REVISION_REQUIRED` if absent). An explicit base must belong to the owned project; a missing/foreign base returns 404. A valid owned base currently returns `409 FOLLOW_UP_NOT_AVAILABLE`. Follow-up context/merge is not implemented, so no prompt is silently treated as an original-prompt regeneration. Replay is resolved before this new-request gate.
+
+This is an initial-generation identity slice, not the complete revision loop. New `expectedVersion` is 1 because only initial attempts are admitted; it is preparatory metadata, **not yet publication authority**. The existing revision-counter allocation/publication path, different-key concurrency, crash recovery before publication, and saved-result publication retries still require the later publication slice. No queue, status GET, frontend, provider integration change, or schema backfill was added.
+
 ## Auth service
 
 | Method | Path | Purpose |
@@ -74,7 +98,7 @@ Version Zero create-generation request (currently exposed at `POST /api/projects
 
 - Requires the normal bearer access token.
 - Requires an `Idempotency-Key` header (maximum 100 characters).
-- Has no request body because the owned project's saved prompt is the source of truth.
+- An omitted/empty body uses the owned project's saved prompt; an explicit initial prompt follows the Slice 2 contract above.
 
 Successful response: HTTP 201 with a ready generation, immutable `revisionId`, summary, validated files, provider/model metadata, latency, and token usage. Repeating a completed request with the same idempotency key returns the saved result instead of calling the model again.
 
