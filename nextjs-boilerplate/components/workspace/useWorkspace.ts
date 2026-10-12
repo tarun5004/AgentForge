@@ -37,7 +37,12 @@ function isTerminalGenerationError(error: unknown): boolean {
 }
 
 // State lives above responsive panels. URL IDs select data; Mongo remains the source of files.
-export function useWorkspace(selection: WorkspaceSelection, token: string | null, userId: string | null) {
+export function useWorkspace(
+  selection: WorkspaceSelection,
+  token: string | null,
+  userId: string | null,
+  invalidateSession: () => void,
+) {
   const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectCursor, setProjectCursor] = useState<string | null>(null);
@@ -63,14 +68,15 @@ export function useWorkspace(selection: WorkspaceSelection, token: string | null
   const selectionKey = workspaceUrl(selection.projectId, selection.revisionId);
   const visible = loadedKey === selectionKey;
 
-  // Reject protected API failures explicitly; login restoration remains AuthProvider's job.
+  // Redirecting alone leaves a stale user cached; clear it before leaving protected UI.
   const reportError = useCallback((error: unknown): string => {
     if (error instanceof ProjectApiError && error.status === 401) {
+      invalidateSession();
       router.replace("/login");
       return "Your session expired. Please sign in again.";
     }
     return errorMessage(error);
-  }, [router]);
+  }, [router, invalidateSession]);
 
   // Abort an older list request so load-more/reload cannot reorder sidebar results.
   const loadProjectPage = useCallback(async (cursor: string | null = null) => {

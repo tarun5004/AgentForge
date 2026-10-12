@@ -19,8 +19,8 @@ import { useWorkspace } from "./useWorkspace";
 // Keep request/selection state above both layouts, not inside panels that remount on resize.
 export function WorkspaceShell({ selection }: { selection: WorkspaceSelection }) {
   const router = useRouter();
-  const { user, accessToken, logout } = useAuth();
-  const workspace = useWorkspace(selection, accessToken, user?.id ?? null);
+  const { user, accessToken, logout, invalidateSession } = useAuth();
+  const workspace = useWorkspace(selection, accessToken, user?.id ?? null, invalidateSession);
   const [isDesktop, setIsDesktop] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState("");

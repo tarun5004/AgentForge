@@ -1,5 +1,44 @@
 # AgentForge V1 — Testing Strategy
 
+## Pagination and protected-401 recovery (2026-10-12)
+
+Story: real Next/React UI → load-more buttons → mocked cursor pages → deduplicated ordered lists → one protected `401` → cached identity cleared → login, without bouncing back.
+
+```powershell
+# From repository root, with Next running:
+npm run test:browser-history
+# Dedicated local test port:
+npm run test:browser-history -- -BaseUrl http://localhost:3102
+```
+
+- **Executed:** project pagination, revision pagination and protected-401 recovery pass (3 scenarios, 5 ordered checkpoints). Exact `cursor=project-page-2` and `beforeVersion=2` requests are checked. Deliberately overlapping fixture pages verify defensive deduplication; this does not claim the real backend returns overlaps. Exhausted pagination controls disappear and history stays v3, v2, v1.
+- **Regression reproduced before fixing:** both pagination checks passed, then the 401 assertion failed. Server logs showed repeated `/login` and `/workspace` requests: Project error handling redirected while AuthForm still saw a cached user. The fix adds stable `AuthProvider.invalidateSession`, passed through WorkspaceShell to the workspace error handler. It clears only client user/token before redirect; server auth/JWT/cookies and explicit logout remain unchanged.
+- **After fixing:** the clean history run passed with exactly one rejected protected read, zero unexpected API requests/page errors, and no workspace prompt on login. Screenshots `output/playwright/workspace-history-ba78615d-pagination.png` and `workspace-history-ba78615d.png` were inspected. All test browsers and the dedicated Next server were stopped.
+- The malformed-link suite was rerun after shared-runner/auth changes: 3/3 passed. Frontend unit tests 9/9, lint, production build, snippet/PowerShell syntax checks and diff checks passed. One interim browser run was reset by a code-edit Fast Refresh; console evidence confirmed a full reload. The documented clean run used frozen application code, not an ignored failure.
+
+These are **mocked-transport UI regression checks**, not real JWT expiry/cookie rotation, ownership, MongoDB pagination or paid-provider verification. All `/api/**` traffic is intercepted before navigation; writes/unknown paths fail closed. No new package or lockfile change, no backend application edits, no `.env` changes or normal database writes. Cross-owner, legacy/deleted-link, broader expiry matrices and automated real-service persistence still remain; M1 is not marked fully accepted. See the frontend README for Windows setup and both runner commands.
+
+## Repeatable malformed-link UI smoke (2026-10-12)
+
+Story: browser opens an invalid workspace selection → real Next page/query parsing → mocked session/list transport → disabled empty/error UI → New conversation → usable empty draft.
+
+From the repository root, with Next already running:
+
+```powershell
+npm run test:browser-links
+# Dedicated test port alternative:
+npm run test:browser-links -- -BaseUrl http://localhost:3102
+```
+
+Requires Windows PowerShell, standard Node.js/npm and Chrome available to pinned Playwright CLI `0.1.22`. No application/test-framework dependency or lockfile change. See the frontend README for setup, artifacts and server shutdown instructions.
+
+- **Executed:** 3/3 real-browser scenarios pass: malformed project ID, duplicate project query values, and revision without project. Every scenario verifies disabled prompt/submission, no generated/demo file tabs, error removal and empty-draft recovery through a fresh snapshot's New conversation button ref. A harmless draft enables Send; it is never submitted.
+- Refresh/list responses are **mocked** before navigation. All other `/api/**` calls abort and increment a failure counter; no unexpected calls or uncaught page errors occurred. Separate invalid/recovery counters require exactly three of each, preventing unexpected redirects from becoming false passes.
+- The external-URL guard was exercised with `https://example.com`: exit 1, before starting a browser or contacting that site. Browser assertion failures also exited 1 during development; each opened test session closed through `finally`.
+- Frontend tests 9/9, lint, production build and `git diff --check` passed. The final empty-editor screenshot was inspected under ignored `output/playwright/workspace-links-dc99cd9f.png`. The dedicated Next server and test browsers were stopped after verification.
+
+This is automated **mocked-transport UI** coverage, not real authentication/ownership, database persistence or provider evidence. No database, paid model request, credentials or `.env` edits were used. Real-service manual evidence remains separately documented below; backend suites were not rerun for this test-only slice. Remaining automation includes pagination, cross-owner/auth-expiry, legacy/deleted-link cases and the full real-service revision loop. M1 is not marked fully accepted.
+
 ## Review follow-up: safe fixture shutdown (2026-10-12)
 
 PR #2 review identified outdated dependency instructions and a cleanup-error path that skipped database disconnect. The small follow-up changes test tooling/docs only, not application services.
