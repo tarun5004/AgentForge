@@ -7,34 +7,36 @@ import { ChangesPanel } from "./ChangesPanel";
 import { EditorPanel } from "./EditorPanel";
 import { ResizeHandle } from "./ResizeHandle";
 import { TerminalPanel } from "./TerminalPanel";
-import { workspaceFiles, type WorkspaceFile } from "./workspace-data";
+import type { WorkspaceFile } from "./workspace-data";
+import type { FileChange } from "@/lib/project-api";
 
 type CodeWorkspaceProps = {
   isResizable: boolean;
-  files?: WorkspaceFile[];
+  files: WorkspaceFile[];
+  changes: FileChange[] | null;
+  message: string;
 };
 
-export function CodeWorkspace({ isResizable, files }: CodeWorkspaceProps) {
-  // Demo files keep the workspace useful before the first successful generation.
-  const visibleFiles = files?.length ? files : workspaceFiles;
-  const [activeFilePath, setActiveFilePath] = useState(visibleFiles[0].path);
+// A draft/loading/error view must never display demo files as persisted output.
+export function CodeWorkspace({ isResizable, files: visibleFiles, changes: fileChanges, message }: CodeWorkspaceProps) {
+  const [activeFilePath, setActiveFilePath] = useState(visibleFiles[0]?.path ?? "");
 
   // Editor tabs and Changes panel use one shared selected file.
   const activeFile =
     visibleFiles.find((file) => file.path === activeFilePath) ?? visibleFiles[0];
 
   const editor = (
-    <EditorPanel
+    activeFile ? <EditorPanel
       activeFile={activeFile}
       files={visibleFiles}
       onFileSelect={setActiveFilePath}
-    />
+    /> : <section role="status" className="grid h-full min-h-[300px] place-items-center bg-[#101011] p-6 text-center text-sm text-[#99999e]">{message}</section>
   );
   const terminal = <TerminalPanel />;
   const changes = (
     <ChangesPanel
       activeFile={activeFile}
-      files={visibleFiles}
+      changes={fileChanges}
       onFileSelect={setActiveFilePath}
     />
   );

@@ -10,6 +10,7 @@ type EditorPanelProps = {
   onFileSelect: (path: string) => void;
 };
 
+// Render saved text without executing it; only recorded changes receive a badge.
 export function EditorPanel({ activeFile, files, onFileSelect }: EditorPanelProps) {
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col bg-[#101011]">
@@ -30,9 +31,9 @@ export function EditorPanel({ activeFile, files, onFileSelect }: EditorPanelProp
             >
               <Code2 size={12} className="text-[#79b8ff]" />
               {file.name}
-              <span className={file.status === "A" ? "text-[#73c991]" : "text-[#cca700]"}>
+              {file.status && <span className={file.status === "A" ? "text-[#73c991]" : "text-[#cca700]"}>
                 {file.status}
-              </span>
+              </span>}
             </button>
           );
         })}

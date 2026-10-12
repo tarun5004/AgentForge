@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { terminalOutput } from "./workspace-data";
 
+// Execution is not connected; sample output is explicitly labelled and proves no build success.
 export function TerminalPanel() {
   const [activeTab, setActiveTab] = useState<"terminal" | "problems">("terminal");
   const [isCleared, setIsCleared] = useState(false);
@@ -47,13 +48,13 @@ export function TerminalPanel() {
 
       <div className="min-h-0 flex-1 overflow-auto px-4 py-3 font-mono text-[11px] leading-5 text-[#a8a8ad]">
         {activeTab === "problems" ? (
-          <p className="text-[#77777c]">No problems detected in this UI prototype.</p>
+          <p className="text-[#99999e]">Build checks are not connected. No diagnostics are available.</p>
         ) : isCleared ? (
           <p className="text-[#66666b]">Terminal cleared.</p>
         ) : (
-          terminalOutput.map((line, index) => (
+          <><p className="mb-2 text-[#e8ce87]">Not connected — sample terminal output only.</p>{terminalOutput.map((line, index) => (
             <div key={`${line}-${index}`}>{line || "\u00a0"}</div>
-          ))
+          ))}</>
         )}
       </div>
     </section>

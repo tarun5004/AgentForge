@@ -1,5 +1,57 @@
 # AgentForge V1 — Testing Strategy
 
+## Slice 5 frontend verification (2026-10-12)
+
+Branch: `feature/frontend-project-history`, explicitly stacked on `feature/project-service-revision-publication`. No backend application code changed; no runtime/dev dependency was added. Commit/push delivery was subsequently explicitly requested; PR/merge remain separate actions. Repository instruction changes are delivered separately; unrelated user `.github/` work is preserved.
+
+Story: browser session restoration → real Next rewrites → owned Project API/Mongo snapshot reads → selected-base generation via deterministic AI transport → committed snapshot rendering/reload.
+
+| Check | Actual evidence |
+| --- | --- |
+| Frontend local tests | 9 API/URL/storage/file-adapter tests; first API suite was observed failing on missing exports before implementation. |
+| Frontend lint/typecheck/build | Passed, exit 0; `/workspace` builds as a request-time dynamic route because page searchParams are awaited. |
+| Real browser Auth | Registered/logged in through actual Auth API; HttpOnly refresh-cookie restoration returned 200 after hard refresh. |
+| Persistence loop | Created v1, refreshed, generated v2 from v1, refreshed v2, reopened original v1 and checked original content. Driver reads independently confirmed immutable parent/version records. |
+| Truthful files | v2 preserved omitted CSS, recorded page M and component D, removed the deleted tab and gave unchanged CSS no badge. No-selection editor showed an actual empty state, not demo files. |
+| Responsive request identity | During a delayed follow-up, desktop → 390px mobile reflow kept submission/selection controls frozen and committed the same v2. |
+| AI failure | An invalid-output follow-up returned 502; the visible old revision/content remained available and no new revision was inserted. |
+| Lost response/replay | Browser intercepted a real committed POST and aborted its response. After hard refresh, stored intent was restored and replay returned the same v3. AI fixture call count stayed at 4, not 5. |
+| Status reconciliation | Browser replaced another real committed POST acknowledgement with 503 containing its generation ID; explicit Check status fetched committed v3 without another model call. |
+| Stale selection | A barrier-delayed real project A GET finished after selecting B; B's URL/heading/files remained selected. |
+| Post-commit reload failure | Mocked GET 503s after a real successful POST left committed files visible; Retry loading recovered canonical history. No false generation-failed label. |
+| Database evidence | Two real owned projects, six revisions and one failed attempt; parentage included intentional historical v3→v1 and linear v3→v2. Seven deterministic AI requests, no paid model calls. |
+
+Browser verification used Playwright CLI with actual Next/Auth/Project services and MongoDB, not browser-only response mocks. Only AI transport and deliberate browser fault/delay points were fixtures. Both API apps are composed in one test process against the isolated database; that is test composition, not a production service-layout change. These are executed CLI browser checks, **not a checked-in CI Playwright acceptance suite**. Screenshots were inspected at `output/playwright/history-desktop-slice5-20261012.png` and `history-mobile-slice5-20261012.png` (ignored artifacts). A CLI browser session ended once; reopening and real fixture login allowed the remaining checks to proceed.
+
+The test DB `agentforge_test_frontend_20261012` was checked empty before importing apps/creating indexes. Fixture shutdown removed only its explicitly named account and owner-scoped projects/generations/revisions, never dropped a DB. A separate read-only probe confirmed zero remaining users/projects/revisions/generations. Normal data, credentials, provider configuration and `.env` files are untouched; the browser and dedicated test servers were stopped. Test fixtures can be recreated using the commands below.
+
+### Reproduce the safe browser composition
+
+From the repository root, terminal 1 (requires local MongoDB and an **empty** dedicated test DB):
+
+```powershell
+$env:AGENTFORGE_TEST_MONGODB_URI = 'mongodb://127.0.0.1:27017/agentforge_test_frontend_local'
+npx tsx tests/frontend-history.fixture.mts
+```
+
+Terminal 2, repository root:
+
+```powershell
+$env:AUTH_SERVICE_URL = 'http://127.0.0.1:4310'
+$env:PROJECT_SERVICE_URL = 'http://127.0.0.1:4311'
+npm --workspace nextjs-boilerplate run dev -- --port 3101
+```
+
+Open `http://localhost:3101/register`; use only fixture email `frontend-slice5-20261012@agentforge.test` and a disposable test password. Create a page; refresh; request a targeted change; refresh/reopen an older version. A prompt containing `remove old` deletes the test component; `slow` delays the fixture response; `invalid output` produces a rejected change. Read `http://127.0.0.1:4312/__fixture` for safe prompt/base-version call evidence. Finish with:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:4312/__fixture/shutdown'
+```
+
+Stop the dedicated Next test server too. Do not use normal service `.env` database settings for this fixture. Runtime unit tests may print Node's informational module-detection warning. The dev server used fallback fonts when Google Fonts was unreachable; this did not break the flow. Expected console/network errors came from unauthenticated initial refresh and deliberately injected 502/503/aborted responses, not uncaught React errors.
+
+Remaining gaps: full automated browser suite/CI, large list/history pagination UI, browser cross-owner and auth-expiry matrix, legacy/malformed/deleted-link UI matrix, disabled-storage refresh recovery, real crashes/partitions, accessibility automation, provider quality/cost smoke, generated-code build/execution and deployment. Earlier backend owner/race tests remain historical evidence, not rerun claims for this frontend turn. M1 is not marked fully accepted until remaining mandatory browser cases are automated/proven.
+
 ## Slice 4 verification (2026-10-12)
 
 Current changes are scoped to `feature/project-service-revision-publication`. No other service application files or dependencies changed.

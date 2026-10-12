@@ -2,6 +2,12 @@
 
 The V1 target contract uses `/api/v1` and request IDs. These are future conventions, not guarantees of the current application. The implemented Project Service routes below use `/api/projects` and the existing `{ message }` error wrapper.
 
+## Frontend consumer — Slice 5 (2026-10-12)
+
+No server routes/contracts changed in this frontend slice. The Next workspace consumes the reads and follow-ups below through existing same-origin rewrites after session restoration. `/workspace?project=<id>&revision=<id>` stores selection IDs only; repeated/malformed IDs or a revision without a project show an invalid-link state. A project-only link loads its derived latest revision.
+
+The frontend owns a stable key/body for one generation, retains a created draft ID on generation failure, and preserves bounded pending intent in user/project-scoped sessionStorage across refresh. Uncertainty/transport errors retain that key; explicit retry replays it, status reads reconcile it, and confirmed failure/conflict permits a deliberate new attempt. Abandoning an intent is local, not server cancellation. Files/tokens are not stored there. GETs are abortable and stale selection responses are ignored; ready responses/legacy nullable metadata are validated at runtime. Committed POST output stays visible if later canonical metadata reload fails.
+
 ## Current Slice 4 — owned follow-ups and reliable publication (2026-10-12)
 
 This section supersedes the dated Slice 2/3 gates and publication limitations below. Authentication, normalized 10–1,000-character prompts, strict body fields and `Idempotency-Key` rules remain unchanged. There is no public `/api/v1`, queue or 202 response in this slice.

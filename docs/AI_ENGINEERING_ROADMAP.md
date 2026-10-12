@@ -6,9 +6,9 @@
 
 ## Implementation progress — 2026-10-12
 
-Slices 1–4 backend work is implemented. Slice 4 admits owned selected-base follow-ups, captures the actual head's next version, publishes through one immutable Revision insert, and replays saved output without another model call. Revisions store parent/prompt, complete files, A/M/D and manifest/model/usage provenance. A read-only generation-status endpoint recognizes committed revisions despite stale bookkeeping. See `08_TESTING_STRATEGY.md` for current verification and fault/race coverage. Provider quality, real process-kill recovery, browser restoration and generated-code execution are not claimed.
+Slices 1–4 backend work and Slice 5 frontend integration are implemented. The UI restores owned snapshots from URL/backend after session restoration, lists saved history, submits against the visible parent, and retains one request key across uncertainty. Real Auth/Project/Mongo plus deterministic AI fixture browser checks proved create → v1 → hard refresh → v2 → hard refresh → reopen v1, failure preservation, responsive in-flight state, stale-response isolation and recovery. See `08_TESTING_STRATEGY.md` for exact checks. No paid-provider quality, real process-kill recovery or generated-code execution is claimed.
 
-**Next small slice:** connect saved project/revision selection and stable-key follow-ups in the existing Next.js workspace, with truthful loading/empty/error states. Start a separate frontend branch after the Project Service branch is reviewed and merged, unless an explicitly agreed stacked-branch workflow is needed. M1 stays unfinished until create → reload → revise → reload is verified in the browser.
+**Next small slice:** review this loop and add a repeatable browser acceptance suite covering remaining pagination, cross-owner/auth-expiry and legacy/malformed-link scenarios. M1 is not marked fully complete: the core flow is browser-proven, but all mandatory acceptance cases are not yet automated. Frontend work uses the explicitly agreed stacked `feature/frontend-project-history` branch, based on `feature/project-service-revision-publication`; PR/merge remain separate explicit requests.
 
 ## Historical implementation progress — 2026-10-11
 
