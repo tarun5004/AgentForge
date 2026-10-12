@@ -1,5 +1,26 @@
 # AgentForge V1 — Testing Strategy
 
+## Repeatable malformed-link UI smoke (2026-10-12)
+
+Story: browser opens an invalid workspace selection → real Next page/query parsing → mocked session/list transport → disabled empty/error UI → New conversation → usable empty draft.
+
+From the repository root, with Next already running:
+
+```powershell
+npm run test:browser-links
+# Dedicated test port alternative:
+npm run test:browser-links -- -BaseUrl http://localhost:3102
+```
+
+Requires Windows PowerShell, standard Node.js/npm and Chrome available to pinned Playwright CLI `0.1.22`. No application/test-framework dependency or lockfile change. See the frontend README for setup, artifacts and server shutdown instructions.
+
+- **Executed:** 3/3 real-browser scenarios pass: malformed project ID, duplicate project query values, and revision without project. Every scenario verifies disabled prompt/submission, no generated/demo file tabs, error removal and empty-draft recovery through a fresh snapshot's New conversation button ref. A harmless draft enables Send; it is never submitted.
+- Refresh/list responses are **mocked** before navigation. All other `/api/**` calls abort and increment a failure counter; no unexpected calls or uncaught page errors occurred. Separate invalid/recovery counters require exactly three of each, preventing unexpected redirects from becoming false passes.
+- The external-URL guard was exercised with `https://example.com`: exit 1, before starting a browser or contacting that site. Browser assertion failures also exited 1 during development; each opened test session closed through `finally`.
+- Frontend tests 9/9, lint, production build and `git diff --check` passed. The final empty-editor screenshot was inspected under ignored `output/playwright/workspace-links-dc99cd9f.png`. The dedicated Next server and test browsers were stopped after verification.
+
+This is automated **mocked-transport UI** coverage, not real authentication/ownership, database persistence or provider evidence. No database, paid model request, credentials or `.env` edits were used. Real-service manual evidence remains separately documented below; backend suites were not rerun for this test-only slice. Remaining automation includes pagination, cross-owner/auth-expiry, legacy/deleted-link cases and the full real-service revision loop. M1 is not marked fully accepted.
+
 ## Review follow-up: safe fixture shutdown (2026-10-12)
 
 PR #2 review identified outdated dependency instructions and a cleanup-error path that skipped database disconnect. The small follow-up changes test tooling/docs only, not application services.

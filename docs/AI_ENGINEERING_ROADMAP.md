@@ -8,7 +8,9 @@
 
 Slices 1–4 backend work and Slice 5 frontend integration are implemented. The UI restores owned snapshots from URL/backend after session restoration, lists saved history, submits against the visible parent, and retains one request key across uncertainty. Real Auth/Project/Mongo plus deterministic AI fixture browser checks proved create → v1 → hard refresh → v2 → hard refresh → reopen v1, failure preservation, responsive in-flight state, stale-response isolation and recovery. See `08_TESTING_STRATEGY.md` for exact checks. No paid-provider quality, real process-kill recovery or generated-code execution is claimed.
 
-**Next small slice:** review this loop and add a repeatable browser acceptance suite covering remaining pagination, cross-owner/auth-expiry and legacy/malformed-link scenarios. M1 is not marked fully complete: the core flow is browser-proven, but all mandatory acceptance cases are not yet automated. Frontend work uses the explicitly agreed stacked `feature/frontend-project-history` branch, based on `feature/project-service-revision-publication`; PR/merge remain separate explicit requests.
+**Repeatable browser checks:** `npm run test:browser-links` now covers malformed workspace URLs and empty-draft recovery using mocked API transport. It does not replace the real-service checks above or prove database/auth/provider behavior.
+
+**Next small slice:** extend browser coverage to pagination, cross-owner/auth-expiry and legacy/deleted-link scenarios. M1 is not marked fully complete: the core flow is browser-proven, but all mandatory acceptance cases are not yet automated. Backend PR #1 and frontend PR #2 are merged into `main`; this small browser-tooling slice uses `test/frontend-workspace-link-smoke` from updated `main`. Commit/push/PR/merge remain separate explicit requests.
 
 ## Historical implementation progress — 2026-10-11
 
