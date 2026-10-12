@@ -22,6 +22,7 @@
     "build:web": "npm --workspace nextjs-boilerplate run build",
     "test:fixture-cleanup": "node --experimental-strip-types --test tests/fixture-cleanup.test.mts",
     "test:browser-links": "powershell -NoProfile -File scripts/verify-workspace-links.ps1",
-    "test:browser-history": "powershell -NoProfile -File scripts/verify-workspace-links.ps1 -Suite history"
+    "test:browser-history": "powershell -NoProfile -File scripts/verify-workspace-links.ps1 -Suite history",
+    "test:browser-access": "powershell -NoProfile -File scripts/verify-workspace-links.ps1 -Suite access"
   }
 }

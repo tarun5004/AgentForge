@@ -1,5 +1,25 @@
 # AgentForge V1 — Testing Strategy
 
+## Legacy, saved drafts and unavailable selections (2026-10-12)
+
+PR #3 was confirmed merged at `f15936e`; this test-only slice starts from updated `main` on `test/frontend-workspace-access-legacy`. Story: real Next/React selection reads → mocked legacy/draft/not-found API responses → truthful code/metadata or disabled empty/error UI → explicit read retry → New conversation recovery.
+
+```powershell
+# Repository root, with Next already running:
+npm run test:browser-access
+# Dedicated test port alternative:
+npm run test:browser-access -- -BaseUrl http://localhost:3102
+```
+
+- **Executed 4/4 scenarios, 8 checkpoints:** legacy snapshot, saved draft, unavailable project, unavailable revision. Legacy code loads without invented A/M badges; model/usage, parent, producing prompt, validation and change metadata remain labelled unknown. Drafts show no generated/demo tabs and accept an unsent prompt.
+- Project/revision `404` responses disable generation and display no files. Retry issues another read against the same scoped IDs; counters are checked after DOM readiness and compared with the last recorded read, allowing development-mode aborted reads without falsely accepting a stale error. New conversation clears each error and restores an empty usable draft. All writes/unknown API paths are blocked; no unexpected calls or uncaught page errors occurred.
+- Shared-runner regression checks were rerun: malformed links 3/3 and history/pagination/session rejection 3/3. Total this turn: **10 browser scenarios**, frontend unit tests 9/9, lint, production build, snippet/PowerShell syntax and diff checks passed. Application/service code and dependencies are unchanged.
+- Legacy and not-found screenshots `output/playwright/workspace-access-f144e36e-legacy.png` and `workspace-access-f144e36e-project404.png` were inspected. Scenario/recovery artifacts remain ignored. Test browser sessions and the dedicated Next server were closed after verification; unrelated `.github/` work was preserved.
+
+**Evidence boundary:** every API response is mocked before navigation. The generic unavailable response represents missing/deleted/foreign resources without distinguishing them; this verifies frontend handling, not real cross-owner authorization or an implemented deletion API. No normal/dedicated database was accessed, no paid provider called, no credentials or `.env` changed. Backend integration suites were not rerun. Next is automated real Auth/Project/Mongo revision-loop coverage with deterministic AI transport; broader auth-expiry/storage/crash cases remain, so M1 is not marked fully accepted. Setup and all three commands are in the frontend README.
+
+**Delivery recheck — 2026-10-13:** access scenarios 4/4, frontend unit tests 9/9, lint, production build, snippet/PowerShell syntax and diff checks passed again before the requested commit/push. The other two browser suites' 6 passing scenarios above are 2026-10-12 evidence, not rerun claims for this delivery turn. The test browser/server were stopped; unrelated `.github/` work remains excluded. Real-service automation has not started and awaits this slice's PR merge.
+
 ## Pagination and protected-401 recovery (2026-10-12)
 
 Story: real Next/React UI → load-more buttons → mocked cursor pages → deduplicated ordered lists → one protected `401` → cached identity cleared → login, without bouncing back.
