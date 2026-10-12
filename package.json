@@ -19,6 +19,7 @@
     "build:project": "npm --workspace project-service run build",
     "build:ai": "npm --workspace ai-orchestrator-service run build",
     "build:execution": "npm --workspace execution-service run build",
-    "build:web": "npm --workspace nextjs-boilerplate run build"
+    "build:web": "npm --workspace nextjs-boilerplate run build",
+    "test:fixture-cleanup": "node --experimental-strip-types --test tests/fixture-cleanup.test.mts"
   }
 }

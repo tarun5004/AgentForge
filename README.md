@@ -16,18 +16,20 @@ The Next.js workspace currently provides:
 - in-memory access token handling and HttpOnly refresh-cookie sessions
 - session restoration, protected workspace access, and logout
 - Cursor-inspired dark developer interface
-- chat history, local prompt composer, and Markdown response rendering
+- paginated saved projects, revision history, and a controlled prompt composer
 - authenticated prompt submission that creates a persisted draft project
 - AI generation progress, success, failure, file-count, model, and token feedback
-- successful AI-generated files replace the editor's demo files immediately
+- committed AI-generated files appear in the editor and restore from the backend after refresh
 - selectable code tabs with line numbers
 - Terminal and Problems panels
-- changed-files list and sample agent plan
+- truthful added/modified/deleted changes; unchanged files have no fabricated badge
+- targeted follow-up prompts against the visible selected revision, including historical bases
+- same-key retry/status recovery for unconfirmed attempts, without silently creating another project
 - mouse and keyboard accessible resizable panels on desktop
 - stacked layout on smaller screens
 - explicit local-demo labels wherever backend behavior is not connected
 
-The initial sample files, tasks, and terminal output live in `workspace-data.ts` and remain clearly demo-only. After a successful generation, the returned revision files replace the sample editor tabs for the current browser session.
+Optional sample assets remain in `workspace-data.ts`, but the editor never falls back to them. No selection, saved drafts, loading and failed loads have explicit states. Terminal output is labelled as an unconnected sample; generated projects are not executed by this UI.
 
 The authentication forms validate input and call the Auth Service through the same-origin proxy. The short-lived access token stays only in React memory, while the refresh token stays in an HttpOnly cookie. Reloading the page restores the session through `/api/auth/refresh`, and unauthenticated workspace visits return to `/login`.
 
@@ -52,7 +54,9 @@ Owner-scoped project/revision reads and safe initial-generation replay are imple
 
 Public follow-up generation is now available in the **backend API**: submit a change prompt and an owned `baseRevisionId`. Historical parents are allowed; the new version follows the actual latest saved revision. One immutable Revision insert publishes the result, while unique indexes prevent competing attempts from silently overwriting history. Saved-result replay can retry publication without another AI call; a read-only owned generation-status endpoint reports uncertain attempts.
 
-The frontend still shows generated files for the current session; backend history APIs do not yet mean browser history restoration or follow-up submission works. Static manifest validation does not prove generated code builds or runs. See [the current history plan](docs/PROJECT_HISTORY_REVISION_PLAN.md) and [verified test results](docs/08_TESTING_STRATEGY.md) for exact progress and limits. Future changes use [service-scoped feature branches](docs/GIT_WORKFLOW.md); PR creation and merging are separate explicit steps.
+Slice 5 connects these contracts in the Next.js UI: `/workspace?project=<id>&revision=<id>` restores owned persisted files after session restoration. The sidebar opens saved projects and older revisions, and a prompt in an open revision creates a follow-up rather than a new project. Request state survives responsive panel remounts; obsolete GETs are aborted/ignored. A small user/project-scoped sessionStorage entry retains pending request identity only, never files or access tokens; retries reuse the exact key/prompt/base. Abandoning an attempt is an explicit local action, not server cancellation.
+
+Real Auth/Project/Mongo browser checks used a deterministic AI transport fixture, not a paid provider. Static manifest validation still does not prove generated code builds or runs. See [the current history plan](docs/PROJECT_HISTORY_REVISION_PLAN.md) and [verified test results](docs/08_TESTING_STRATEGY.md) for exact progress and limits. Future changes use [service-scoped feature branches](docs/GIT_WORKFLOW.md); commits, PR creation and merging require explicit requests.
 
 ## Workspace layout
 
@@ -108,7 +112,7 @@ nextjs-boilerplate/
 
 - **Next.js + React + TypeScript:** frontend and component state
 - **Tailwind CSS:** compact responsive styling
-- **react-markdown + remark-gfm:** safe Markdown and GitHub-flavored Markdown rendering
+- **react-markdown + remark-gfm:** retained Markdown helper; saved revision history currently renders plain text
 - **react-resizable-panels:** constrained, keyboard-accessible IDE panel resizing
 - **Lucide React:** consistent lightweight icons
 - **Express + TypeScript:** backend services
@@ -190,10 +194,11 @@ npm --workspace execution-service run typecheck
 4. **Complete:** create authenticated draft projects from the workspace and persist them in MongoDB.
 5. **Complete:** send a saved prompt through Project Service to the AI Orchestrator and persist a validated revision.
 6. **Complete:** display a successful generation's real files in the workspace editor.
-7. **Next:** reload saved revision files after a browser refresh.
-8. Add Execution Service runs and status tracking.
-9. Add BullMQ/Redis for background work.
-10. Add restricted Kubernetes build and preview workloads.
+7. **Implemented:** reopen saved projects/revisions, restore after refresh, and submit targeted follow-ups. Deterministic browser checks passed; a complete repeatable CI browser suite remains future work.
+8. **Next:** review the history loop and close remaining automated browser acceptance gaps before starting execution work.
+9. Add Execution Service runs and status tracking after bounded generated-code validation/isolation design.
+10. Add BullMQ/Redis for background work.
+11. Add restricted Kubernetes build and preview workloads.
 
 This order keeps every stage runnable and explainable instead of introducing the full distributed architecture at once.
 

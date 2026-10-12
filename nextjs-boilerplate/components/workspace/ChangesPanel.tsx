@@ -1,70 +1,35 @@
 "use client";
 
-import { Check, Circle, FileCode2 } from "lucide-react";
-
-import { agentTasks, type WorkspaceFile } from "./workspace-data";
+import { FileCode2 } from "lucide-react";
+import type { FileChange } from "@/lib/project-api";
+import type { WorkspaceFile } from "./workspace-data";
 
 type ChangesPanelProps = {
-  activeFile: WorkspaceFile;
-  files: WorkspaceFile[];
+  activeFile: WorkspaceFile | undefined;
+  changes: FileChange[] | null;
   onFileSelect: (path: string) => void;
 };
 
-export function ChangesPanel({ activeFile, files, onFileSelect }: ChangesPanelProps) {
+// Deleted paths have no current content, so they are labels rather than selectable file tabs.
+export function ChangesPanel({ activeFile, changes, onFileSelect }: ChangesPanelProps) {
   return (
     <aside className="flex h-full min-h-0 flex-col bg-[#161617]">
       <header className="border-b border-[#2b2b2e] px-4 py-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xs font-medium text-[#dedee0]">Changes</h2>
-          <span className="rounded-full bg-[#29292c] px-2 py-0.5 text-[10px] text-[#9b9ba0]">
-            {files.length}
-          </span>
-        </div>
-        <p className="mt-1 text-[10px] text-[#6f6f74]">Workspace files</p>
+        <h2 className="text-xs font-medium text-[#dedee0]">Changes {changes ? `(${changes.length})` : ""}</h2>
+        <p className="mt-1 text-[10px] text-[#99999e]">Recorded changes for the selected revision</p>
       </header>
-
-      <div className="border-b border-[#2b2b2e] p-2">
-        {files.map((file) => (
-          <button
-            key={file.path}
-            type="button"
-            onClick={() => onFileSelect(file.path)}
-            className={`flex w-full items-center gap-2 rounded px-2 py-2 text-left text-[11px] ${
-              activeFile.path === file.path
-                ? "bg-[#29292c] text-[#ededee]"
-                : "text-[#a0a0a5] hover:bg-[#222224]"
-            }`}
-          >
-            <FileCode2 size={13} className="text-[#79b8ff]" />
-            <span className="min-w-0 flex-1 truncate">{file.path}</span>
-            <span className={file.status === "A" ? "text-[#73c991]" : "text-[#cca700]"}>
-              {file.status}
-            </span>
-          </button>
-        ))}
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        {changes === null && <p className="p-2 text-xs text-[#99999e]">Change metadata unavailable.</p>}
+        {changes?.length === 0 && <p className="p-2 text-xs text-[#99999e]">No recorded file changes.</p>}
+        {changes?.map((change) => {
+          const content = <><FileCode2 size={13} className="shrink-0 text-[#79b8ff]" /><span className="min-w-0 flex-1 truncate">{change.path}</span><span className={change.status === "D" ? "text-[#ffaaaa]" : change.status === "A" ? "text-[#73c991]" : "text-[#e8ce87]"}>{change.status}</span></>;
+          const style = `flex w-full items-center gap-2 rounded px-2 py-2 text-left text-[11px] ${activeFile?.path === change.path ? "bg-[#29292c] text-[#ededee]" : "text-[#a0a0a5]"}`;
+          return change.status === "D"
+            ? <div key={change.path} className={style} title="Deleted from this snapshot">{content}</div>
+            : <button key={change.path} type="button" onClick={() => onFileSelect(change.path)} className={`${style} hover:bg-[#222224]`}>{content}</button>;
+        })}
       </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xs font-medium text-[#dedee0]">Agent plan</h2>
-          <span className="text-[10px] text-[#6f6f74]">Sample</span>
-        </div>
-
-        <div className="mt-4 space-y-3">
-          {agentTasks.map((task) => (
-            <div key={task.label} className="flex items-center gap-2.5 text-[11px] text-[#a0a0a5]">
-              <span className="grid size-4 place-items-center">
-                {task.done ? (
-                  <Check size={13} className="text-[#73c991]" />
-                ) : (
-                  <Circle size={11} className="text-[#5d5d62]" />
-                )}
-              </span>
-              {task.label}
-            </div>
-          ))}
-        </div>
-      </div>
+      <p className="border-t border-[#2b2b2e] p-4 text-[11px] text-[#99999e]">Manifest checks do not verify imports, builds or execution. Preview is not connected yet.</p>
     </aside>
   );
 }

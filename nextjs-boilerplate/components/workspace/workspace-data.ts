@@ -1,4 +1,4 @@
-import type { GeneratedFile } from "@/lib/project-api";
+import type { FileChange, GeneratedFile } from "@/lib/project-api";
 
 // Keeping demo content outside the UI components makes it easy to replace
 // this data with real backend responses later.
@@ -7,7 +7,7 @@ export type WorkspaceFile = {
   name: string;
   path: string;
   language: string;
-  status: "A" | "M";
+  status: "A" | "M" | null;
   content: string;
 };
 
@@ -19,15 +19,17 @@ const languageByExtension: Record<string, string> = {
   tsx: "TSX",
 };
 
-export function createWorkspaceFiles(files: GeneratedFile[]): WorkspaceFile[] {
+// Preserve unchanged/legacy files without inventing an added/modified badge.
+export function createWorkspaceFiles(files: GeneratedFile[], changes: FileChange[] | null = null): WorkspaceFile[] {
   return files.map((file) => {
     const extension = file.path.split(".").pop()?.toLowerCase() ?? "";
+    const change = changes?.find((item) => item.path === file.path);
 
     return {
       name: file.path.split("/").pop() ?? file.path,
       path: file.path,
       language: languageByExtension[extension] ?? "Text",
-      status: "A",
+      status: change?.status === "A" || change?.status === "M" ? change.status : null,
       content: file.content,
     };
   });

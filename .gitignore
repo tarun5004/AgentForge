@@ -8,6 +8,8 @@ node_modules/
 dist/
 build/
 coverage/
+.playwright-cli/
+output/playwright/
 DS_Store
 .npm_cache
 secrets.yml
