@@ -1,0 +1,98 @@
+param([string]$BaseUrl = 'http://localhost:3102')
+
+$ErrorActionPreference = 'Stop'
+$sessionName = 'workspace-real-' + [Guid]::NewGuid().ToString('N').Substring(0, 8)
+$opened = $false
+$failed = $false
+
+# Fail on assertion errors, not just on a successful invocation of the CLI executable.
+function Invoke-RealBrowser {
+    param([string[]]$Arguments)
+    $output = & $nodeCommand $npxEntry --yes --package '@playwright/cli@0.1.22' playwright-cli "-s=$sessionName" @Arguments 2>&1
+    if ($LASTEXITCODE -ne 0 -or ($output -join "`n") -match '### Error') {
+        $output | Where-Object { "$_" -match '^(Error|TimeoutError):' } | ForEach-Object { [Console]::Error.WriteLine("$_") }
+        throw "Real browser command failed: $($Arguments[0])"
+    }
+}
+
+# Fresh refs avoid clicking the wrong controls after a reload or revision switch.
+function Use-RealControl {
+    param([string]$Role, [string]$Name, [string]$Value = '')
+    Invoke-RealBrowser @('snapshot', "--filename=$snapshotPath")
+    $snapshot = Get-Content -LiteralPath $snapshotPath -Raw
+    $match = [regex]::Match($snapshot, $Role + ' "' + [regex]::Escape($Name) + '"[^\r\n]*?\[ref=([a-z0-9]+)\]')
+    if (-not $match.Success) { throw "Control missing: $Name" }
+    if ($Role -eq 'textbox') { Invoke-RealBrowser @('fill', $match.Groups[1].Value, $Value) }
+    else { Invoke-RealBrowser @('click', $match.Groups[1].Value) }
+}
+
+# Read-only unauthorized probes verify rewrites before any registration or generation writes.
+function Read-FixtureMarker {
+    param([string]$Path)
+    try { return (Invoke-WebRequest "$BaseUrl$Path" -UseBasicParsing -MaximumRedirection 0 -TimeoutSec 10).Headers['x-agentforge-test-fixture'] }
+    catch {
+        if ($_.Exception.Response) { return $_.Exception.Response.Headers['x-agentforge-test-fixture'] }
+        throw 'Test API probe unavailable.'
+    }
+}
+
+try {
+    $address = [Uri]$BaseUrl
+    if (-not $address.IsAbsoluteUri -or $address.Scheme -ne 'http' -or $address.Host -notin @('localhost', '127.0.0.1') -or
+        $address.UserInfo -or $address.AbsolutePath -ne '/' -or $address.Query -or $address.Fragment) { throw 'Only a local HTTP origin is allowed.' }
+    $BaseUrl = $address.GetLeftPart([UriPartial]::Authority)
+    $fixture = Invoke-RestMethod 'http://127.0.0.1:4312/__fixture' -TimeoutSec 10
+    if ($fixture.fixtureId -ne 'agentforge-real-revision-loop-v1' -or $fixture.databaseName -notmatch '^agentforge_test_' -or
+        $fixture.aiRequests.Count -ne 0 -or ($fixture.counts.PSObject.Properties.Value | Where-Object { $_ -ne 0 })) { throw 'Expected a fresh, empty dedicated browser fixture.' }
+    if ((Read-FixtureMarker '/api/auth/me') -ne $fixture.fixtureId -or (Read-FixtureMarker '/api/projects') -ne $fixture.fixtureId) {
+        throw 'Next rewrites do not point at the isolated Auth/Project fixture. Refusing writes.'
+    }
+    $nodeCommand = (Get-Command node.exe).Source
+    $npxEntry = Join-Path (Split-Path (Get-Command npx.cmd).Source) 'node_modules/npm/bin/npx-cli.js'
+    $null = New-Item -ItemType Directory -Force -Path 'output/playwright'
+    $snapshotPath = "output/playwright/$sessionName.yml"
+    Invoke-RealBrowser @('open')
+    $opened = $true
+    Invoke-RealBrowser @('resize', '1440', '1000')
+    Invoke-RealBrowser @('run-code', '--filename=scripts/workspace-real.browser.js')
+    Invoke-RealBrowser @('goto', "$BaseUrl/register")
+    Use-RealControl 'textbox' 'Name' 'Revision loop owner'
+    Use-RealControl 'textbox' 'Email' 'frontend-slice5-20261012@agentforge.test'
+    Use-RealControl 'textbox' 'Password' 'Disposable-test-password-13'
+    Use-RealControl 'button' 'Create account'
+    Invoke-RealBrowser @('run-code', "async page => { await page.getByRole('textbox', { name: 'Describe a frontend page or change' }).fill('Build a simple portfolio page for my CV'); }")
+    Use-RealControl 'button' 'Send prompt'
+    Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v1', { exact: true }).waitFor(); }")
+    Use-RealControl 'button' 'page.tsx A'
+    Invoke-RealBrowser @('run-code', '--filename=scripts/workspace-real.browser.js')
+    Write-Host 'PASS initial generation committed as v1.'
+    Invoke-RealBrowser @('reload')
+    Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v1', { exact: true }).waitFor(); }")
+    Use-RealControl 'button' 'page.tsx A'
+    Invoke-RealBrowser @('run-code', '--filename=scripts/workspace-real.browser.js')
+    Write-Host 'PASS hard refresh restored real session and v1.'
+    Use-RealControl 'textbox' 'Describe a frontend page or change' 'Make the hero darker and remove old component'
+    Use-RealControl 'button' 'Send prompt'
+    Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v2', { exact: true }).waitFor(); }")
+    Use-RealControl 'button' 'page.tsx M'
+    Invoke-RealBrowser @('run-code', '--filename=scripts/workspace-real.browser.js')
+    Write-Host 'PASS follow-up parent, complete snapshots and explicit deletion.'
+    Invoke-RealBrowser @('reload')
+    Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v2', { exact: true }).waitFor(); }")
+    Use-RealControl 'button' 'page.tsx M'
+    Invoke-RealBrowser @('run-code', '--filename=scripts/workspace-real.browser.js')
+    Write-Host 'PASS hard refresh restored v2.'
+    Use-RealControl 'button' 'v1 Build a simple portfolio page for my CV Initial saved portfolio snapshot'
+    Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v1', { exact: true }).waitFor(); }")
+    Use-RealControl 'button' 'page.tsx A'
+    Invoke-RealBrowser @('run-code', '--filename=scripts/workspace-real.browser.js')
+    Invoke-RealBrowser @('screenshot', "--filename=output/playwright/$sessionName.png", '--full-page')
+    Write-Host 'PASS immutable v1 reopen, same-key replay and real second-owner 404s.'
+    Write-Host 'PASS 5/5 real-service checkpoints. Only AI transport is a fixture; generated code was not executed.'
+} catch { $failed = $true; [Console]::Error.WriteLine($_.Exception.Message) }
+finally {
+    if ($opened) {
+        try { Invoke-RealBrowser @('close') } catch { $failed = $true; [Console]::Error.WriteLine('Test browser cleanup failed.') }
+    }
+}
+if ($failed) { exit 1 }

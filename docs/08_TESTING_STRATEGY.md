@@ -1,5 +1,21 @@
 # AgentForge V1 — Testing Strategy
 
+## Repeatable real-service revision loop (2026-10-13)
+
+Story: browser registration → Next rewrites → real Auth session and Project API → MongoDB revisions → deterministic AI HTTP fixture → hard refresh/reopen. The AI SDK/provider is not exercised; browser/API/database persistence is real, with no transport interception or React-state injection.
+
+From merged `main` (`f15936e`, PR #3), the independent `test/frontend-real-revision-loop` slice adds `npm run fixture:browser` and `npm run test:browser-real`. It does not include or depend on the separate access/legacy branch. Reproduction, dedicated ports, process-only environment overrides and mandatory fixture shutdown instructions are in `nextjs-boilerplate/README.md`.
+
+- **Executed:** 5/5 ordered browser checkpoints passed: initial v1, hard-refresh session/v1 restoration, follow-up v2, hard-refresh v2 restoration and historical v1 reopening. The selected URL and displayed source match each revision.
+- Actual Project API reads compare complete snapshots with committed responses, prove v1 immutability and v2's v1 parent, preserve unchanged CSS and verify explicit `components/Old.tsx` deletion. The same key/body replays the same v2 revision. A second real account sees an empty project list and receives 404 for the first owner's project/revision; these second-owner checks are HTTP assertions inside the runner, not an interactive second browser login.
+- A read-only preflight confirmed zero records in `agentforge_test_real_loop_20261013`. After the scenario, counts were users 2 / projects 1 / revisions 2 / generations 2. The fixture recorded exactly two AI requests; the follow-up received base version 1 with all three initial files matching exactly. Refresh, reads and replay did not call AI again.
+- Rerunning against the non-fresh fixture exited 1 before browser startup/writes. Loopback/database guards and identity-header probes through both rewrites reduce accidental normal-service writes; they do not defend against a malicious localhost impersonator.
+- Fixture-cleanup unit tests passed 4/4; frontend unit tests 9/9, lint and production build passed. Auth and Project builds, JavaScript/PowerShell syntax and diff checks passed. Existing backend integration and mocked browser suites were not rerun for this test-only slice.
+- The final screenshot `output/playwright/workspace-real-87f10b79.png` was inspected: v1 source/three files are visible with latest-v2 history and honest unconnected-terminal labels. Unauthorized probes returned 401, owned reads 200, replay 201 and foreign reads 404. Tokens/cookies and database credentials are not printed by assertions.
+- Scoped fixture shutdown exited 0 and reported all four collection counts zero; an independent read-only Mongo probe confirmed them. Collections/indexes were retained, not dropped. The runner closed its own browser; the manually started dedicated Next server was stopped separately. Always request fixture shutdown even after a failed test, and investigate unknown records instead of deleting broadly.
+
+No production application/auth/schema, `.env`, dependency or lockfile changes. Remaining work includes real-service failure preservation/lost-response automation, broader auth/storage/race/crash cases, provider quality/cost and generated-code build/execution/deployment. M1 is not marked fully accepted.
+
 ## Pagination and protected-401 recovery (2026-10-12)
 
 Story: real Next/React UI → load-more buttons → mocked cursor pages → deduplicated ordered lists → one protected `401` → cached identity cleared → login, without bouncing back.

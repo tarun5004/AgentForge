@@ -88,3 +88,38 @@ npm run test:browser-history -- -BaseUrl http://localhost:3102
 This uses the same Windows runner with `-Suite history` and `scripts/workspace-history.browser.js`. It checks project load-more, revision load-more and protected-401 login recovery through five ordered UI checkpoints. Cursor requests are checked exactly; deliberately overlapping mock pages must not duplicate rows, and exhausted pagination controls disappear. The expiry case must leave the workspace, stay on login and make exactly one rejected protected read, rather than retry/bounce.
 
 The real Next/React UI runs, but **every API response is mocked**; unexpected calls and all writes are blocked. No real JWT expiry, ownership enforcement, cookie rotation, MongoDB pagination or provider is verified here. Do not edit app files during these browser checks: dev Fast Refresh can reload the page and reset UI state mid-scenario. Run both smoke commands after changing the shared runner or auth/workspace state.
+
+### Real-service revision-loop check (Windows)
+
+This check uses real Next, Auth, Project and MongoDB persistence. Only the AI Orchestrator HTTP boundary is replaced with deterministic test output: no paid model request or generated-code execution. Requires Windows PowerShell, Node/npm, local MongoDB and Chrome available to Playwright CLI.
+
+Use three terminals, starting at the repository root. Ports 4310, 4311, 4312 and 3102 must be free. The database below must be dedicated to tests and empty; never substitute the normal service database.
+
+```powershell
+# Terminal 1: isolated Auth/Project services and AI transport fixture
+$env:AGENTFORGE_TEST_MONGODB_URI='mongodb://127.0.0.1:27017/agentforge_test_real_loop_local'
+npm run fixture:browser
+
+# Terminal 2: process-only test rewrites; no .env edits
+$env:AUTH_SERVICE_URL='http://127.0.0.1:4310'
+$env:PROJECT_SERVICE_URL='http://127.0.0.1:4311'
+cd nextjs-boilerplate
+node ../node_modules/next/dist/bin/next dev --port 3102
+
+# Terminal 3: repository root
+npm run test:browser-real
+```
+
+The fixture rejects remote/credentialed/option-bearing URIs, names without the `agentforge_test_` prefix and nonempty collections before importing application models. The browser runner checks fresh fixture counts and identity headers through both Next rewrites before writes. These are accidental-misconfiguration guards, not authentication against a malicious localhost process.
+
+Five checkpoints cover register/create/v1 → hard refresh → follow-up v2 with deletion → hard refresh → reopen v1. Actual API reads check parent linkage, immutable snapshots, preserved CSS, explicit deletion, same-key replay without another AI call, and a second real owner's empty list/404 reads. Tokens remain private to the runner; there is no API interception or React-state injection. The second owner's assertions use real HTTP inside the runner, not a second interactive browser login.
+
+Always shut down the fixture from Terminal 3, **even if the browser command fails**:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:4312/__fixture/shutdown
+```
+
+Wait for Terminal 1 to exit successfully with zero user/project/revision/generation counts, then stop only the dedicated Next server in Terminal 2 with Ctrl+C. Cleanup removes the two allowlisted fixture accounts and their owned records; collections/indexes remain. Unknown records are preserved and cause a cleanup failure: investigate rather than broadly deleting the database. The browser runner closes its own session, but does not own the manually started servers. Restart a clean fixture before each run; a non-fresh rerun is rejected before opening a browser.
+
+Snapshots/screenshots remain in ignored `output/playwright/` and `.playwright-cli/`. Pinned Playwright CLI is reused without a new application dependency. This does not verify the real AI SDK/provider, generated-project builds/execution, all failure/crash cases or deployment. Exact dated results are in the root testing strategy.
