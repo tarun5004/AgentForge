@@ -1,5 +1,16 @@
 # AgentForge V1 — Testing Strategy
 
+## Review follow-up: safe fixture shutdown (2026-10-12)
+
+PR #2 review identified outdated dependency instructions and a cleanup-error path that skipped database disconnect. The small follow-up changes test tooling/docs only, not application services.
+
+- `npm run test:fixture-cleanup`: 4/4 tests pass for normal cleanup, cleanup failure, disconnect failure and combined failures with sanitized logging. `finally` attempts disconnect on every cleanup outcome; failure returns a nonzero exit status rather than an unhandled rejection.
+- A failure-path child process exited with status 1. A real fixture start/shutdown against an initially empty dedicated database exited 0 and reported zero remaining records. No unconditional `process.exit()` is needed on the tested normal path: closing HTTP servers and disconnecting Mongo allows natural exit without truncating output.
+- Existing frontend checks were rerun before merge: 9/9 tests, lint and production build passed. Project's real HTTP/Mongo regression suite passed 40/40 on the explicit `agentforge_test_merge_20261012` database.
+- Separate read-only probes confirmed zero remaining users/projects/revisions/generations in both `agentforge_test_merge_20261012` and `agentforge_test_cleanup_20261012`. Normal databases were not used; no database was dropped or deletion filter widened.
+
+The helper tests use callbacks, not a real database outage. Active-connection hangs/real network partitions and the broader repeatable browser acceptance suite remain unverified. Cleanup error messages intentionally omit raw database errors/credentials. Git instructions now identify backend PR #1 as merged and frontend PR #2 as targeting `main`.
+
 ## Slice 5 frontend verification (2026-10-12)
 
 Branch: `feature/frontend-project-history`, explicitly stacked on `feature/project-service-revision-publication`. No backend application code changed; no runtime/dev dependency was added. Commit/push delivery was subsequently explicitly requested; PR/merge remain separate actions. Repository instruction changes are delivered separately; unrelated user `.github/` work is preserved.

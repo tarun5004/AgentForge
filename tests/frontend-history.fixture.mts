@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { once } from "node:events";
 import mongoose from "mongoose";
+import { finishFixtureCleanup } from "./fixture-cleanup.mts";
 
 // Run this ESM fixture with tsx; never fall back to .env or a normal application database.
 const uri = process.env.AGENTFORGE_TEST_MONGODB_URI;
@@ -75,19 +76,22 @@ let stopping = false;
 async function shutdown() {
   if (stopping) return;
   stopping = true;
-  await Promise.all([aiServer, authServer, projectServer].map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
-  const users = await db.collection("users").find({ email: fixtureEmail }, { projection: { _id: 1 } }).toArray();
-  const ownerIds = users.map((user) => user._id.toString());
-  const projects = await db.collection("projects").find({ ownerId: { $in: ownerIds } }, { projection: { _id: 1 } }).toArray();
-  const projectIds = projects.map((project) => project._id);
-  await db.collection("revisions").deleteMany({ projectId: { $in: projectIds } });
-  await db.collection("generations").deleteMany({ projectId: { $in: projectIds } });
-  await db.collection("projects").deleteMany({ _id: { $in: projectIds } });
-  await db.collection("users").deleteMany({ _id: { $in: users.map((user) => user._id) } });
-  const counts: Record<string, number> = {};
-  for (const name of ["users", "projects", "revisions", "generations"]) counts[name] = await db.collection(name).countDocuments({});
-  console.info(JSON.stringify({ fixtureCleanup: counts }));
-  await mongoose.disconnect();
+  process.exitCode = await finishFixtureCleanup(async () => {
+    await Promise.all([aiServer, authServer, projectServer].map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
+    const users = await db.collection("users").find({ email: fixtureEmail }, { projection: { _id: 1 } }).toArray();
+    const ownerIds = users.map((user) => user._id.toString());
+    const projects = await db.collection("projects").find({ ownerId: { $in: ownerIds } }, { projection: { _id: 1 } }).toArray();
+    const projectIds = projects.map((project) => project._id);
+    await db.collection("revisions").deleteMany({ projectId: { $in: projectIds } });
+    await db.collection("generations").deleteMany({ projectId: { $in: projectIds } });
+    await db.collection("projects").deleteMany({ _id: { $in: projectIds } });
+    await db.collection("users").deleteMany({ _id: { $in: users.map((user) => user._id) } });
+    const counts: Record<string, number> = {};
+    for (const name of ["users", "projects", "revisions", "generations"]) counts[name] = await db.collection(name).countDocuments({});
+    console.info(JSON.stringify({ fixtureCleanup: counts }));
+    // Never widen deletion filters to remove someone else's unexpected records.
+    if (Object.values(counts).some((count) => count !== 0)) throw new Error("Fixture data remains after scoped cleanup.");
+  }, () => mongoose.disconnect());
 }
 process.on("SIGINT", () => void shutdown());
 process.on("SIGTERM", () => void shutdown());
