@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useState,
@@ -24,6 +25,7 @@ type AuthContextValue = {
   login: (input: { email: string; password: string }) => Promise<void>;
   register: (input: { name: string; email: string; password: string }) => Promise<void>;
   logout: () => Promise<void>;
+  invalidateSession: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -32,6 +34,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isCheckingSession, setIsCheckingSession] = useState(true);
+
+  // A rejected token must also clear identity, or the login page redirects straight back.
+  // Keep this callback stable because workspace fetch effects depend on it.
+  const invalidateSession = useCallback(() => {
+    setUser(null);
+    setAccessToken(null);
+  }, []);
 
   function saveSession(session: AuthSession) {
     setUser(session.user);
@@ -80,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, accessToken, isCheckingSession, login, register, logout }}
+      value={{ user, accessToken, isCheckingSession, login, register, logout, invalidateSession }}
     >
       {children}
     </AuthContext.Provider>

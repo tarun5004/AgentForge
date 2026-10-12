@@ -1,7 +1,10 @@
-param([string]$BaseUrl = 'http://localhost:3001')
+param(
+    [string]$BaseUrl = 'http://localhost:3001',
+    [ValidateSet('links', 'history')][string]$Suite = 'links'
+)
 
 $ErrorActionPreference = 'Stop'
-$sessionName = 'workspace-links-' + [Guid]::NewGuid().ToString('N').Substring(0, 8)
+$sessionName = "workspace-$Suite-" + [Guid]::NewGuid().ToString('N').Substring(0, 8)
 $browserOpened = $false
 $failed = $false
 
@@ -14,6 +17,16 @@ function Invoke-BrowserCommand {
         $output | Where-Object { "$_" -match '^(Error|SyntaxError|TimeoutError):' } | ForEach-Object { [Console]::Error.WriteLine("$_") }
         throw "Browser command failed: $($CliArguments[0]). Inspect .playwright-cli/ artifacts for details."
     }
+}
+
+# Read a new snapshot for each click because navigation can replace element refs.
+function Click-WorkspaceButton {
+    param([string]$Name)
+    Invoke-BrowserCommand @('snapshot', "--filename=$snapshotPath")
+    $snapshot = Get-Content -LiteralPath $snapshotPath -Raw
+    $buttonMatch = [regex]::Match($snapshot, 'button "' + [regex]::Escape($Name) + '" \[ref=([a-z0-9]+)\]')
+    if (-not $buttonMatch.Success) { throw "Button was absent from the snapshot: $Name" }
+    Invoke-BrowserCommand @('click', $buttonMatch.Groups[1].Value)
 }
 
 try {
@@ -38,7 +51,7 @@ try {
     $browserOpened = $true
     Invoke-BrowserCommand @('resize', '1440', '1000')
     # File-based snippets avoid Windows command-line quoting of multiline JavaScript.
-    $browserChecks = 'scripts/workspace-links.browser.js'
+    $browserChecks = "scripts/workspace-$Suite.browser.js"
     Invoke-BrowserCommand @('run-code', "--filename=$browserChecks")
     $queries = @(
         '?project=not-an-id',
@@ -47,25 +60,47 @@ try {
     )
     $null = New-Item -ItemType Directory -Force -Path 'output/playwright'
     $snapshotPath = "output/playwright/$sessionName.yml"
-    foreach ($query in $queries) {
-        Write-Host "Checking malformed link: $query"
-        Invoke-BrowserCommand @('goto', "$BaseUrl/workspace$query")
+    if ($Suite -eq 'links') {
+        foreach ($query in $queries) {
+            Write-Host "Checking malformed link: $query"
+            Invoke-BrowserCommand @('goto', "$BaseUrl/workspace$query")
+            Invoke-BrowserCommand @('snapshot')
+            Invoke-BrowserCommand @('run-code', "--filename=$browserChecks")
+            Click-WorkspaceButton 'New conversation'
+            Invoke-BrowserCommand @('run-code', "async page => { await page.waitForURL(url => url.pathname === '/workspace' && url.search === ''); }")
+            Invoke-BrowserCommand @('snapshot')
+            Invoke-BrowserCommand @('run-code', "--filename=$browserChecks")
+            Write-Host "PASS malformed link + empty workspace recovery: $query"
+        }
+        Invoke-BrowserCommand @('run-code', "async page => { const counts = await page.evaluate(() => window.workspaceLinkSmokeCounts()); if (counts.invalidChecks !== 3 || counts.recoveryChecks !== 3) throw new Error('Expected three invalid states and three recoveries.'); }")
+        Write-Host 'PASS 3/3 browser scenarios. API responses mocked; no persistence or provider verification claimed.'
+    } else {
+        Invoke-BrowserCommand @('goto', "$BaseUrl/workspace")
         Invoke-BrowserCommand @('snapshot')
         Invoke-BrowserCommand @('run-code', "--filename=$browserChecks")
-        # Use the ref from the fresh snapshot, rather than assuming a stable DOM position.
-        Invoke-BrowserCommand @('snapshot', "--filename=$snapshotPath")
-        $snapshot = Get-Content -LiteralPath $snapshotPath -Raw
-        $buttonMatch = [regex]::Match($snapshot, 'button "New conversation" \[ref=([a-z0-9]+)\]')
-        if (-not $buttonMatch.Success) { throw 'New conversation button was absent from the snapshot.' }
-        Invoke-BrowserCommand @('click', $buttonMatch.Groups[1].Value)
-        Invoke-BrowserCommand @('run-code', "async page => { await page.waitForURL(url => url.pathname === '/workspace' && url.search === ''); }")
+        Click-WorkspaceButton 'Load more projects'
         Invoke-BrowserCommand @('snapshot')
         Invoke-BrowserCommand @('run-code', "--filename=$browserChecks")
-        Write-Host "PASS malformed link + empty workspace recovery: $query"
+        Write-Host 'PASS project pagination, cursor forwarding and deduplication.'
+        Click-WorkspaceButton 'History demo v3'
+        Invoke-BrowserCommand @('snapshot')
+        Invoke-BrowserCommand @('run-code', "--filename=$browserChecks")
+        Click-WorkspaceButton 'Load older revisions'
+        Invoke-BrowserCommand @('snapshot')
+        Invoke-BrowserCommand @('run-code', "--filename=$browserChecks")
+        Write-Host 'PASS revision pagination, newest-first order and deduplication.'
+        Invoke-BrowserCommand @('screenshot', "--filename=output/playwright/$sessionName-pagination.png", '--full-page')
+        # Only the mock session expires; this never logs out a real account.
+        Invoke-BrowserCommand @('run-code', 'async page => { await page.evaluate(() => window.expireWorkspaceHistorySession()); }')
+        Click-WorkspaceButton 'Reload saved projects'
+        Invoke-BrowserCommand @('run-code', "async page => { await page.waitForURL(url => url.pathname === '/login', { timeout: 8000 }); }")
+        Invoke-BrowserCommand @('snapshot')
+        Invoke-BrowserCommand @('run-code', "--filename=$browserChecks")
+        Invoke-BrowserCommand @('run-code', "async page => { const state = await page.evaluate(() => window.workspaceHistorySmokeState()); if (state.step !== 5) throw new Error('Expected five history checkpoints.'); }")
+        Write-Host 'PASS protected-401 login recovery without a redirect loop.'
+        Write-Host 'PASS 3/3 history browser scenarios. API mocked; real auth/database/provider not verified.'
     }
-    Invoke-BrowserCommand @('run-code', "async page => { const counts = await page.evaluate(() => window.workspaceLinkSmokeCounts()); if (counts.invalidChecks !== 3 || counts.recoveryChecks !== 3) throw new Error('Expected three invalid states and three recoveries.'); }")
     Invoke-BrowserCommand @('screenshot', "--filename=output/playwright/$sessionName.png", '--full-page')
-    Write-Host 'PASS 3/3 browser scenarios. API responses mocked; no persistence or provider verification claimed.'
 } catch {
     $failed = $true
     [Console]::Error.WriteLine($_.Exception.Message)

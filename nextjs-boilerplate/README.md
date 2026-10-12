@@ -32,6 +32,8 @@ Independent Auth Service
 
 The access token is kept in React memory. The refresh token is set and rotated by the Auth Service as an HttpOnly cookie, so frontend JavaScript cannot read it.
 
+A protected Project API `401` clears the cached user/access token before redirecting to `/login`. Redirecting alone would let AuthForm send the stale user back to the workspace repeatedly. `invalidateSession` is a stable client callback; it does not revoke refresh cookies or replace the existing server logout flow. Pending generation keys stay user/project-scoped for later reconciliation after sign-in.
+
 Authenticated workspace prompts call `POST /api/projects`. The Project Service validates the access token and prompt, then saves a draft project before any AI generation begins.
 
 ## Saved project and revision loop
@@ -72,3 +74,17 @@ Requires a standard Node.js/npm installation, Windows PowerShell and Chrome avai
 The real browser checks invalid project IDs, duplicate project query values and revision-without-project links. Each must disable submission and show no file tabs; **New conversation** must restore an empty, usable draft. All `/api/**` requests are intercepted before navigation: refresh/list responses are synthetic and unexpected requests abort and fail the check. No real login, database, project creation or provider call is made. This is UI regression evidence, **not** real-service persistence/authentication evidence.
 
 Only localhost HTTP origins are accepted. A fresh named browser session closes in `finally`; failures exit nonzero. Snapshots/screenshots go to ignored `output/playwright/` and `.playwright-cli/` directories. Runner steps are in `scripts/verify-workspace-links.ps1`; the file-based JavaScript snippet in `scripts/workspace-links.browser.js` avoids Windows multiline-command quoting and is test tooling only.
+
+### Pagination and protected-session rejection smoke
+
+With Next running, from the repository root:
+
+```powershell
+npm run test:browser-history
+# Dedicated port alternative:
+npm run test:browser-history -- -BaseUrl http://localhost:3102
+```
+
+This uses the same Windows runner with `-Suite history` and `scripts/workspace-history.browser.js`. It checks project load-more, revision load-more and protected-401 login recovery through five ordered UI checkpoints. Cursor requests are checked exactly; deliberately overlapping mock pages must not duplicate rows, and exhausted pagination controls disappear. The expiry case must leave the workspace, stay on login and make exactly one rejected protected read, rather than retry/bounce.
+
+The real Next/React UI runs, but **every API response is mocked**; unexpected calls and all writes are blocked. No real JWT expiry, ownership enforcement, cookie rotation, MongoDB pagination or provider is verified here. Do not edit app files during these browser checks: dev Fast Refresh can reload the page and reset UI state mid-scenario. Run both smoke commands after changing the shared runner or auth/workspace state.
