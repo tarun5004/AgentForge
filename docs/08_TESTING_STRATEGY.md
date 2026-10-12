@@ -1,5 +1,27 @@
 # AgentForge V1 — Testing Strategy
 
+## Slice 4 verification (2026-10-12)
+
+Current changes are scoped to `feature/project-service-revision-publication`. No other service application files or dependencies changed.
+
+| Command | Actual result |
+| --- | --- |
+| `npm run test --workspace=project-service` | 25/25 local unit/contract tests pass. Adds exact Revision-version duplicate classification. |
+| `npm run test:integration --workspace=project-service` | 40/40 real HTTP/Mongo tests pass in two consecutive final runs. |
+| `npm run typecheck --workspace=project-service` | Passed, exit 0. |
+| `npm run build --workspace=project-service` | Passed, exit 0. |
+| `npm run test --workspace=ai-orchestrator-service` | 14/14 existing regression tests pass; AI application code unchanged. |
+
+Integration coverage adds owned historical-base forwarding, persisted parent/prompt/full snapshots/A/M/D, omitted-file preservation, explicit/deletion-only changes, immutable prior snapshot checks, read-only owned generation status and POST replay using Revision metadata despite missing Generation result. Barriers driven by observed fixture events verify same-key follow-ups (one model call) and distinct-key initial/follow-up races (one publication and one conflict at the captured version). It also verifies saved-result concurrent publication retry without another model call, no version reservation on failure, safe old-file availability, invalid/serialized-oversize legacy context rejected before paid work, and legacy incomplete intent never assigned a guessed version.
+
+Test-only narrow Mongoose method fault injection covers result save failing before/after acknowledgement, Revision insert failing before commit, actual insert followed by lost acknowledgement, reconciliation-read failure, and post-insert bookkeeping failures. Real controllers/repositories/Mongo still run; only the deliberate fault point or localhost AI network response is replaced. These tests prove recovery paths, **not real process-kill or network-partition behavior**. No production fake-provider mode or generic dependency-injection framework was introduced.
+
+Three focused tests were first observed failing against the old gated API/missing metadata/status route, then passed after implementation. A race fixture initially reused unchanged root output and correctly hit the no-op rejection; resetting that test fixture made its intended conflict scenario valid.
+
+The initially empty local `agentforge_test_slice4_20261012` database was positively identified by a bounded read-only driver probe before fixture writes. Standalone topology was confirmed. Verification never imported models against the normal DB, migrated application records, or changed normal indexes. The final read-only probe confirmed zero Project/Revision/Generation fixture records and installed unique Revision `generationId`/`(projectId, version)` plus Generation `(projectId, idempotencyKey)` indexes. Indexes remain only in the dedicated test DB; no database was dropped.
+
+Not run: paid-provider smoke/quality, frontend/browser restoration or full revision-loop E2E, real crash/partition experiments, generated-code build/execution, performance/load benchmarks, dependency-security audit or deployment. Project Service build compiles the platform service; it does not build generated projects. M1 remains incomplete pending frontend integration and browser proof.
+
 ## Slice 3 verification (2026-10-12)
 
 - `npm run test --workspace=project-service`: 24 passing local unit/contract tests, including a localhost AI transport fixture. Coverage adds immutable complete snapshots, deterministic A/M/D, omitted-file preservation, deletion-only output, invalid/no-op/empty changes, canonical frontend paths, final count/content limits, request-ID correlation, old initial responses, and escaped/UTF-8 request-byte limits before fetch.

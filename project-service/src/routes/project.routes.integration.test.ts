@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
+import { EventEmitter } from "node:events";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { after, before, beforeEach, test } from "node:test";
@@ -34,6 +35,8 @@ let aiFixture: Server;
 let baseUrl: string;
 const aiRequests: Record<string, unknown>[] = [];
 let aiResponseOverride: Record<string, unknown> = {};
+const aiArrivals = new EventEmitter();
+let aiBarrier: Promise<void> | undefined;
 
 async function cleanupFixtures() {
   await Revision.deleteMany({ projectId: { $in: cleanupProjectIds } });
@@ -57,10 +60,13 @@ before(async () => {
     }
     let body = "";
     request.on("data", (chunk: Buffer) => { body += chunk.toString(); });
-    request.on("end", () => {
+    request.on("end", async () => {
       try {
         const input = JSON.parse(body) as Record<string, unknown>;
         aiRequests.push(input);
+        const outputOverride = { ...aiResponseOverride };
+        aiArrivals.emit("arrived");
+        await aiBarrier;
         response.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({
           generation: {
             requestId: input.requestId,
@@ -70,7 +76,7 @@ before(async () => {
             files: [{ path: "app/page.tsx", content: 'export default function Page() { return <main>Portfolio</main>; }' }],
             usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
             latencyMs: 0,
-            ...aiResponseOverride,
+            ...outputOverride,
           },
         }));
       } catch { response.writeHead(400).end(); }
@@ -91,6 +97,7 @@ beforeEach(async () => {
   await cleanupFixtures();
   aiRequests.length = 0;
   aiResponseOverride = {};
+  aiBarrier = undefined;
   const january = new Date("2026-01-01T00:00:00.000Z");
   const february = new Date("2026-02-01T00:00:00.000Z");
   await Project.collection.insertMany(projectIds.map((id, index) => ({
@@ -472,21 +479,26 @@ test("legacy ready and stale bookkeeping attempts replay only their recorded ori
   assert.equal(aiRequests.length, 0);
 });
 
-test("follow-up is explicitly gated and foreign base files are never used as context", async () => {
+test("follow-up loads only owned base files and versions come from saved revisions, not counters", async () => {
   const missingBase = await postGeneration(String(projectIds[0]), "missing-base");
   assert.equal(missingBase.status, 400);
   assert.equal(missingBase.body.code, "BASE_REVISION_REQUIRED");
   const ownedBase = await postGeneration(String(projectIds[0]), "owned-base", { prompt: "Make the hero darker", baseRevisionId: String(revisionIds[0]) });
-  assert.equal(ownedBase.status, 409);
-  assert.equal(ownedBase.body.code, "FOLLOW_UP_NOT_AVAILABLE");
+  assert.equal(ownedBase.status, 201);
+  assert.equal(ownedBase.body.generation.revisionVersion, 4, "ignore the stale Project counter of 99");
+  assert.equal(ownedBase.body.generation.parentRevisionId, String(revisionIds[0]));
+  assert.deepEqual(aiRequests[0]?.baseRevision, {
+    id: String(revisionIds[0]), version: 1,
+    files: [{ path: "app/page.tsx", content: "private-file-content-1" }],
+  });
   for (const base of [revisionIds[3], revisionIds[4], "ffffffffffffffffffffffff"]) {
     const result = await postGeneration(String(projectIds[0]), "foreign-base", { prompt: "Make the hero darker", baseRevisionId: String(base) });
     assert.equal(result.status, 404);
   }
   const foreignProject = await postGeneration(String(projectIds[3]), "foreign-project");
   assert.equal(foreignProject.status, 404);
-  assert.equal(await Generation.countDocuments({ projectId: projectIds[0]! }), 0);
-  assert.equal(aiRequests.length, 0);
+  assert.equal(await Generation.countDocuments({ projectId: projectIds[0]! }), 1);
+  assert.equal(aiRequests.length, 1);
 });
 
 test("real Mongo duplicate-key errors are recognized without overwriting the original intent", async () => {
@@ -601,4 +613,306 @@ test("unsafe or mismatched AI output cannot reach revision publication", async (
     assert.equal((await postGeneration(project.id, `invalid-output-${index}`)).body.code, "GENERATION_FAILED");
     assert.equal(aiRequests.length, requestsBeforeReplay);
   }
+});
+
+test("follow-up persists lineage, complete files and truthful A/M/D without mutating the parent", async () => {
+  const project = await createDraft();
+  aiResponseOverride = { files: [
+    { path: "app/page.tsx", content: "export default function Page() {}" },
+    { path: "app/globals.css", content: "body { color: black; }" },
+    { path: "components/Old.tsx", content: "export default function Old() {}" },
+  ] };
+  const first = await postGeneration(project.id, "root");
+  assert.equal(first.status, 201);
+  const parentBefore = await Revision.collection.findOne({ _id: new Types.ObjectId(first.body.generation.revisionId) });
+  aiResponseOverride = { files: [
+    { path: "app/page.tsx", content: "export default function Page() { return <main>Updated</main>; }" },
+    { path: "components/Hero.tsx", content: "export default function Hero() {}" },
+  ], deletedPaths: ["components/Old.tsx"] };
+  const prompt = "Change the hero and remove the old component";
+  const second = await postGeneration(project.id, "follow-up", { prompt, baseRevisionId: first.body.generation.revisionId });
+  assert.equal(second.status, 201);
+  const generation = second.body.generation;
+  assert.equal(generation.revisionVersion, 2);
+  assert.equal(generation.parentRevisionId, first.body.generation.revisionId);
+  assert.equal(generation.sourcePrompt, prompt);
+  assert.deepEqual(generation.fileChanges, [
+    { path: "app/page.tsx", status: "M" }, { path: "components/Hero.tsx", status: "A" }, { path: "components/Old.tsx", status: "D" },
+  ]);
+  assert.equal(generation.files.find((file: { path: string }) => file.path === "app/globals.css").content, "body { color: black; }");
+  assert.deepEqual(aiRequests[1]?.baseRevision, { id: first.body.generation.revisionId, version: 1, files: first.body.generation.files });
+  assert.equal(aiRequests[1]?.prompt, prompt);
+  assert.deepEqual(await Revision.collection.findOne({ _id: parentBefore!._id }), parentBefore);
+  const detail = await get(`/${project.id}/revisions/${generation.revisionId}`);
+  assert.deepEqual(detail.body.revision.fileChanges, generation.fileChanges);
+  assert.deepEqual(detail.body.revision.validation, { policyVersion: "frontend-manifest-v1", status: "manifest_validated" });
+  const replay = await postGeneration(project.id, "follow-up", { prompt, baseRevisionId: first.body.generation.revisionId });
+  assert.deepEqual(replay.body.generation, generation);
+  assert.equal(aiRequests.length, 2);
+});
+
+test("generation status is owned and committed revision metadata beats stale generation status", async () => {
+  const project = await createDraft();
+  const result = await postGeneration(project.id, "status-ready");
+  const generationId = result.body.generation.id;
+  await Generation.collection.updateOne({ _id: new Types.ObjectId(generationId) }, { $set: { status: "failed" }, $unset: { result: 1 } });
+  const status = await get(`/${project.id}/generations/${generationId}`);
+  assert.equal(status.status, 200);
+  assert.deepEqual(status.body.generation, result.body.generation, "new revisions retain their own model metadata");
+  assert.equal((await get(`/${projectIds[3]}/generations/${generationId}`)).status, 404);
+  assert.equal((await get(`/${projectIds[0]}/generations/${generationId}`)).status, 404);
+  assert.equal((await get(`/${project.id}/generations/${generationId}`, null)).status, 401);
+  assert.equal((await get(`/${project.id}/generations/invalid`)).status, 400);
+  assert.equal((await get(`/${project.id}/generations/${generationId}?ownerId=x`)).status, 400);
+  assert.equal(aiRequests.length, 1);
+  assert.equal((await Generation.findById(generationId).lean())?.status, "failed", "GET must not repair bookkeeping");
+  const replay = await postGeneration(project.id, "status-ready");
+  assert.deepEqual(replay.body.generation, result.body.generation, "POST also recovers from Revision metadata alone");
+  assert.equal((await Generation.findById(generationId).lean())?.status, "ready");
+  const completedAt = (await Generation.findById(generationId).lean())?.completedAt;
+  assert.ok(completedAt);
+  await postGeneration(project.id, "status-ready");
+  assert.deepEqual((await Generation.findById(generationId).lean())?.completedAt, completedAt, "normal replay preserves completion time");
+  await Generation.collection.updateOne({ _id: new Types.ObjectId(generationId) }, { $set: { revisionId: revisionIds[0] } });
+  await postGeneration(project.id, "status-ready");
+  assert.equal((await Generation.findById(generationId).lean())?.revisionId?.toString(), result.body.generation.revisionId);
+  assert.equal(aiRequests.length, 1);
+});
+
+test("deletion-only follow-up publishes a complete nonempty snapshot and can replay", async () => {
+  const project = await createDraft();
+  aiResponseOverride = { files: [
+    { path: "app/page.tsx", content: "export default function Page() {}" },
+    { path: "components/Old.tsx", content: "export default function Old() {}" },
+  ] };
+  const root = await postGeneration(project.id, "deletion-root");
+  assert.equal(root.status, 201);
+  aiResponseOverride = { files: [], deletedPaths: ["components/Old.tsx"] };
+  const body = { prompt: "Remove the unused old component", baseRevisionId: root.body.generation.revisionId };
+  const result = await postGeneration(project.id, "deletion-only", body);
+  assert.equal(result.status, 201);
+  assert.deepEqual(result.body.generation.files, [{ path: "app/page.tsx", content: "export default function Page() {}" }]);
+  assert.deepEqual(result.body.generation.fileChanges, [{ path: "components/Old.tsx", status: "D" }]);
+  assert.deepEqual((await postGeneration(project.id, "deletion-only", body)).body, result.body);
+  assert.equal(aiRequests.length, 2);
+});
+
+test("same-key concurrent follow-ups make one AI call and replay the same revision", async () => {
+  const project = await createDraft();
+  const root = await postGeneration(project.id, "same-key-root");
+  assert.equal(root.status, 201);
+  aiResponseOverride = { files: [{ path: "app/page.tsx", content: "export default function Page() { return <main>Darker</main>; }" }] };
+  const body = { prompt: "Make the hero background darker", baseRevisionId: root.body.generation.revisionId };
+  let release!: () => void;
+  aiBarrier = new Promise<void>((resolve) => { release = resolve; });
+  const first = postGeneration(project.id, "same-follow-up", body);
+  let duplicate;
+  try {
+    await waitForAiRequests(2);
+    duplicate = await postGeneration(project.id, "same-follow-up", body);
+  } finally { release(); aiBarrier = undefined; }
+  const result = await first;
+  assert.equal(duplicate.status, 409);
+  assert.equal(duplicate.body.code, "GENERATION_IN_PROGRESS");
+  assert.equal(result.status, 201);
+  assert.deepEqual((await postGeneration(project.id, "same-follow-up", body)).body, result.body);
+  assert.equal(await Generation.countDocuments({ projectId: project.id, idempotencyKey: "same-follow-up" }), 1);
+  assert.equal(await Revision.countDocuments({ projectId: project.id }), 2);
+  assert.equal(aiRequests.length, 2, "one initial model call and only one follow-up call");
+});
+
+// Wait for observed fixture requests, not an arbitrary sleep. The barrier makes races reproducible.
+async function waitForAiRequests(count: number) {
+  while (aiRequests.length < count) await once(aiArrivals, "arrived", { signal: AbortSignal.timeout(5_000) });
+}
+
+test("different keys observing the same head yield one publication and one stable conflict", async () => {
+  for (const followUp of [false, true]) {
+    aiResponseOverride = {};
+    const project = await createDraft();
+    const root = followUp ? await postGeneration(project.id, "race-root") : null;
+    if (root) assert.equal(root.status, 201);
+    aiResponseOverride = { files: [{ path: "app/page.tsx", content: "export default function Page() { return <main>Race change</main>; }" }] };
+    const body = root ? { prompt: "Change the hero background", baseRevisionId: root.body.generation.revisionId } : undefined;
+    let release!: () => void;
+    aiBarrier = new Promise<void>((resolve) => { release = resolve; });
+    const requestCount = aiRequests.length;
+    const pending = [postGeneration(project.id, "race-A", body), postGeneration(project.id, "race-B", body)];
+    try {
+      await waitForAiRequests(requestCount + 2);
+    } finally { release(); aiBarrier = undefined; }
+    const results = await Promise.all(pending);
+    assert.deepEqual(results.map((result) => result.status).sort(), [201, 409]);
+    const winner = results.find((result) => result.status === 201)!;
+    const loser = results.find((result) => result.status === 409)!;
+    assert.equal(loser.body.code, "REVISION_CONFLICT");
+    assert.equal(loser.body.latestRevisionId, winner.body.generation.revisionId);
+    assert.equal(winner.body.generation.revisionVersion, followUp ? 2 : 1);
+    const attempts = await Generation.find({ projectId: project.id, idempotencyKey: { $in: ["race-A", "race-B"] } }).lean();
+    assert.deepEqual(attempts.map((attempt) => attempt.expectedVersion), [followUp ? 2 : 1, followUp ? 2 : 1]);
+    const loserAttempt = attempts.find((attempt) => attempt._id.toString() === loser.body.generationId)!;
+    const replay = await postGeneration(project.id, loserAttempt.idempotencyKey, body);
+    assert.equal(replay.status, 409);
+    assert.equal(replay.body.code, "REVISION_CONFLICT");
+    assert.equal(aiRequests.length, requestCount + 2, "conflict replay must not call AI again");
+    assert.equal(await Revision.countDocuments({ projectId: project.id }), followUp ? 2 : 1);
+  }
+});
+
+test("saved-result publication can be retried concurrently without another AI call", async (context) => {
+  const project = await createDraft();
+  context.mock.method(Revision, "create", async () => { throw new Error("fixture insert failure before commit"); });
+  const uncertain = await postGeneration(project.id, "publication-retry");
+  assert.equal(uncertain.status, 503);
+  assert.equal(uncertain.body.code, "OUTCOME_UNKNOWN");
+  const attempt = await Generation.findOne({ projectId: project.id }).lean();
+  assert.equal(attempt?.status, "pending");
+  assert.ok(attempt?.result);
+  assert.equal((await Project.findById(project.id).lean())?.currentRevisionNumber, 0);
+  const status = await get(`/${project.id}/generations/${attempt!._id}`);
+  assert.equal(status.body.generation.hasSavedResult, true);
+  assert.equal(await Revision.countDocuments({ projectId: project.id }), 0, "GET does not publish");
+  context.mock.restoreAll();
+  const retries = await Promise.all([postGeneration(project.id, "publication-retry"), postGeneration(project.id, "publication-retry")]);
+  assert.equal(retries[0]!.status, 201);
+  assert.deepEqual(retries[0]!.body, retries[1]!.body);
+  assert.equal(await Revision.countDocuments({ projectId: project.id }), 1);
+  assert.equal(aiRequests.length, 1);
+});
+
+test("lost revision acknowledgement is reconciled as committed success", async (context) => {
+  const project = await createDraft();
+  const originalCreate = Revision.create.bind(Revision);
+  context.mock.method(Revision, "create", async (...args: Parameters<typeof Revision.create>) => {
+    await originalCreate(...args);
+    throw new Error("fixture acknowledgement lost after revision commit");
+  });
+  const result = await postGeneration(project.id, "lost-revision-ack");
+  assert.equal(result.status, 201);
+  assert.equal(result.body.generation.revisionVersion, 1);
+  assert.equal(await Revision.countDocuments({ projectId: project.id }), 1);
+  assert.equal((await Generation.findOne({ projectId: project.id }).lean())?.status, "ready");
+  assert.equal(aiRequests.length, 1);
+});
+
+test("lost acknowledgement plus a failed reconciliation read stays uncertain, never failed", async (context) => {
+  const project = await createDraft();
+  const originalCreate = Revision.create.bind(Revision);
+  const originalFind = Revision.findOne.bind(Revision);
+  let lostAck = false;
+  context.mock.method(Revision, "create", async (...args: Parameters<typeof Revision.create>) => {
+    await originalCreate(...args); lostAck = true;
+    throw new Error("fixture lost acknowledgement");
+  });
+  context.mock.method(Revision, "findOne", (...args: Parameters<typeof Revision.findOne>) => {
+    if (lostAck) throw new Error("fixture reconciliation unavailable");
+    return originalFind(...args);
+  });
+  const result = await postGeneration(project.id, "unknown-commit");
+  assert.equal(result.status, 503);
+  assert.equal(result.body.code, "OUTCOME_UNKNOWN");
+  context.mock.restoreAll();
+  assert.equal(await Revision.countDocuments({ projectId: project.id }), 1);
+  const attempt = await Generation.findOne({ projectId: project.id }).lean();
+  assert.equal(attempt?.status, "pending");
+  assert.equal((await get(`/${project.id}/generations/${attempt!._id}`)).body.generation.status, "ready");
+  assert.equal((await postGeneration(project.id, "unknown-commit")).status, 201);
+  assert.equal(aiRequests.length, 1);
+});
+
+test("bookkeeping failure after revision commit does not hide success and replay repairs it", async (context) => {
+  const project = await createDraft();
+  const originalGenerationUpdate = Generation.updateOne.bind(Generation);
+  const originalProjectUpdate = Project.updateOne.bind(Project);
+  context.mock.method(Generation, "updateOne", (...args: Parameters<typeof Generation.updateOne>) => {
+    const update = args[1] as { $set?: { status?: string } };
+    if (update?.$set?.status === "ready") throw new Error("fixture ready bookkeeping failure");
+    return originalGenerationUpdate(...args);
+  });
+  context.mock.method(Project, "updateOne", (...args: Parameters<typeof Project.updateOne>) => {
+    if ((args[1] as { $max?: unknown })?.$max) throw new Error("fixture project bookkeeping failure");
+    return originalProjectUpdate(...args);
+  });
+  const result = await postGeneration(project.id, "bookkeeping-failure");
+  assert.equal(result.status, 201);
+  assert.equal((await Generation.findOne({ projectId: project.id }).lean())?.status, "pending");
+  assert.equal((await get(`/${project.id}/generations/${result.body.generation.id}`)).body.generation.status, "ready");
+  context.mock.restoreAll();
+  assert.deepEqual((await postGeneration(project.id, "bookkeeping-failure")).body, result.body);
+  assert.equal((await Generation.findOne({ projectId: project.id }).lean())?.status, "ready");
+  assert.equal((await Project.findById(project.id).lean())?.currentRevisionNumber, 1);
+  assert.equal(aiRequests.length, 1);
+});
+
+test("result-write failures keep the key and recover only if saved output exists", async (context) => {
+  for (const lostAck of [false, true]) {
+    const project = await createDraft();
+    const originalUpdate = Generation.updateOne.bind(Generation);
+    context.mock.method(Generation, "updateOne", async (...args: Parameters<typeof Generation.updateOne>) => {
+      if ((args[1] as { $set?: { result?: unknown } })?.$set?.result) {
+        if (lostAck) await originalUpdate(...args);
+        throw new Error("fixture result-write uncertainty");
+      }
+      return originalUpdate(...args);
+    });
+    const beforeRequests = aiRequests.length;
+    const result = await postGeneration(project.id, "result-write");
+    assert.equal(result.status, 503);
+    assert.equal(result.body.code, "OUTCOME_UNKNOWN");
+    context.mock.restoreAll();
+    const replay = await postGeneration(project.id, "result-write");
+    assert.equal(replay.status, lostAck ? 201 : 409);
+    assert.equal(await Revision.countDocuments({ projectId: project.id }), lostAck ? 1 : 0);
+    assert.equal(aiRequests.length, beforeRequests + 1);
+  }
+});
+
+test("failed follow-up leaves old files available, allocates no version and allows a historical parent", async () => {
+  const project = await createDraft();
+  const root = await postGeneration(project.id, "failure-root");
+  const revisionId = root.body.generation.revisionId;
+  const before = await Revision.collection.findOne({ _id: new Types.ObjectId(revisionId) });
+  aiResponseOverride = { files: [] };
+  const failed = await postGeneration(project.id, "bad-follow-up", { prompt: "Make the hero darker", baseRevisionId: revisionId });
+  assert.equal(failed.status, 502);
+  assert.equal((await get(`/${project.id}`)).body.project.latestRevision.id, revisionId);
+  assert.equal((await Project.findById(project.id).lean())?.currentRevisionNumber, 1);
+  assert.deepEqual(await Revision.collection.findOne({ _id: before!._id }), before);
+  aiResponseOverride = { files: [{ path: "app/page.tsx", content: "export default function Page() { return <main>Second</main>; }" }] };
+  const next = await postGeneration(project.id, "good-follow-up", { prompt: "Make the hero darker", baseRevisionId: revisionId });
+  assert.equal(next.body.generation.revisionVersion, 2, "failed attempts create no version gap");
+  aiResponseOverride = { files: [{ path: "app/page.tsx", content: "export default function Page() { return <main>Historical edit</main>; }" }] };
+  const historical = await postGeneration(project.id, "historical-parent", { prompt: "Edit the original hero again", baseRevisionId: revisionId });
+  assert.equal(historical.status, 201);
+  assert.equal(historical.body.generation.revisionVersion, 3);
+  assert.equal(historical.body.generation.parentRevisionId, revisionId);
+  assert.equal((aiRequests.at(-1)?.baseRevision as { version: number }).version, 1);
+});
+
+test("unsafe or oversized historical context is viewable but rejected before an attempt or AI call", async () => {
+  for (const files of [
+    [{ path: "app/api/route.ts", content: "unsafe legacy files stay viewable" }],
+    Array.from({ length: 4 }, (_, i) => ({ path: `lib/f${i}.ts`, content: '"'.repeat(30_000) })),
+  ]) {
+    await Revision.collection.updateOne({ _id: revisionIds[0]! }, { $set: { files } });
+    assert.equal((await get(`/${projectIds[0]}/revisions/${revisionIds[0]}`)).status, 200);
+    const result = await postGeneration(String(projectIds[0]), "invalid-context", { prompt: "Make the hero darker", baseRevisionId: String(revisionIds[0]) });
+    assert.equal(result.status, files.length === 1 ? 400 : 413);
+    assert.equal(await Generation.countDocuments({ projectId: projectIds[0]! }), 0);
+    assert.equal(aiRequests.length, 0);
+  }
+});
+
+test("legacy pending output without captured intent is not assigned an invented revision version", async () => {
+  const project = await createDraft();
+  const attempt = await Generation.create({ projectId: project.id, ownerId: owner, idempotencyKey: "legacy-result", status: "pending", result: {
+    provider: "legacy", model: "legacy", summary: "Legacy saved model output", files: [{ path: "app/page.tsx", content: "old content" }],
+    usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }, latencyMs: 0,
+  } });
+  assert.equal((await get(`/${project.id}/generations/${attempt._id}`)).body.generation.hasSavedResult, true);
+  const result = await postGeneration(project.id, "legacy-result");
+  assert.equal(result.status, 503);
+  assert.equal(result.body.code, "OUTCOME_UNKNOWN");
+  assert.equal(await Revision.countDocuments({ projectId: project.id }), 0);
+  assert.equal(aiRequests.length, 0);
 });

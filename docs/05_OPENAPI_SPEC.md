@@ -2,6 +2,49 @@
 
 The V1 target contract uses `/api/v1` and request IDs. These are future conventions, not guarantees of the current application. The implemented Project Service routes below use `/api/projects` and the existing `{ message }` error wrapper.
 
+## Current Slice 4 — owned follow-ups and reliable publication (2026-10-12)
+
+This section supersedes the dated Slice 2/3 gates and publication limitations below. Authentication, normalized 10–1,000-character prompts, strict body fields and `Idempotency-Key` rules remain unchanged. There is no public `/api/v1`, queue or 202 response in this slice.
+
+`POST /api/projects/{projectId}/generations` supports initial omitted/empty bodies or `{ prompt }` when the project has no saved revision. A **new** attempt on a project with revisions requires `{ prompt, baseRevisionId }`; missing base returns 400 `BASE_REVISION_REQUIRED`. The selected revision must belong to the owned project (otherwise 404), but may be historical. Project Service loads its files, revalidates/bounds the context, and captures `expectedVersion = actual latest saved version + 1` before calling AI. Browser-supplied files, ownership, provider/model, counters and credentials remain prohibited.
+
+```json
+{
+  "prompt": "Make the hero background darker",
+  "baseRevisionId": "66d123456789abcdef123456"
+}
+```
+
+HTTP 201 `{ generation }` contains the existing ready result (`id`, `status`, `revisionId`, `revisionVersion`, `summary`, **complete** `files`, provider/model, usage and latency). It additionally returns `parentRevisionId`, `sourcePrompt`, deterministic `fileChanges: [{ path, status: "A" | "M" | "D" }]`, and `validation`. Unchanged files have no change entry; a deleted path has no current file content. New validation is `{ policyVersion: "frontend-manifest-v1", status: "manifest_validated" }`, earned by local independent checks, not an assumed upstream claim or build/run proof. Unknown legacy lineage/change/validation fields are `null`.
+
+Revision detail GET adds nullable `fileChanges`, provider/model, usage/latency, validation and `schemaVersion` (2 for new snapshots); legacy absent metadata stays `null`. History lists continue to omit files and full provider metadata. Old revisions are not altered by follow-ups. Published version order is not lineage: v3 may intentionally have v1 as its parent.
+
+### Request replay and publication
+
+Resolve an existing matching key before applying new-request base rules. Different normalized input returns 409 `IDEMPOTENCY_MISMATCH`. Publication saves validated full output then atomically inserts one immutable Revision under existing unique indexes. Counter reservation is removed; failed attempts create no version gap. Captured-head conflicts return 409, never an automatically reassigned version.
+
+| Persisted evidence | POST replay behavior |
+| --- | --- |
+| Revision committed for this attempt | 201 saved revision/version, even with stale pending/failed status; repair secondary hints best-effort. New revisions carry their own provider metadata. |
+| Pending without saved result | 409 `GENERATION_IN_PROGRESS` with `generationId`; no additional AI call. |
+| Pending with validated saved result | Retry publication at the original captured version; no additional AI call. |
+| Terminal conflict without Revision | 409 `REVISION_CONFLICT`; a deliberate new attempt needs a new key. |
+| Other terminal failure without Revision | 409 `GENERATION_FAILED`; do not silently restart the model. |
+| Write acknowledgement/read cannot establish outcome | 503 `OUTCOME_UNKNOWN`; preserve the key and reconcile via read/replay. |
+| Legacy intent/version cannot establish safe publication | 503 `OUTCOME_UNKNOWN`; never infer a candidate version/parent. Existing committed empty-body replay remains supported. |
+
+Different keys may both call AI while observing the same head, but only one publishes its candidate version. A conflicting response includes `generationId` and `latestRevisionId` when established; repeated conflict responses need not include the latter. Same-key competitors create one attempt and at most one revision. Lost insert acknowledgement is checked against actual Revision evidence; a failure updating ready/status/counter after insertion cannot turn committed success into failure.
+
+### Read-only generation status
+
+`GET /api/projects/{projectId}/generations/{generationId}` requires bearer auth, valid IDs, owned project and an attempt matching project/owner/ID. No query parameters are accepted. Foreign/missing project or attempt returns 404. It never calls AI, publishes output or repairs bookkeeping.
+
+- Committed Revision: HTTP 200 `{ generation }` with the same complete ready shape as POST replay.
+- No Revision: HTTP 200 `{ generation: { id, status: "pending" | "failed", hasSavedResult, errorCode } }`. Pending has `errorCode: null`; failed exposes a bounded stable code. A pending record is not proof of a running worker.
+- Stored ready status without an established Revision, or missing required committed metadata: 503 `OUTCOME_UNKNOWN`.
+
+Status/detail reads retain the 1 MiB UTF-8 response bound. Errors keep `message` plus optional `code`, `generationId`, `latestRevisionId`. Unsafe historical context is still viewable but yields 400 `BASE_REVISION_INVALID` before a new attempt; oversized context/merged output yields 413 `CONTEXT_TOO_LARGE`/`SNAPSHOT_TOO_LARGE`. Upstream/invalid AI output yields sanitized 502; uncertain persistence yields 503. Browser history/follow-up wiring, durable workers, build checks and real provider quality remain outside this backend slice.
+
 ## Implemented Slice 1 — project and revision reads
 
 Verified on 2026-10-10. Every route requires `Authorization: Bearer <access-token>`; ownership comes only from the verified JWT subject. IDs must be exactly 24 hexadecimal characters. Unknown, repeated, nested, or malformed query values are rejected before database access. Detail routes accept no query parameters.

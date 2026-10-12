@@ -6,9 +6,9 @@
 
 ## Implementation progress — 2026-10-12
 
-Slice 3 is implemented: bounded optional selected-base context, pure initial/follow-up prompts, explicit deletion/upsert output, and independent immutable snapshot merge/diff validation. Initial publication consumes the locally validated full snapshot. Verification: 24 Project local tests, 14 AI tests, 27 isolated HTTP/Mongo regressions, and both service typechecks/builds passed. No paid provider/browser/execution proof is claimed.
+Slices 1–4 backend work is implemented. Slice 4 admits owned selected-base follow-ups, captures the actual head's next version, publishes through one immutable Revision insert, and replays saved output without another model call. Revisions store parent/prompt, complete files, A/M/D and manifest/model/usage provenance. A read-only generation-status endpoint recognizes committed revisions despite stale bookkeeping. See `08_TESTING_STRATEGY.md` for current verification and fault/race coverage. Provider quality, real process-kill recovery, browser restoration and generated-code execution are not claimed.
 
-**Next small slice:** reliable immutable Revision publication, selected-base ownership/loading, concurrency conflicts and replay recovery. Public follow-up requests remain gated until this integration is complete; M1 and frontend restoration are still unfinished.
+**Next small slice:** connect saved project/revision selection and stable-key follow-ups in the existing Next.js workspace, with truthful loading/empty/error states. Start a separate frontend branch after the Project Service branch is reviewed and merged, unless an explicitly agreed stacked-branch workflow is needed. M1 stays unfinished until create → reload → revise → reload is verified in the browser.
 
 ## Historical implementation progress — 2026-10-11
 
@@ -16,7 +16,7 @@ Slice 3 is implemented: bounded optional selected-base context, pure initial/fol
 - Slice 2: initial-generation request identity, exact same-key race handling, complete replay/version output, and legacy/stale-snapshot compatibility are implemented. Explicit initial prompts are recorded and used; follow-up attempts are gated until base-context and merge support exist.
 - M1 is **not complete**. Next is the bounded base-context/upsert/deletion contract with pure merge/prompt tests; reliable publication and frontend restoration remain separate later slices.
 
-The detailed `PROJECT_HISTORY_REVISION_PLAN.md` refines this original M0 proposal: its standalone-Mongo publication authority and historical-base policy supersede the older mutable-pointer/transaction/stale-base suggestions below. That publication strategy is still a target, not a claim that Slice 2 replaced the existing counter allocator.
+The detailed `PROJECT_HISTORY_REVISION_PLAN.md` refines this original M0 proposal: its standalone-Mongo publication authority and historical-base policy supersede the older mutable-pointer/transaction/stale-base suggestions below. Slice 4 implements that backend strategy and removes counter-based version reservation; the preceding Slice 2 update is historical.
 
 ## Relationship to the existing roadmap
 

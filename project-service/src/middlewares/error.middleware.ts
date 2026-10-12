@@ -6,6 +6,7 @@ export class AppError extends Error {
     message: string,
     public readonly code?: string,
     public readonly generationId?: string,
+    public readonly latestRevisionId?: string,
   ) {
     super(message);
     this.name = "AppError";
@@ -28,6 +29,7 @@ export const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
       message: error.message,
       ...(error.code ? { code: error.code } : {}),
       ...(error.generationId ? { generationId: error.generationId } : {}),
+      ...(error.latestRevisionId ? { latestRevisionId: error.latestRevisionId } : {}),
     });
     return;
   }

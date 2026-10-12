@@ -8,7 +8,17 @@ import {
   listProjects,
   listRevisions,
 } from "../services/project.service.js";
-import { createGeneration } from "../services/generation.service.js";
+import { createGeneration, getGeneration } from "../services/generation.service.js";
+
+export async function getGenerationController(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!req.user) throw new AppError(401, "Authentication required.");
+    const generation = await getGeneration(req.user.id, req.params.projectId, req.params.generationId, req.query);
+    res.status(200).json({ generation });
+  } catch (error) {
+    next(error);
+  }
+}
 
 export async function listProjectsController(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
