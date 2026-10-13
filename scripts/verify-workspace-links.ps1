@@ -1,6 +1,6 @@
 param(
     [string]$BaseUrl = 'http://localhost:3001',
-    [ValidateSet('links', 'history')][string]$Suite = 'links'
+    [ValidateSet('links', 'history', 'access')][string]$Suite = 'links'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -74,7 +74,7 @@ try {
         }
         Invoke-BrowserCommand @('run-code', "async page => { const counts = await page.evaluate(() => window.workspaceLinkSmokeCounts()); if (counts.invalidChecks !== 3 || counts.recoveryChecks !== 3) throw new Error('Expected three invalid states and three recoveries.'); }")
         Write-Host 'PASS 3/3 browser scenarios. API responses mocked; no persistence or provider verification claimed.'
-    } else {
+    } elseif ($Suite -eq 'history') {
         Invoke-BrowserCommand @('goto', "$BaseUrl/workspace")
         Invoke-BrowserCommand @('snapshot')
         Invoke-BrowserCommand @('run-code', "--filename=$browserChecks")
@@ -99,6 +99,33 @@ try {
         Invoke-BrowserCommand @('run-code', "async page => { const state = await page.evaluate(() => window.workspaceHistorySmokeState()); if (state.step !== 5) throw new Error('Expected five history checkpoints.'); }")
         Write-Host 'PASS protected-401 login recovery without a redirect loop.'
         Write-Host 'PASS 3/3 history browser scenarios. API mocked; real auth/database/provider not verified.'
+    } else {
+        $accessCases = @(
+            @{ Name = 'legacy'; Query = '?project=100000000000000000000001'; Unavailable = $false },
+            @{ Name = 'draft'; Query = '?project=100000000000000000000002'; Unavailable = $false },
+            @{ Name = 'project404'; Query = '?project=100000000000000000000099'; Unavailable = $true },
+            @{ Name = 'revision404'; Query = '?project=100000000000000000000001&revision=200000000000000000000099'; Unavailable = $true }
+        )
+        foreach ($case in $accessCases) {
+            Write-Host "Checking workspace access case: $($case.Name)"
+            Invoke-BrowserCommand @('goto', "$BaseUrl/workspace$($case.Query)")
+            Invoke-BrowserCommand @('snapshot')
+            Invoke-BrowserCommand @('run-code', "--filename=$browserChecks")
+            Invoke-BrowserCommand @('screenshot', "--filename=output/playwright/$sessionName-$($case.Name).png", '--full-page')
+            if ($case.Unavailable) {
+                # Retry the same IDs; a 404 is not permission to invent files or start AI.
+                Click-WorkspaceButton 'Retry loading'
+                Invoke-BrowserCommand @('snapshot')
+                Invoke-BrowserCommand @('run-code', "--filename=$browserChecks")
+                Click-WorkspaceButton 'New conversation'
+                Invoke-BrowserCommand @('run-code', "async page => { await page.waitForURL(url => url.pathname === '/workspace' && url.search === ''); }")
+                Invoke-BrowserCommand @('snapshot')
+                Invoke-BrowserCommand @('run-code', "--filename=$browserChecks")
+            }
+            Write-Host "PASS access/legacy case: $($case.Name)"
+        }
+        Invoke-BrowserCommand @('run-code', "async page => { const state = await page.evaluate(() => window.workspaceAccessSmokeState()); const checks = state.checks; if (checks.legacy !== 1 || checks.draft !== 1 || checks.project404 !== 2 || checks.revision404 !== 2 || checks.recovery !== 2) throw new Error('Expected eight access checkpoints.'); }")
+        Write-Host 'PASS 4/4 access browser scenarios. API mocked; real cross-owner authorization not verified.'
     }
     Invoke-BrowserCommand @('screenshot', "--filename=output/playwright/$sessionName.png", '--full-page')
 } catch {

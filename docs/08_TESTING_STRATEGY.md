@@ -1,10 +1,14 @@
 # AgentForge V1 — Testing Strategy
 
+## PR #5 conflict-resolution recheck (2026-10-13)
+
+Merged the PR #4 baseline (`93f5964`) into `test/frontend-real-revision-loop`, retaining both access/legacy and real-service commands/docs. The three conflicts were documentation and root npm scripts only; production application code, environment files and dependencies were unchanged. Frontend unit tests passed 9/9, fixture-cleanup tests 4/4, frontend lint and production build passed. JSON parsing confirmed all five browser/fixture commands; both runner scripts and browser snippets passed syntax checks, and no conflict markers/unmerged entries remained. An overlapping second build invocation hit Next's build lock; the original lint/build invocation completed successfully. Browser/database/provider suites were not rerun for this integration-only change. Unrelated `.github/` work remains excluded. Resolution commit/push does not merge the GitHub PR.
+
 ## Repeatable real-service revision loop (2026-10-13)
 
 Story: browser registration → Next rewrites → real Auth session and Project API → MongoDB revisions → deterministic AI HTTP fixture → hard refresh/reopen. The AI SDK/provider is not exercised; browser/API/database persistence is real, with no transport interception or React-state injection.
 
-From merged `main` (`f15936e`, PR #3), the independent `test/frontend-real-revision-loop` slice adds `npm run fixture:browser` and `npm run test:browser-real`. It does not include or depend on the separate access/legacy branch. Reproduction, dedicated ports, process-only environment overrides and mandatory fixture shutdown instructions are in `nextjs-boilerplate/README.md`.
+From merged `main` (`f15936e`, PR #3), the independent `test/frontend-real-revision-loop` slice adds `npm run fixture:browser` and `npm run test:browser-real`. Its original verification did not include or depend on the access/legacy branch. After PR #4 merged, PR #5's conflict resolution incorporates `main` (`93f5964`) while preserving access/legacy and real-loop commands/documentation. The dated browser results below remain the original runs, not fresh browser rerun claims. Reproduction, dedicated ports, process-only environment overrides and mandatory fixture shutdown instructions are in `nextjs-boilerplate/README.md`.
 
 - **Executed:** 5/5 ordered browser checkpoints passed: initial v1, hard-refresh session/v1 restoration, follow-up v2, hard-refresh v2 restoration and historical v1 reopening. The selected URL and displayed source match each revision.
 - Actual Project API reads compare complete snapshots with committed responses, prove v1 immutability and v2's v1 parent, preserve unchanged CSS and verify explicit `components/Old.tsx` deletion. The same key/body replays the same v2 revision. A second real account sees an empty project list and receives 404 for the first owner's project/revision; these second-owner checks are HTTP assertions inside the runner, not an interactive second browser login.
@@ -15,6 +19,26 @@ From merged `main` (`f15936e`, PR #3), the independent `test/frontend-real-revis
 - Scoped fixture shutdown exited 0 and reported all four collection counts zero; an independent read-only Mongo probe confirmed them. Collections/indexes were retained, not dropped. The runner closed its own browser; the manually started dedicated Next server was stopped separately. Always request fixture shutdown even after a failed test, and investigate unknown records instead of deleting broadly.
 
 No production application/auth/schema, `.env`, dependency or lockfile changes. Remaining work includes real-service failure preservation/lost-response automation, broader auth/storage/race/crash cases, provider quality/cost and generated-code build/execution/deployment. M1 is not marked fully accepted.
+
+## Legacy, saved drafts and unavailable selections (2026-10-12)
+
+PR #3 was confirmed merged at `f15936e`; this test-only slice starts from updated `main` on `test/frontend-workspace-access-legacy`. Story: real Next/React selection reads → mocked legacy/draft/not-found API responses → truthful code/metadata or disabled empty/error UI → explicit read retry → New conversation recovery.
+
+```powershell
+# Repository root, with Next already running:
+npm run test:browser-access
+# Dedicated test port alternative:
+npm run test:browser-access -- -BaseUrl http://localhost:3102
+```
+
+- **Executed 4/4 scenarios, 8 checkpoints:** legacy snapshot, saved draft, unavailable project, unavailable revision. Legacy code loads without invented A/M badges; model/usage, parent, producing prompt, validation and change metadata remain labelled unknown. Drafts show no generated/demo tabs and accept an unsent prompt.
+- Project/revision `404` responses disable generation and display no files. Retry issues another read against the same scoped IDs; counters are checked after DOM readiness and compared with the last recorded read, allowing development-mode aborted reads without falsely accepting a stale error. New conversation clears each error and restores an empty usable draft. All writes/unknown API paths are blocked; no unexpected calls or uncaught page errors occurred.
+- Shared-runner regression checks were rerun: malformed links 3/3 and history/pagination/session rejection 3/3. Total this turn: **10 browser scenarios**, frontend unit tests 9/9, lint, production build, snippet/PowerShell syntax and diff checks passed. Application/service code and dependencies are unchanged.
+- Legacy and not-found screenshots `output/playwright/workspace-access-f144e36e-legacy.png` and `workspace-access-f144e36e-project404.png` were inspected. Scenario/recovery artifacts remain ignored. Test browser sessions and the dedicated Next server were closed after verification; unrelated `.github/` work was preserved.
+
+**Evidence boundary:** every API response is mocked before navigation. The generic unavailable response represents missing/deleted/foreign resources without distinguishing them; this verifies frontend handling, not real cross-owner authorization or an implemented deletion API. No normal/dedicated database was accessed, no paid provider called, no credentials or `.env` changed. Backend integration suites were not rerun. Next is automated real Auth/Project/Mongo revision-loop coverage with deterministic AI transport; broader auth-expiry/storage/crash cases remain, so M1 is not marked fully accepted. Setup and all three commands are in the frontend README.
+
+**Delivery recheck — 2026-10-13:** access scenarios 4/4, frontend unit tests 9/9, lint, production build, snippet/PowerShell syntax and diff checks passed again before the requested commit/push. The other two browser suites' 6 passing scenarios above are 2026-10-12 evidence, not rerun claims for this delivery turn. The test browser/server were stopped; unrelated `.github/` work remains excluded. Real-service automation has not started and awaits this slice's PR merge.
 
 ## Pagination and protected-401 recovery (2026-10-12)
 
