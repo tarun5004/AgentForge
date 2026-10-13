@@ -4,7 +4,15 @@
 
 **Purpose:** Convert the current synchronous generation demo into a reliable, explainable code-generation platform through small, verifiable milestones.
 
-## Implementation progress — 2026-10-12
+## Implementation progress — 2026-10-13
+
+`npm run test:browser-real` now automates the real Next/Auth/Project/Mongo revision loop with only the AI HTTP transport replaced by deterministic test output. Five checkpoints passed: create/generate v1, hard refresh, follow-up v2, hard refresh and reopen immutable v1. Real API assertions also prove selected-base forwarding, parent linkage, unchanged-file preservation, explicit deletion, same-key replay with only two AI calls, and a second owner's empty list/404 reads. Scoped fixture cleanup and a separate read-only probe confirmed zero remaining records. See `08_TESTING_STRATEGY.md` and the frontend README for evidence and reproduction.
+
+This test-only slice originally started from merged `main` (`f15936e`, PR #3) on `test/frontend-real-revision-loop`, independently of the access/legacy slice. PR #4 subsequently merged access/legacy checks into `main` (`93f5964`). PR #5's conflict resolution brings that merged baseline into the real-loop branch, preserving both test commands and documentation. No production API/schema, environment file or package dependency changed. Resolution commit/push are requested; merging PR #5 remains separate.
+
+**Next small slice:** automate a real-service failed follow-up preserving the prior revision, then controlled lost-response/same-key recovery. M1 is not marked fully accepted: broader failure/race/crash coverage remains. No paid-provider quality, generated-code execution, queue or deployment work is authorized by this verification slice.
+
+## Historical implementation progress — 2026-10-12
 
 Slices 1–4 backend work and Slice 5 frontend integration are implemented. The UI restores owned snapshots from URL/backend after session restoration, lists saved history, submits against the visible parent, and retains one request key across uncertainty. Real Auth/Project/Mongo plus deterministic AI fixture browser checks proved create → v1 → hard refresh → v2 → hard refresh → reopen v1, failure preservation, responsive in-flight state, stale-response isolation and recovery. See `08_TESTING_STRATEGY.md` for exact checks. No paid-provider quality, real process-kill recovery or generated-code execution is claimed.
 
