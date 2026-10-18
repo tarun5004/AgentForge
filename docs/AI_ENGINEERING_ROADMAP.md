@@ -4,7 +4,13 @@
 
 **Purpose:** Convert the current synchronous generation demo into a reliable, explainable code-generation platform through small, verifiable milestones.
 
-## Implementation progress — 2026-10-13
+## Recovery automation — 2026-10-13
+
+PR #5 is merged (`7e1e730`). The next independent slice on `test/frontend-generation-recovery` adds `npm run test:browser-recovery`: seven real-service browser checkpoints verify terminal follow-up failure leaves v1/history unchanged; controlled loss of an actual committed v2 response retains request identity across refresh; explicit same-key/body retry recovers that exact revision without another AI call; and a final refresh loads v2 without pending controls. Real Auth/Project/Mongo are unchanged, with only deterministic AI transport and one deliberate browser-response drop controlled. No new dependency or production implementation is introduced. See the testing strategy for exact evidence/limits.
+
+**Next small slice:** audit remaining M1 acceptance evidence and focus on publication/status uncertainty only where coverage is missing. Queueing, provider routing, execution and deployment remain later, separately approved milestones. M1 is not declared fully accepted by these seven checks; process-crash/database-partition and broader race/auth/storage verification remain separate gaps. This turn requests implementation, not commit/push/merge.
+
+## Historical implementation progress — 2026-10-13
 
 `npm run test:browser-real` now automates the real Next/Auth/Project/Mongo revision loop with only the AI HTTP transport replaced by deterministic test output. Five checkpoints passed: create/generate v1, hard refresh, follow-up v2, hard refresh and reopen immutable v1. Real API assertions also prove selected-base forwarding, parent linkage, unchanged-file preservation, explicit deletion, same-key replay with only two AI calls, and a second owner's empty list/404 reads. Scoped fixture cleanup and a separate read-only probe confirmed zero remaining records. See `08_TESTING_STRATEGY.md` and the frontend README for evidence and reproduction.
 
