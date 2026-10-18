@@ -126,6 +126,7 @@ Snapshots/screenshots remain in ignored `output/playwright/` and `.playwright-cl
 
 ### Legacy, draft and unavailable-selection smoke
 
+
 With Next running, from the repository root:
 
 ```powershell
@@ -137,3 +138,19 @@ npm run test:browser-access -- -BaseUrl http://localhost:3102
 This uses `-Suite access` and `scripts/workspace-access.browser.js`. Four scenarios verify that legacy files remain readable with unknown provenance and no invented change badges; saved drafts stay genuinely empty/usable; and project/revision `404` responses disable generation and show no file tabs. Each unavailable selection is retried against the same IDs, then **New conversation** restores a usable empty draft. Eight completed checkpoints are required; unexpected API calls/writes and uncaught page errors fail the command.
 
 All API responses are synthetic. An unavailable resource could be missing, deleted or owned by someone else; the mock returns the same public not-found shape without exposing private data. This proves **frontend handling only**, not actual server ownership filtering or a deletion feature. Real authorization requires the dedicated Project API/Mongo integration suite. There are no real account/database/provider writes or new packages; artifacts use the same ignored output directories and the runner closes only its own browser session.
+
+### Real-service failure and response-loss recovery
+
+Start a **fresh, empty** dedicated fixture and Next with the process-only rewrites described under the real-service revision-loop check. Once Terminal 1 prints `Browser fixture ready`, run this from the repository root instead of `test:browser-real`:
+
+```powershell
+npm run test:browser-recovery
+# Dedicated local origin alternative:
+npm run test:browser-recovery -- -BaseUrl http://localhost:3102
+```
+
+The shared runner's `-Suite recovery` selects `scripts/workspace-recovery.browser.js`. Seven checkpoints cover v1 creation; a real Project API rejection of invalid fixture AI output; preserved v1 after refresh; a committed v2 response deliberately dropped before delivery; pending intent restored after refresh; explicit same-key/body retry; and the recovered v2 after refresh. Mongo/API reads verify one project, three Generation attempts (one failed), exactly two immutable Revisions and three AI fixture calls. Retry must add neither a revision nor an AI call.
+
+Only the deterministic AI transport and one post-commit browser response drop are controlled. Playwright forwards that POST to the real Project API first, records its actual 201 result privately, then aborts delivery; it does not fabricate a success or inject React/sessionStorage state. An uncertain UI intentionally keeps the selected v1 visible even though v2 is committed server-side; **Retry same attempt** reconciles the result. A terminal failure instead clears its key and permits a new request. These are different outcomes, not a universal automatic-retry policy.
+
+Always use the fixture shutdown command above even after failure, confirm zero remaining records and stop the dedicated Next server. Restart the fixture before running another suite. The browser closes in `finally`; tokens are private, artifacts ignored and no package added. This verifies controlled response loss after commit, not process-kill recovery, database partitions, failed publication or provider behavior. Generated code remains unexecuted.

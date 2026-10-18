@@ -1,9 +1,13 @@
-param([string]$BaseUrl = 'http://localhost:3102')
+param(
+    [string]$BaseUrl = 'http://localhost:3102',
+    [ValidateSet('loop', 'recovery')][string]$Suite = 'loop'
+)
 
 $ErrorActionPreference = 'Stop'
 $sessionName = 'workspace-real-' + [Guid]::NewGuid().ToString('N').Substring(0, 8)
 $opened = $false
 $failed = $false
+$browserChecks = if ($Suite -eq 'recovery') { 'scripts/workspace-recovery.browser.js' } else { 'scripts/workspace-real.browser.js' }
 
 # Fail on assertion errors, not just on a successful invocation of the CLI executable.
 function Invoke-RealBrowser {
@@ -36,6 +40,51 @@ function Read-FixtureMarker {
     }
 }
 
+# Exercise rejection and uncertainty separately: only an uncertain attempt should reuse its key.
+function Invoke-RecoveryFlow {
+    Use-RealControl 'textbox' 'Describe a frontend page or change' 'Build a simple portfolio page for my CV'
+    Use-RealControl 'button' 'Send prompt'
+    Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v1', { exact: true }).waitFor(); }")
+    Use-RealControl 'button' 'page.tsx A'
+    Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
+    Write-Host 'PASS initial saved v1.'
+
+    Use-RealControl 'textbox' 'Describe a frontend page or change' 'Return invalid output for this change'
+    Use-RealControl 'button' 'Send prompt'
+    Invoke-RealBrowser @('run-code', "async page => { await page.getByRole('alert').filter({ hasText: 'Code generation failed.' }).waitFor(); }")
+    Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
+    Write-Host 'PASS failed follow-up preserved v1 and cleared terminal intent.'
+    Invoke-RealBrowser @('reload')
+    Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v1', { exact: true }).waitFor(); }")
+    Use-RealControl 'button' 'page.tsx A'
+    Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
+    Write-Host 'PASS failed follow-up stays absent from revision history after refresh.'
+
+    Use-RealControl 'textbox' 'Describe a frontend page or change' 'Make the hero darker and remove old component'
+    Invoke-RealBrowser @('run-code', 'async page => { await page.evaluate(() => window.armRecoveryResponseLoss()); }')
+    Use-RealControl 'button' 'Send prompt'
+    Invoke-RealBrowser @('run-code', "async page => { await page.getByRole('button', { name: 'Retry same attempt', exact: true }).waitFor(); }")
+    Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
+    Invoke-RealBrowser @('screenshot', "--filename=output/playwright/$sessionName-uncertain.png", '--full-page')
+    Write-Host 'PASS committed response dropped; prior files and pending key retained.'
+    Invoke-RealBrowser @('reload')
+    Invoke-RealBrowser @('run-code', "async page => { await page.getByRole('button', { name: 'Retry same attempt', exact: true }).waitFor(); }")
+    Use-RealControl 'button' 'page.tsx A'
+    Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
+    Write-Host 'PASS pending identity survived refresh without automatic resubmission.'
+
+    Use-RealControl 'button' 'Retry same attempt'
+    Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v2', { exact: true }).waitFor(); }")
+    Use-RealControl 'button' 'page.tsx M'
+    Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
+    Write-Host 'PASS retry used the exact key/body and recovered v2 without another AI call.'
+    Invoke-RealBrowser @('reload')
+    Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v2', { exact: true }).waitFor(); }")
+    Use-RealControl 'button' 'page.tsx M'
+    Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
+    Write-Host 'PASS recovered v2 reloads with no pending controls.'
+}
+
 try {
     $address = [Uri]$BaseUrl
     if (-not $address.IsAbsoluteUri -or $address.Scheme -ne 'http' -or $address.Host -notin @('localhost', '127.0.0.1') -or
@@ -54,12 +103,18 @@ try {
     Invoke-RealBrowser @('open')
     $opened = $true
     Invoke-RealBrowser @('resize', '1440', '1000')
-    Invoke-RealBrowser @('run-code', '--filename=scripts/workspace-real.browser.js')
+    Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
     Invoke-RealBrowser @('goto', "$BaseUrl/register")
     Use-RealControl 'textbox' 'Name' 'Revision loop owner'
     Use-RealControl 'textbox' 'Email' 'frontend-slice5-20261012@agentforge.test'
     Use-RealControl 'textbox' 'Password' 'Disposable-test-password-13'
     Use-RealControl 'button' 'Create account'
+    if ($Suite -eq 'recovery') {
+        Invoke-RealBrowser @('run-code', "async page => { await page.getByRole('textbox', { name: 'Describe a frontend page or change' }).waitFor(); }")
+        Invoke-RecoveryFlow
+        Invoke-RealBrowser @('screenshot', "--filename=output/playwright/$sessionName-recovered.png", '--full-page')
+        Write-Host 'PASS 7/7 recovery checkpoints. Real Auth/Project/Mongo; deterministic AI and one controlled response drop.'
+    } else {
     Invoke-RealBrowser @('run-code', "async page => { await page.getByRole('textbox', { name: 'Describe a frontend page or change' }).fill('Build a simple portfolio page for my CV'); }")
     Use-RealControl 'button' 'Send prompt'
     Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v1', { exact: true }).waitFor(); }")
@@ -89,6 +144,7 @@ try {
     Invoke-RealBrowser @('screenshot', "--filename=output/playwright/$sessionName.png", '--full-page')
     Write-Host 'PASS immutable v1 reopen, same-key replay and real second-owner 404s.'
     Write-Host 'PASS 5/5 real-service checkpoints. Only AI transport is a fixture; generated code was not executed.'
+    }
 } catch { $failed = $true; [Console]::Error.WriteLine($_.Exception.Message) }
 finally {
     if ($opened) {
