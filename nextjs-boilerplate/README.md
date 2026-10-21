@@ -32,6 +32,8 @@ Independent Auth Service
 
 The access token is kept in React memory. The refresh token is set and rotated by the Auth Service as an HttpOnly cookie, so frontend JavaScript cannot read it.
 
+The installed Next rewrite proxy defaults to a 30-second timeout. `next.config.ts` explicitly permits 95 seconds, allowing the Project Service's 90-second AI deadline to respond before the browser client's 100-second deadline. This is bounded synchronous-request handling, not a promise of background completion or a deployment platform's maximum duration.
+
 A protected Project API `401` clears the cached user/access token before redirecting to `/login`. Redirecting alone would let AuthForm send the stale user back to the workspace repeatedly. `invalidateSession` is a stable client callback; it does not revoke refresh cookies or replace the existing server logout flow. Pending generation keys stay user/project-scoped for later reconciliation after sign-in.
 
 Authenticated workspace prompts call `POST /api/projects`. The Project Service validates the access token and prompt, then saves a draft project before any AI generation begins.
@@ -154,3 +156,26 @@ The shared runner's `-Suite recovery` selects `scripts/workspace-recovery.browse
 Only the deterministic AI transport and one post-commit browser response drop are controlled. Playwright forwards that POST to the real Project API first, records its actual 201 result privately, then aborts delivery; it does not fabricate a success or inject React/sessionStorage state. An uncertain UI intentionally keeps the selected v1 visible even though v2 is committed server-side; **Retry same attempt** reconciles the result. A terminal failure instead clears its key and permits a new request. These are different outcomes, not a universal automatic-retry policy.
 
 Always use the fixture shutdown command above even after failure, confirm zero remaining records and stop the dedicated Next server. Restart the fixture before running another suite. The browser closes in `finally`; tokens are private, artifacts ignored and no package added. This verifies controlled response loss after commit, not process-kill recovery, database partitions, failed publication or provider behavior. Generated code remains unexecuted.
+
+### State safety and status recovery
+
+With a fresh fixture and Next already running, `npm run test:browser-state` runs nine checkpoints. A test-only AI barrier holds an actual pending Generation while the browser reflows desktop → mobile → desktop; prompt, navigation and logout must stay frozen. After commit a controlled proxy 503 preserves the actual generation ID. **Check status** must read the real ready result without another POST/model call. A real project-A detail response is then held while B is selected; releasing A must not overwrite B. Successful project/files/status data is never fabricated. The barrier/proxy/read delay are test controls, not production crash simulations.
+
+### One-command local verification (recommended)
+
+Requires Windows PowerShell, Node 22+, installed workspace dependencies, Chrome available to the pinned Playwright CLI and a running local MongoDB. Run from the repository root:
+
+```powershell
+$env:AGENTFORGE_TEST_MONGODB_URI='mongodb://127.0.0.1:27017/agentforge_test_workspace_local'
+npm run verify:workspace
+# A focused suite:
+npm run verify:workspace -- --suite state
+```
+
+The explicit database must be empty and named `agentforge_test_*`, with a loopback host and no credentials/URI options. The launcher never reads an application `.env` to select a database and never drops one. Ports 3102/4310/4311/4312 must be free; existing processes are refused, not reused or killed. No new package is installed into the project.
+
+The launcher starts its own Next server with process-only test rewrites, waits for HTTP readiness, runs mocked link/history/access suites and the real loop/recovery/state suites, and creates a fresh fixture for each real suite. It attempts HTTP fixture shutdown in `finally`, checks zero remaining records through a separate Mongo client, and stops only its own process trees. Failure/timeout exits nonzero; unexpected records are preserved for investigation. Runtime summaries and browser artifacts remain ignored under `output/playwright/`. No provider credits or generated-code execution are involved.
+
+Pinned Playwright CLI 0.1.22 is bootstrapped/version-checked once, then invoked directly so npm startup is not repeated for each click. Normal stderr notices do not masquerade as failures; actual exit codes and CLI assertion errors still fail the run. The launcher supplies unique browser session names and attempts to close only those sessions during cleanup.
+
+Use `--suite loop|recovery|state|mocked|all` to limit scope. `--fail-after-start` deliberately fails after both servers are ready so cleanup can be tested without browser writes; its expected exit code is 1. Hard OS termination/power loss cannot guarantee finally cleanup. The acceptance matrix in `docs/M1_ACCEPTANCE_REVIEW.md` separates implemented behavior, executed checks and remaining scope.

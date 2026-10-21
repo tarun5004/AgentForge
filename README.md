@@ -166,6 +166,8 @@ Open the frontend at `http://localhost:3001`. The root route redirects to `/logi
 
 ## Verification commands
 
+For repeatable browser verification with launcher-owned local servers and scoped cleanup, see [the frontend verification guide](nextjs-boilerplate/README.md#one-command-local-verification-recommended). It requires an explicit empty local `agentforge_test_*` database and never executes generated code or calls a paid provider. [The M1 acceptance review](docs/M1_ACCEPTANCE_REVIEW.md) separates implemented functionality from actual evidence and remaining scope.
+
 ```bash
 npm run build:web
 npm run build:auth
