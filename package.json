@@ -26,6 +26,7 @@
     "fixture:browser": "tsx tests/frontend-history.fixture.mts",
     "test:browser-real": "powershell -NoProfile -File scripts/verify-workspace-real.ps1",
     "test:browser-recovery": "powershell -NoProfile -File scripts/verify-workspace-real.ps1 -Suite recovery",
+    "test:browser-state": "powershell -NoProfile -File scripts/verify-workspace-real.ps1 -Suite state",
     "test:browser-access": "powershell -NoProfile -File scripts/verify-workspace-links.ps1 -Suite access"
   }
 }

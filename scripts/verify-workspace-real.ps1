@@ -1,19 +1,27 @@
 param(
     [string]$BaseUrl = 'http://localhost:3102',
-    [ValidateSet('loop', 'recovery')][string]$Suite = 'loop'
+    [ValidateSet('loop', 'recovery', 'state')][string]$Suite = 'loop'
 )
 
 $ErrorActionPreference = 'Stop'
-$sessionName = 'workspace-real-' + [Guid]::NewGuid().ToString('N').Substring(0, 8)
+$sessionName = if ($env:AGENTFORGE_BROWSER_SESSION) { $env:AGENTFORGE_BROWSER_SESSION } else { 'workspace-real-' + [Guid]::NewGuid().ToString('N').Substring(0, 8) }
+if ($sessionName -notmatch '^[a-zA-Z0-9-]+$') { throw 'Invalid test browser session name.' }
 $opened = $false
 $failed = $false
-$browserChecks = if ($Suite -eq 'recovery') { 'scripts/workspace-recovery.browser.js' } else { 'scripts/workspace-real.browser.js' }
+$browserChecks = @{ loop = 'scripts/workspace-real.browser.js'; recovery = 'scripts/workspace-recovery.browser.js'; state = 'scripts/workspace-state.browser.js' }[$Suite]
 
 # Fail on assertion errors, not just on a successful invocation of the CLI executable.
 function Invoke-RealBrowser {
     param([string[]]$Arguments)
-    $output = & $nodeCommand $npxEntry --yes --package '@playwright/cli@0.1.22' playwright-cli "-s=$sessionName" @Arguments 2>&1
-    if ($LASTEXITCODE -ne 0 -or ($output -join "`n") -match '### Error') {
+    # Windows PowerShell treats native stderr (including harmless npm notices) as ErrorRecords.
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        [string[]]$entryArgs = if ($env:AGENTFORGE_PLAYWRIGHT_CLI) { @($env:AGENTFORGE_PLAYWRIGHT_CLI) } else { @($npxEntry, '--yes', '--package', '@playwright/cli@0.1.22', 'playwright-cli') }
+        $output = & $nodeCommand @entryArgs "-s=$sessionName" @Arguments 2>&1
+        $commandExit = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $previousPreference }
+    if ($commandExit -ne 0 -or ($output -join "`n") -match '### Error') {
         $output | Where-Object { "$_" -match '^(Error|TimeoutError):' } | ForEach-Object { [Console]::Error.WriteLine("$_") }
         throw "Real browser command failed: $($Arguments[0])"
     }
@@ -85,6 +93,47 @@ function Invoke-RecoveryFlow {
     Write-Host 'PASS recovered v2 reloads with no pending controls.'
 }
 
+# Freeze a real model request while the UI reflows; reconcile by GET, then test a stale read.
+function Invoke-StateFlow {
+    Use-RealControl 'textbox' 'Describe a frontend page or change' 'Build a portfolio website page'
+    Use-RealControl 'button' 'Send prompt'
+    Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v1', { exact: true }).waitFor(); }")
+    Use-RealControl 'button' 'page.tsx A'
+    Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
+    Invoke-RealBrowser @('run-code', "async page => { await page.evaluate(() => window.workspaceStateAction('arm-generation')); }")
+    Use-RealControl 'textbox' 'Describe a frontend page or change' 'Make the hero darker and remove old component'
+    Use-RealControl 'button' 'Send prompt'
+    Invoke-RealBrowser @('run-code', "async page => { await page.evaluate(() => window.workspaceStateAction('wait-pending')); }")
+    Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
+    Write-Host 'PASS in-flight desktop/mobile/desktop identity and frozen controls.'
+    Invoke-RealBrowser @('run-code', "async page => { await page.evaluate(() => window.workspaceStateAction('release-generation')); }")
+    Invoke-RealBrowser @('run-code', "async page => { await page.getByRole('button', { name: 'Check status', exact: true }).waitFor(); }")
+    Use-RealControl 'button' 'page.tsx A'
+    Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
+    Use-RealControl 'button' 'Check status'
+    Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v2', { exact: true }).waitFor(); }")
+    Use-RealControl 'button' 'page.tsx M'
+    Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
+    Write-Host 'PASS real generation-status GET reconciled committed v2 without a new POST.'
+    Use-RealControl 'button' 'New conversation'
+    Use-RealControl 'textbox' 'Describe a frontend page or change' 'Build a contact website page'
+    Use-RealControl 'button' 'Send prompt'
+    Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v1', { exact: true }).waitFor(); }")
+    Use-RealControl 'button' 'page.tsx A'
+    Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
+    Invoke-RealBrowser @('run-code', "async page => { await page.evaluate(() => window.workspaceStateAction('arm-read')); }")
+    Use-RealControl 'button' 'Build a portfolio website page v2'
+    Invoke-RealBrowser @('run-code', "async page => { await page.evaluate(() => window.workspaceStateAction('wait-read')); }")
+    Use-RealControl 'button' 'Build a contact website page v1'
+    Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v1', { exact: true }).waitFor(); }")
+    Use-RealControl 'button' 'page.tsx A'
+    Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
+    Invoke-RealBrowser @('run-code', "async page => { await page.evaluate(() => window.workspaceStateAction('release-read')); }")
+    Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
+    Invoke-RealBrowser @('screenshot', "--filename=output/playwright/$sessionName-selection.png", '--full-page')
+    Write-Host 'PASS delayed old-project read cannot overwrite the newer selected project.'
+}
+
 try {
     $address = [Uri]$BaseUrl
     if (-not $address.IsAbsoluteUri -or $address.Scheme -ne 'http' -or $address.Host -notin @('localhost', '127.0.0.1') -or
@@ -100,8 +149,8 @@ try {
     $npxEntry = Join-Path (Split-Path (Get-Command npx.cmd).Source) 'node_modules/npm/bin/npx-cli.js'
     $null = New-Item -ItemType Directory -Force -Path 'output/playwright'
     $snapshotPath = "output/playwright/$sessionName.yml"
-    Invoke-RealBrowser @('open')
     $opened = $true
+    Invoke-RealBrowser @('open')
     Invoke-RealBrowser @('resize', '1440', '1000')
     Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
     Invoke-RealBrowser @('goto', "$BaseUrl/register")
@@ -109,7 +158,11 @@ try {
     Use-RealControl 'textbox' 'Email' 'frontend-slice5-20261012@agentforge.test'
     Use-RealControl 'textbox' 'Password' 'Disposable-test-password-13'
     Use-RealControl 'button' 'Create account'
-    if ($Suite -eq 'recovery') {
+    if ($Suite -eq 'state') {
+        Invoke-RealBrowser @('run-code', "async page => { await page.getByRole('textbox', { name: 'Describe a frontend page or change' }).waitFor(); }")
+        Invoke-StateFlow
+        Write-Host 'PASS 9/9 state checkpoints. Real services; controlled AI barrier/proxy uncertainty/read delay.'
+    } elseif ($Suite -eq 'recovery') {
         Invoke-RealBrowser @('run-code', "async page => { await page.getByRole('textbox', { name: 'Describe a frontend page or change' }).waitFor(); }")
         Invoke-RecoveryFlow
         Invoke-RealBrowser @('screenshot', "--filename=output/playwright/$sessionName-recovered.png", '--full-page')

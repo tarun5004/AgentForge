@@ -4,7 +4,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$sessionName = "workspace-$Suite-" + [Guid]::NewGuid().ToString('N').Substring(0, 8)
+$sessionName = if ($env:AGENTFORGE_BROWSER_SESSION) { $env:AGENTFORGE_BROWSER_SESSION } else { "workspace-$Suite-" + [Guid]::NewGuid().ToString('N').Substring(0, 8) }
+if ($sessionName -notmatch '^[a-zA-Z0-9-]+$') { throw 'Invalid test browser session name.' }
 $browserOpened = $false
 $failed = $false
 
@@ -12,8 +13,15 @@ $failed = $false
 function Invoke-BrowserCommand {
     param([string[]]$CliArguments)
     # Bypass npx.cmd: cmd.exe treats the & in duplicate-query URLs as another command.
-    $output = & $nodeCommand $npxEntry --yes --package '@playwright/cli@0.1.22' playwright-cli "-s=$sessionName" @CliArguments 2>&1
-    if ($LASTEXITCODE -ne 0 -or ($output -join "`n") -match '### Error') {
+    # npm notices use stderr too; judge native failure by exit status/browser assertions.
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        [string[]]$entryArgs = if ($env:AGENTFORGE_PLAYWRIGHT_CLI) { @($env:AGENTFORGE_PLAYWRIGHT_CLI) } else { @($npxEntry, '--yes', '--package', '@playwright/cli@0.1.22', 'playwright-cli') }
+        $output = & $nodeCommand @entryArgs "-s=$sessionName" @CliArguments 2>&1
+        $commandExit = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $previousPreference }
+    if ($commandExit -ne 0 -or ($output -join "`n") -match '### Error') {
         $output | Where-Object { "$_" -match '^(Error|SyntaxError|TimeoutError):' } | ForEach-Object { [Console]::Error.WriteLine("$_") }
         throw "Browser command failed: $($CliArguments[0]). Inspect .playwright-cli/ artifacts for details."
     }
@@ -47,8 +55,8 @@ try {
     $null = Invoke-WebRequest "$BaseUrl/workspace" -UseBasicParsing -MaximumRedirection 0 -TimeoutSec 30
 
     # Each run gets a new browser session; existing user cookies/tabs are never reused.
-    Invoke-BrowserCommand @('open')
     $browserOpened = $true
+    Invoke-BrowserCommand @('open')
     Invoke-BrowserCommand @('resize', '1440', '1000')
     # File-based snippets avoid Windows command-line quoting of multiline JavaScript.
     $browserChecks = "scripts/workspace-$Suite.browser.js"
