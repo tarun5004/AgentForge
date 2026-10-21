@@ -6,6 +6,9 @@ const projectServiceUrl =
   process.env.PROJECT_SERVICE_URL ?? "http://localhost:3000";
 
 const nextConfig: NextConfig = {
+  // AI fetches have a 90s deadline; Next's default 30s rewrite timeout must not cut them off.
+  // Keep a finite proxy deadline below the browser client's 100s deadline.
+  experimental: { proxyTimeout: 95_000 },
   async rewrites() {
     return [
       {
