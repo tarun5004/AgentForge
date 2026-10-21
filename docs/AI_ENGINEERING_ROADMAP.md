@@ -4,6 +4,14 @@
 
 **Purpose:** Convert the current synchronous generation demo into a reliable, explainable code-generation platform through small, verifiable milestones.
 
+## M1 verification follow-up — 2026-10-21
+
+PR #6 is merged (`5651d5e`). The focused `test/frontend-m1-verification` branch adds acceptance mapping, a 95-second proxy deadline aligned with the existing 90-second backend/100-second browser limits, repeatable state/status checks and an isolated one-command launcher. Each real suite gets a fresh Next + fixture pair to avoid carrying proxy connections across upstream restarts. No queue, provider expansion, execution service or deployment was added.
+
+The final combined launcher run passed all six browser suites: mocked links/history/access and real Auth/Project/Mongo loop/recovery/state with deterministic AI. This includes actual status-GET recovery without another generation, frozen request identity across responsive reflow, and delayed old-project read isolation. Scoped cleanup and an independent Mongo read reported zero records in the new dedicated test database; test ports were released. Frontend unit tests 10/10, lint and production build passed. Exact evidence and previous failed runs are retained in `08_TESTING_STRATEGY.md` and `M1_ACCEPTANCE_REVIEW.md`.
+
+**Next decision:** review deterministic M1 acceptance against the recorded backend and browser evidence, then approve one bounded M2 design slice if desired. Do not infer crash durability from HTTP response-loss recovery. Paid-provider quality/cost, generated-code validation/execution and deployment remain unverified; the older roadmap sections below are historical proposals, not fresh completion claims.
+
 ## Recovery automation — 2026-10-13
 
 PR #5 is merged (`7e1e730`). The next independent slice on `test/frontend-generation-recovery` adds `npm run test:browser-recovery`: seven real-service browser checkpoints verify terminal follow-up failure leaves v1/history unchanged; controlled loss of an actual committed v2 response retains request identity across refresh; explicit same-key/body retry recovers that exact revision without another AI call; and a final refresh loads v2 without pending controls. Real Auth/Project/Mongo are unchanged, with only deterministic AI transport and one deliberate browser-response drop controlled. No new dependency or production implementation is introduced. See the testing strategy for exact evidence/limits.

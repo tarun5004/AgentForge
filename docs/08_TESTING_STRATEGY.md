@@ -1,5 +1,18 @@
 # AgentForge V1 — Testing Strategy
 
+## Verification launcher lifecycle follow-up (2026-10-21)
+
+The earlier combined report recorded links/history/access/loop passes, then a recovery failure after response loss; it is not a six-suite success. A subsequent attempt had no completed summary and is not counted as a pass. Reusing the proxy across upstream fixture restarts was a suspected source of stale connections. The launcher now stops and awaits its owned Next process, then starts a fresh Next + fixture pair for each real suite. Assertions, application APIs and dependencies are unchanged.
+
+- A fresh focused recovery run passed **7/7 checkpoints**, including refresh after response loss and exact-key/body replay with no additional AI request or Revision. Launcher exit was 0; fixture shutdown and an independent launcher Mongo client confirmed zero records in all four collections. Report: ignored `output/playwright/verification-1792605340027.json`.
+- Frontend unit tests passed **10/10**, lint passed; verification guards passed **3/3**, actual PowerShell command-wrapper regressions **12/12**, and cleanup tests **4/4**. Deliberate failure markers in the helper tests are expected assertions, not a failed suite.
+- The old `agentforge_test_workspace_20261021` database was refused before writes because it contained one user and no project/generation/revision records. It was **not cleaned or dropped**. A separately selected empty `agentforge_test_verify_next_20261021` was used instead. Passing ordinary cleanup does not promise cleanup after hard termination.
+- Inspected screenshot `output/playwright/verification-2632-recovery-recovered.png` shows recovered v2, parent v1, modified/deleted paths and honest unconnected preview/terminal labels. Paid model quality, generated-code execution and real crash/database-partition recovery are outside this evidence.
+
+The complete rerun then passed **6/6 suites**, exit 0: links 3/3, history 3/3, access 4/4 scenarios; real loop 5/5, recovery 7/7, state 9/9 checkpoints. Report: ignored `output/playwright/verification-1792605471891.json`, `cleanup: true`, no failure marker. State checks exercised a real pending Generation across desktop/mobile/desktop, a real status GET after controlled post-commit 503 without a new generation, and a held old-project response released after selecting another project. The browser scenario outputs are not interchangeable with the helper-test counts.
+
+After launcher exit, an independent read confirmed zero users/projects/generations/revisions in the newly selected test database, and no listeners remained on ports 3102/4310/4311/4312. Frontend production build passed, exit 0, after all dev servers stopped. Inspected `verification-20596-state-selection.png` and `state-mobile-1792605702754.png` show the newer project selection and disabled pending mobile controls respectively. Artifacts remain ignored. The refused older database was not altered. Baseline backend results are recorded in `M1_ACCEPTANCE_REVIEW.md`; backend/provider suites were not rerun in this lifecycle-only follow-up.
+
 ## Real-service terminal failure and response-loss recovery (2026-10-13)
 
 PR #5 was verified merged at `7e1e730`; this focused slice starts from that baseline on `test/frontend-generation-recovery`. Story: real browser submission → Next rewrites → Auth/Project/Mongo → terminal AI-output rejection or committed response loss → truthful retained files/pending intent → explicit replay → restored committed revision. The existing deterministic AI transport is reused; no production service code, contracts, dependencies or environment files changed.

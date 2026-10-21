@@ -105,6 +105,30 @@ function stop(child) {
   } else child.kill('SIGTERM');
 }
 
+// Restarting a fixture under a live proxy can leave pooled sockets pointing at its old process.
+async function stopNext() {
+  if (!next) return;
+  const child = next;
+  stop(child);
+  if (child.exitCode === null && child.signalCode === null) {
+    let timer;
+    try {
+      await Promise.race([once(child, 'exit'), new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Owned Next server did not stop.')), 10_000);
+      })]);
+    } finally { clearTimeout(timer); }
+  }
+  next = null;
+}
+
+// Each real scenario gets a fresh proxy as well as a fresh service fixture, not stale pooled sockets.
+async function startNext() {
+  next = start(process.execPath, [resolve(root, 'node_modules/next/dist/bin/next'), 'dev', '--port', '3102'], {
+    ...process.env, AUTH_SERVICE_URL: 'http://127.0.0.1:4310', PROJECT_SERVICE_URL: 'http://127.0.0.1:4311',
+  }, resolve(root, 'nextjs-boilerplate'));
+  await ready(next, 'http://localhost:3102/login');
+}
+
 // HTTP shutdown releases held requests, performs scoped fixture cleanup and disconnects Mongo.
 async function stopFixture() {
   if (!fixture) return;
@@ -120,14 +144,16 @@ async function stopFixture() {
 
 // One fresh fixture per real suite prevents another suite's records from hiding duplicate writes.
 async function realSuite(suite, uri) {
+  await stopNext();
   await emptyDatabase();
   fixture = start(process.execPath, [resolve(root, 'node_modules/tsx/dist/cli.mjs'), 'tests/frontend-history.fixture.mts'],
     { ...process.env, AGENTFORGE_TEST_MONGODB_URI: uri });
   await ready(fixture, 'http://127.0.0.1:4312/__fixture', value => value.fixtureId === 'agentforge-real-revision-loop-v1');
   try {
+    await startNext();
     await browserSuite('scripts/verify-workspace-real.ps1', suite);
     report.suites.push({ suite, passed: true });
-  } finally { await stopFixture(); }
+  } finally { try { await stopFixture(); } finally { await stopNext(); } }
 }
 
 // The launcher owns servers/cleanup; the existing browser scripts continue to own their sessions.
@@ -149,10 +175,7 @@ async function main() {
   await mkdir(artifactDirectory, { recursive: true });
   reportPath = resolve(artifactDirectory, `verification-${Date.now()}.json`);
   report.database = database;
-  next = start(process.execPath, [resolve(root, 'node_modules/next/dist/bin/next'), 'dev', '--port', '3102'], {
-    ...process.env, AUTH_SERVICE_URL: 'http://127.0.0.1:4310', PROJECT_SERVICE_URL: 'http://127.0.0.1:4311',
-  }, resolve(root, 'nextjs-boilerplate'));
-  await ready(next, 'http://localhost:3102/login');
+  if (options.suite === 'all' || options.suite === 'mocked' || options.failAfterStart) await startNext();
   if (options.failAfterStart) {
     fixture = start(process.execPath, [resolve(root, 'node_modules/tsx/dist/cli.mjs'), 'tests/frontend-history.fixture.mts'],
       { ...process.env, AGENTFORGE_TEST_MONGODB_URI: uri });
