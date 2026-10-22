@@ -1,5 +1,25 @@
 # Local preview verification — 2026-10-22
 
+## Exact frontend-origin follow-up — 2026-10-22
+
+Independent branch: `fix/execution-service-preview-origin`, based on merged `main` at `00811ef`. Scope is Execution Service configuration, CSP policy, tests and documentation. The separate frontend E2E work and roadmap edit are preserved in named Git stashes, not mixed into this branch. No commit/push/merge is implied by this implementation.
+
+**Reproduced cause:** the opt-in real-service workspace test used Next on `localhost:3102`. Login, saved revision and the real Docker build reached ready, but the preview server hardcoded `frame-ancestors` to the port-3001 aliases. Browser console explicitly reported the frame blocked by that directive. Snapshot `output/playwright/preview-real-debug.yml` recorded “Static Next.js build passed. Build container removed.” beside the blocked iframe. This is an origin mismatch, not a generation/auth failure; it is not evidence that normal port-3001 preview is broken.
+
+**Change:** optional `PREVIEW_FRONTEND_ORIGIN`, validated as one exact loopback HTTP origin before listener startup. Unset keeps both original port-3001 aliases. A custom origin replaces them; no wildcard or reflected unvalidated header text. Sandbox, capability, no-referrer and network restrictions are unchanged.
+
+| Check run for this fix | Actual result |
+| --- | --- |
+| Execution unit/HTTP regression suite | **19/19 passed**, including three new default/custom/invalid-origin and emitted-header checks. |
+| Execution typecheck and build | Passed, exit 0. |
+| Explicit `test:preview-browser`, installed Edge channel | **1/1 passed**, 40.4 seconds. Actual Preview HTTP server + interactive sandbox iframe under a custom random-port parent; a second parent is rejected by browser CSP. Storage and fetch remain blocked. Only artifact bytes are fixed fixtures; no HTTP interception or policy override. |
+| Earlier zero-cost workspace attempts | First: Chrome startup timed out before application writes. Second: Edge reached real saved-code/Docker-ready state, then failed at the hardcoded ancestor policy. Neither is a successful full E2E run. |
+| Cleanup after failed workspace attempts | Reports recorded empty dedicated test collections and no labeled preview containers; dedicated test ports were released. No normal app records or Compose containers were removed. |
+
+Ignored browser-policy log: `output/playwright/execution-preview-origin-browser.log`. The original workspace evidence remains in `output/playwright/preview-real-verification.log` and `preview-real-verification-edge.log`. Paid providers, new Docker builds for this policy fix, dependency remediation and the full workspace E2E after this fix are **not** claimed. Per the chosen branch order, resume that frontend suite only after this dependency merges, configuring its real preview server for its actual frontend origin.
+
+## Original local-preview verification and later audit
+
 Branch: `feature/execution-service-local-preview`, independently based on `main` (`203f45f`). Changes are limited to Execution Service code, template, tests and documentation. Existing frontend-session and Compose commits remain on their own branches. The original implementation remained uncommitted; the subsequent audit/delivery turn was explicitly authorized to create focused commits and PRs.
 
 | Check actually run | Result |
