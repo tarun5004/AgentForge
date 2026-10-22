@@ -28,8 +28,9 @@ The Next.js workspace currently provides:
 - mouse and keyboard accessible resizable panels on desktop
 - stacked layout on smaller screens
 - explicit local-demo labels wherever backend behavior is not connected
+- opt-in local static Preview for a selected saved revision, with build status, Stop and safe retry states
 
-Optional sample assets remain in `workspace-data.ts`, but the editor never falls back to them. No selection, saved drafts, loading and failed loads have explicit states. Terminal output is labelled as an unconnected sample; generated projects are not executed by this UI.
+Optional sample assets remain in `workspace-data.ts`, but the editor never falls back to them. No selection, saved drafts, loading and failed loads have explicit states. Terminal output remains an unconnected sample; Preview separately requests a real restricted local build of saved files.
 
 The authentication forms validate input and call the Auth Service through the same-origin proxy. The short-lived access token stays only in React memory, while the refresh token stays in an HttpOnly cookie. Reloading the page restores the session through `/api/auth/refresh`, and unauthenticated workspace visits return to `/login`.
 
@@ -41,10 +42,10 @@ The frontend route guard is a user-experience check; every future protected back
 | --- | ---: | --- |
 | Auth Service | `4000` | Register, login, refresh, logout, and authenticated profile endpoints |
 | Project Service | `3000` | Authenticated projects, generation records, and immutable revisions in MongoDB |
-| Execution Service | `5000` | Health endpoints, environment validation, run request schema, and reusable body validation |
+| Execution Service | `5000` status-only; opt-in host controller `5002`, preview `5101` | Owner-scoped `/api/runs`, bounded Docker static builds, status/cancel/expiry; disabled by default |
 | AI Orchestrator | `6000` | Internal Vercel AI Gateway call with schema and safe-file validation |
 
-The Project Service no longer creates Kubernetes Pods. Runtime isolation belongs to the Execution Service and will be introduced only after the simpler project and generation flows work end to end. The Execution Service does **not** expose a completed `POST /runs` workflow yet.
+The Project Service does not create Kubernetes Pods. Execution Service owns the opt-in **local** `POST /api/runs` workflow: read owned saved files, build a trusted Next.js template in a restricted container, remove the container and serve bounded expiring static output. The frontend Preview dialog uses this API. [Setup/security limits](execution-service/README.md) and [audit evidence](execution-service/VERIFICATION.md) distinguish fixture verification from an unrun paid-provider end-to-end test. This is not a public multi-tenant sandbox or Kubernetes implementation.
 
 Version Zero temporarily verifies Auth Service access tokens with a shared `ACCESS_TOKEN_SECRET`. The documented V1 target replaces this with asymmetric signing and JWKS verification so services never share a private signing secret.
 
@@ -78,7 +79,7 @@ Desktop separators can resize the chat width, changes width, and terminal height
 auth-service/          Express authentication service
 project-service/       Project lifecycle and orchestration service
 ai-orchestrator-service/  Model call, output schema, and generated-file safety policy
-execution-service/     Isolated run and preview service foundation
+execution-service/     Opt-in local static build and preview service
 nextjs-boilerplate/    Next.js AgentForge workspace UI
 docs/                  Product, architecture, API, security, and phase docs
 k8s/                   Early Kubernetes manifests
@@ -154,6 +155,7 @@ Never commit real `.env` files or API keys.
 
 For a one-command local Docker stack, see [Local Docker Compose](docs/LOCAL_DOCKER.md).
 It starts all five apps plus isolated MongoDB; it does not execute generated code or make AI usage free.
+The optional local preview controller is started separately on the trusted host, following [Execution setup](execution-service/README.md); no Docker socket is mounted into the app containers.
 
 Run each required application in its own terminal:
 
@@ -200,8 +202,8 @@ npm --workspace execution-service run typecheck
 5. **Complete:** send a saved prompt through Project Service to the AI Orchestrator and persist a validated revision.
 6. **Complete:** display a successful generation's real files in the workspace editor.
 7. **Implemented:** reopen saved projects/revisions, restore after refresh, and submit targeted follow-ups. Deterministic browser checks passed; a complete repeatable CI browser suite remains future work.
-8. **Next:** review the history loop and close remaining automated browser acceptance gaps before starting execution work.
-9. Add Execution Service runs and status tracking after bounded generated-code validation/isolation design.
+8. **Implemented:** audited local Execution API, Docker static builds, cancellation/cleanup acknowledgement and expiry; frontend Preview wiring and zero-cost regression checks.
+9. **Next:** controlled real-provider-to-preview smoke (only with approval), remaining integration/CI evidence and dependency remediation before any public execution deployment.
 10. Add BullMQ/Redis for background work.
 11. Add restricted Kubernetes build and preview workloads.
 

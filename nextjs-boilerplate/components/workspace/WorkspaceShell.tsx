@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, GitBranch, LogOut, Play } from "lucide-react";
+import { Bot, GitBranch, LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Group, Panel } from "react-resizable-panels";
@@ -15,6 +15,7 @@ import {
   createWorkspaceFiles,
 } from "./workspace-data";
 import { useWorkspace } from "./useWorkspace";
+import { PreviewLauncher } from "./PreviewLauncher";
 
 // Keep request/selection state above both layouts, not inside panels that remount on resize.
 export function WorkspaceShell({ selection }: { selection: WorkspaceSelection }) {
@@ -89,14 +90,9 @@ export function WorkspaceShell({ selection }: { selection: WorkspaceSelection })
           >
             <LogOut size={13} />
           </button>
-          <button
-            type="button"
-            disabled
-            title="Backend preview will be connected later"
-            className="flex items-center gap-1.5 rounded-md bg-[#dddddf] px-3 py-1.5 text-[10px] font-medium text-[#111112] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Play size={11} fill="currentColor" /> Preview
-          </button>
+          <PreviewLauncher key={`${user?.id}:${workspace.project?.id}:${workspace.revision?.id}`}
+            projectId={workspace.project?.id ?? null} revisionId={workspace.revision?.id ?? null}
+            disabled={workspace.busy || workspace.loadBusy || isSigningOut} />
         </div>
       </header>
 
