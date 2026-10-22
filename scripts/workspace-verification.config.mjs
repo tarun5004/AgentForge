@@ -1,4 +1,4 @@
-const suites = ['all', 'loop', 'recovery', 'state', 'mocked', 'session'];
+const suites = ['all', 'loop', 'recovery', 'state', 'mocked', 'session', 'preview-real'];
 
 // Refuse typos/extra flags instead of silently running a different verification scope.
 export function parseOptions(args) {
@@ -10,7 +10,7 @@ export function parseOptions(args) {
     seen.add(flag);
     if (flag === '--suite') {
       options.suite = args[++index];
-      if (!suites.includes(options.suite)) throw new Error('Suite must be all, loop, recovery, state, mocked or session.');
+      if (!suites.includes(options.suite)) throw new Error('Unknown suite; use all, loop, recovery, state, mocked, session or preview-real.');
     } else if (flag === '--fail-after-start') options.failAfterStart = true;
     else if (flag === '--help') options.help = true;
     else throw new Error('Unknown verification option.');

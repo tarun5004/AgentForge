@@ -122,9 +122,10 @@ async function stopNext() {
 }
 
 // Each real scenario gets a fresh proxy as well as a fresh service fixture, not stale pooled sockets.
-async function startNext() {
+async function startNext(preview = false) {
   next = start(process.execPath, [resolve(root, 'node_modules/next/dist/bin/next'), 'dev', '--port', '3102'], {
     ...process.env, AUTH_SERVICE_URL: 'http://127.0.0.1:4310', PROJECT_SERVICE_URL: 'http://127.0.0.1:4311',
+    ...(preview ? { EXECUTION_SERVICE_URL: 'http://127.0.0.1:5310' } : {}),
   }, resolve(root, 'nextjs-boilerplate'));
   await ready(next, 'http://localhost:3102/login');
 }
@@ -136,7 +137,7 @@ async function stopFixture() {
     if (fixture.exitCode === null && fixture.signalCode === null) {
       const response = await fetch('http://127.0.0.1:4312/__fixture/shutdown', { method: 'POST', signal: AbortSignal.timeout(10_000) });
       if (!response.ok) throw new Error('Fixture shutdown rejected.');
-      await finish(fixture, 20_000);
+      await finish(fixture, 60_000);
     } else if (fixture.exitCode !== 0 || fixture.signalCode !== null) throw new Error('Fixture exited unsuccessfully.');
   } finally { stop(fixture); fixture = null; }
   await emptyDatabase();
@@ -144,13 +145,14 @@ async function stopFixture() {
 
 // One fresh fixture per real suite prevents another suite's records from hiding duplicate writes.
 async function realSuite(suite, uri) {
+  const preview = suite === 'preview-real';
   await stopNext();
   await emptyDatabase();
   fixture = start(process.execPath, [resolve(root, 'node_modules/tsx/dist/cli.mjs'), 'tests/frontend-history.fixture.mts'],
-    { ...process.env, AGENTFORGE_TEST_MONGODB_URI: uri });
+    { ...process.env, AGENTFORGE_TEST_MONGODB_URI: uri, AGENTFORGE_TEST_PREVIEW: preview ? '1' : '0', LOG_LEVEL: 'silent' });
   await ready(fixture, 'http://127.0.0.1:4312/__fixture', value => value.fixtureId === 'agentforge-real-revision-loop-v1');
   try {
-    await startNext();
+    await startNext(preview);
     await browserSuite('scripts/verify-workspace-real.ps1', suite);
     report.suites.push({ suite, passed: true });
   } finally { try { await stopFixture(); } finally { await stopNext(); } }
@@ -160,13 +162,25 @@ async function realSuite(suite, uri) {
 async function main() {
   const options = parseOptions(process.argv.slice(2));
   if (options.help) {
-    console.info('Set an explicit local AGENTFORGE_TEST_MONGODB_URI, then run with --suite all|loop|recovery|state|mocked|session. Windows/Chrome/local Mongo required. --fail-after-start verifies failure cleanup.');
+    console.info('Set an explicit local AGENTFORGE_TEST_MONGODB_URI, then run with --suite all|loop|recovery|state|mocked|session|preview-real. preview-real is opt-in and needs Linux Docker + agentforge-preview-runner:local. --fail-after-start verifies failure cleanup.');
     return;
   }
   if (process.platform !== 'win32') throw new Error('This launcher currently requires Windows PowerShell.');
   const uri = process.env.AGENTFORGE_TEST_MONGODB_URI;
   const database = validateTestUri(uri);
   for (const port of [3102, 4310, 4311, 4312]) await assertFreePort(port);
+  const preview = options.suite === 'preview-real';
+  if (preview) {
+    for (const port of [5310, 5311]) await assertFreePort(port);
+    // Inspect only; the launcher never builds/pulls images or deletes unknown containers.
+    for (const args of [['info', '--format', '{{.OSType}}'], ['image', 'inspect', 'agentforge-preview-runner:local', '--format', '{{.Id}}'],
+      ['ps', '-aq', '--filter', 'label=agentforge.local-preview=true']]) {
+      const result = spawnSync('docker', args, { windowsHide: true, timeout: 15_000, encoding: 'utf8' });
+      if (result.status !== 0 || (args[0] === 'info' && result.stdout.trim() !== 'linux') ||
+          (args[0] === 'ps' && result.stdout.trim())) throw new Error('Preview preflight failed: check Linux Docker, trusted runner image and orphan containers. Nothing was removed.');
+    }
+    report.boundaries = { auth: 'real', project: 'real', mongo: 'dedicated-test-db', ai: 'deterministic-transport-fixture', execution: 'real-docker', preview: 'real-browser-iframe' };
+  }
   client = new mongoose.mongo.MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
   await client.connect();
   await emptyDatabase();
@@ -175,10 +189,10 @@ async function main() {
   await mkdir(artifactDirectory, { recursive: true });
   reportPath = resolve(artifactDirectory, `verification-${Date.now()}.json`);
   report.database = database;
-  if (['all', 'mocked', 'session'].includes(options.suite) || options.failAfterStart) await startNext();
+  if (['all', 'mocked', 'session'].includes(options.suite) || options.failAfterStart) await startNext(preview);
   if (options.failAfterStart) {
     fixture = start(process.execPath, [resolve(root, 'node_modules/tsx/dist/cli.mjs'), 'tests/frontend-history.fixture.mts'],
-      { ...process.env, AGENTFORGE_TEST_MONGODB_URI: uri });
+      { ...process.env, AGENTFORGE_TEST_MONGODB_URI: uri, AGENTFORGE_TEST_PREVIEW: preview ? '1' : '0', LOG_LEVEL: 'silent' });
     await ready(fixture, 'http://127.0.0.1:4312/__fixture', value => value.fixtureId === 'agentforge-real-revision-loop-v1');
     throw new Error('Deliberate failure after server startup.');
   }
@@ -188,7 +202,7 @@ async function main() {
       report.suites.push({ suite, passed: true });
     }
   }
-  for (const suite of options.suite === 'all' ? ['loop', 'recovery', 'state'] : ['loop', 'recovery', 'state'].filter(name => name === options.suite)) {
+  for (const suite of options.suite === 'all' ? ['loop', 'recovery', 'state'] : ['loop', 'recovery', 'state', 'preview-real'].filter(name => name === options.suite)) {
     await realSuite(suite, uri);
   }
 }
@@ -205,6 +219,13 @@ finally {
   }
   try { await stopFixture(); if (client) { await emptyDatabase(); report.cleanup = true; } }
   catch { process.exitCode = 1; report.failed = true; console.error('Scoped fixture cleanup failed; inspect dedicated test data.'); }
+  if (report.boundaries?.execution === 'real-docker') {
+    const containers = spawnSync('docker', ['ps', '-aq', '--filter', 'label=agentforge.local-preview=true'], {
+      windowsHide: true, timeout: 15_000, encoding: 'utf8',
+    });
+    report.containerCleanup = containers.status === 0 && containers.stdout.trim() === '';
+    if (!report.containerCleanup) { process.exitCode = 1; report.failed = true; console.error('Preview container cleanup is unconfirmed; no unknown container was removed.'); }
+  }
   for (const child of children) {
     try { stop(child); } catch { process.exitCode = 1; report.failed = true; console.error('Owned process cleanup failed.'); }
     // A detached CLI daemon may inherit these pipes after its parent exits.
