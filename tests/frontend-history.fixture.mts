@@ -33,9 +33,22 @@ const aiRequests: { prompt: string; baseVersion: number | null; baseMatchesIniti
 const fixtureEmail = "frontend-slice5-20261012@agentforge.test";
 const fixtureEmails = [fixtureEmail, "revision-loop-other@agentforge.test"];
 const fixtureId = "agentforge-real-revision-loop-v1";
+let holdNextGeneration = false;
+let releaseGeneration: (() => void) | undefined;
 
 // Real Auth/Project APIs and Mongo run unchanged; only the paid AI network boundary is replaced.
 const aiServer = createServer((request, response) => {
+  // Deterministic test barriers replace timing guesses; they exist only in this fixture.
+  if (request.method === "POST" && request.url === "/__fixture/hold-next") {
+    if (holdNextGeneration || releaseGeneration) { response.writeHead(409).end(); return; }
+    holdNextGeneration = true;
+    response.end("armed"); return;
+  }
+  if (request.method === "POST" && request.url === "/__fixture/release") {
+    if (!releaseGeneration) { response.writeHead(409).end(); return; }
+    releaseGeneration();
+    response.end("released"); return;
+  }
   if (request.method === "GET" && request.url === "/__fixture") {
     // A runner checks identity and empty state before sending test credentials to any API.
     void readFixtureStatus(response);
@@ -59,6 +72,11 @@ const aiServer = createServer((request, response) => {
         baseMatchesInitial: JSON.stringify([...baseFiles].sort((a, b) => a.path.localeCompare(b.path))) ===
           JSON.stringify([...initialFiles].sort((a, b) => a.path.localeCompare(b.path))),
       });
+      if (holdNextGeneration) {
+        holdNextGeneration = false;
+        await new Promise<void>((resolve) => { releaseGeneration = resolve; });
+        releaseGeneration = undefined;
+      }
       if (input.prompt.includes("slow")) await new Promise((resolve) => setTimeout(resolve, 2_000));
       const initial = !input.baseRevision;
       const files = input.prompt.includes("invalid output") ? [] : initial ? initialFiles :
@@ -95,13 +113,15 @@ async function readFixtureStatus(response: import("node:http").ServerResponse) {
     const counts: Record<string, number> = {};
     for (const name of ["users", "projects", "revisions", "generations"]) counts[name] = await db.collection(name).countDocuments({});
     response.setHeader("Content-Type", "application/json");
-    response.end(JSON.stringify({ fixtureId, databaseName: target.pathname.slice(1), counts, aiRequests }));
+    response.end(JSON.stringify({ fixtureId, databaseName: target.pathname.slice(1), counts, aiRequests, heldGeneration: !!releaseGeneration }));
   } catch { response.writeHead(503).end("Fixture status unavailable."); }
 }
 // Remove only this fixture account and its owned records; never drop the database or other data.
 async function shutdown() {
   if (stopping) return;
   stopping = true;
+  // A failed browser must not leave server.close waiting on a held model request forever.
+  releaseGeneration?.();
   process.exitCode = await finishFixtureCleanup(async () => {
     await Promise.all([aiServer, authServer, projectServer].map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
     const users = await db.collection("users").find({ email: { $in: fixtureEmails } }, { projection: { _id: 1 } }).toArray();
