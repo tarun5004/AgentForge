@@ -1,0 +1,15 @@
+**
+!package.json
+!package-lock.json
+!auth-service/
+!auth-service/package.json
+!project-service/
+!project-service/package.json
+!ai-orchestrator-service/
+!ai-orchestrator-service/package.json
+!nextjs-boilerplate/
+!nextjs-boilerplate/package.json
+!execution-service/
+!execution-service/package.json
+!execution-service/preview/
+!execution-service/preview/*.mjs
