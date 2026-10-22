@@ -10,7 +10,7 @@ import { stopExecution } from "./shutdown.js";
 const service = env.LOCAL_PREVIEW_ENABLED
   ? createRunService(await createDockerRunner(env.PREVIEW_RUNNER_IMAGE), `http://127.0.0.1:${env.PREVIEW_PORT}`)
   : undefined;
-const previewServer = service ? createPreviewServer(service) : undefined;
+const previewServer = service ? createPreviewServer(service, env.PREVIEW_FRONTEND_ORIGIN) : undefined;
 previewServer?.listen(env.PREVIEW_PORT, "127.0.0.1");
 const app = createApp(service ? { service, projects: createProjectClient(env.PROJECT_SERVICE_URL) } : undefined);
 // Docker control stays loopback-only; the existing unprivileged status container remains unchanged.

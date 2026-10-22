@@ -42,6 +42,18 @@ npm --workspace execution-service start
 
 These variables apply only to this terminal/process; no real `.env` file needs changing. Keep `NODE_ENV=development` for this local demo. Enabled mode binds both API and preview to `127.0.0.1`. Run it on the trusted host, **not by mounting the Docker socket into the frontend or app containers**. The normal unprivileged Execution container stays status-only until a later reviewed integration.
 
+### Frontend origin and iframe policy
+
+By default, Preview allows embedding only from `http://localhost:3001` and `http://127.0.0.1:3001`. If the browser frontend uses another local port, set its **exact origin** in the controller's terminal before starting it:
+
+```powershell
+$env:PREVIEW_FRONTEND_ORIGIN = 'http://localhost:3102'
+```
+
+A configured origin replaces the two default aliases; use that exact hostname/port in the browser. Only HTTP `localhost` or `127.0.0.1` origins are supported. Wildcards, remote hosts, credentials, paths, queries, fragments and whitespace are rejected before listeners open. Leave the setting unset for the original port-3001 behavior. `PROJECT_SERVICE_URL` chooses where ownership reads go; `PREVIEW_FRONTEND_ORIGIN` chooses which browser page may embed the result. They are not interchangeable.
+
+This changes only CSP `frame-ancestors`. It does not enable CORS, public hosting, iframe same-origin privileges, outbound connections or Docker network access. If a build is ready but the frame is blank, check the browser console for a `frame-ancestors` error before retrying the build or model call.
+
 The runner image uses explicit `COPY` statements and its own restrictive Dockerfile ignore file. Only package manifests, the shared lockfile and trusted helper scripts enter the build context. Dependencies are installed once from the existing workspace lockfile; generated projects cannot trigger `npm install`. Startup resolves the configured image to an immutable local image ID. Missing images fail rather than being pulled during a run.
 
 ## HTTP contracts
@@ -98,6 +110,17 @@ $env:VERIFY_PREVIEW_BROWSER = '1'
 $env:AGENTFORGE_PLAYWRIGHT_CLI = '<absolute-path-to-installed-playwright-cli.js>'
 npm --workspace execution-service run test:docker
 ```
+
+The separate opt-in browser-policy test needs an installed Playwright CLI/browser, but no Docker build, database or provider:
+
+```powershell
+$env:RUN_PREVIEW_BROWSER_TESTS = '1'
+$env:AGENTFORGE_PLAYWRIGHT_CLI = '<absolute-path-to-installed-playwright-cli.js>'
+$env:AGENTFORGE_BROWSER_CHANNEL = 'msedge' # optional; default is chrome
+npm --workspace execution-service run test:preview-browser
+```
+
+It serves fixed fixture HTML through the actual Preview server on owned random loopback ports. An interactive iframe succeeds under the configured parent; a different parent is browser-blocked. Storage/fetch restrictions remain enforced. This proves CSP embedding, not real model generation or the complete logged-in workspace-to-Docker flow.
 
 Local tests use fixture transport, **not evidence of real MongoDB ownership persistence**. Docker integration now submits a real HTTP run request, forwards its bearer token to a fixture Project API, runs a real Next.js build, reads status and exported HTML through the production API/preview server, rejects invalid TSX, cancels an active build, and verifies exact container cleanup. The optional browser opens the actual API-returned capability URL, clicks a React counter, and checks sandbox storage/fetch restrictions. No artifact lookup bypass is used. No model/provider calls or application database writes are made. This is still not the logged-in workspace generation-to-preview flow: real Auth/Mongo and frontend wiring require separate verification.
 

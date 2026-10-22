@@ -1,4 +1,5 @@
 import dotenv from "dotenv";
+import { getPreviewFrameAncestors } from "../features/runs/preview.policy.js";
 
 dotenv.config({ quiet: true });
 
@@ -63,6 +64,8 @@ function parseProjectUrl(value: string | undefined): string {
 }
 
 const localPreview = process.env.LOCAL_PREVIEW_ENABLED ?? "false";
+// Validate configuration before opening listeners; never reflect arbitrary text into CSP headers.
+getPreviewFrameAncestors(process.env.PREVIEW_FRONTEND_ORIGIN);
 if (!["true", "false"].includes(localPreview)) throw new Error("LOCAL_PREVIEW_ENABLED must be true or false.");
 if (localPreview === "true" && process.env.NODE_ENV === "production") {
   throw new Error("Local Docker preview is not enabled for public production deployments.");
@@ -80,6 +83,7 @@ export const env = Object.freeze({
   REDIS_URL: parseRedisUrl(process.env.REDIS_URL),
   LOCAL_PREVIEW_ENABLED: localPreview === "true",
   PREVIEW_PORT: parsePort(process.env.PREVIEW_PORT, "5101"),
+  PREVIEW_FRONTEND_ORIGIN: process.env.PREVIEW_FRONTEND_ORIGIN,
   PROJECT_SERVICE_URL: parseProjectUrl(process.env.PROJECT_SERVICE_URL),
   PREVIEW_RUNNER_IMAGE: process.env.PREVIEW_RUNNER_IMAGE ?? "agentforge-preview-runner:local",
 });

@@ -14,7 +14,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "test": "tsx --test src/features/runs/*.test.ts tests/*.test.mjs",
-    "test:docker": "tsx --test tests/docker.integration.ts"
+    "test:docker": "tsx --test tests/docker.integration.ts",
+    "test:preview-browser": "tsx --test tests/preview-frame.integration.ts"
   },
   "dependencies": {
     "dotenv": "^17.4.2",
