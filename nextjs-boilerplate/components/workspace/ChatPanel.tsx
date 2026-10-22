@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowUp, MessageSquarePlus, RefreshCw, Sparkles } from "lucide-react";
-import type { FormEvent } from "react";
+import type { FormEvent, KeyboardEvent } from "react";
 import type { WorkspaceState } from "./useWorkspace";
 
 // This panel renders shell-owned state so resizing never discards a draft or running request.
@@ -13,6 +13,14 @@ export function ChatPanel({ workspace }: { workspace: WorkspaceState }) {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void workspace.submit();
+  }
+
+  // Enter sends through the same validated form; Shift+Enter and IME input stay multiline.
+  function handlePromptKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+    event.preventDefault();
+    if (event.repeat || !workspace.canSubmit || workspace.prompt.trim().length < 10) return;
+    event.currentTarget.form?.requestSubmit();
   }
 
   return (
@@ -85,7 +93,8 @@ export function ChatPanel({ workspace }: { workspace: WorkspaceState }) {
           )}
           <div className="rounded-lg border border-[#3a3a3e] bg-[#1c1c1e] p-2 focus-within:border-[#68686e]">
             <label htmlFor="workspace-prompt" className="sr-only">Describe a frontend page or change</label>
-            <textarea id="workspace-prompt" value={workspace.prompt} onChange={(event) => workspace.setPrompt(event.target.value)} placeholder={revision ? "Describe a change to this revision..." : "Ask AgentForge to build..."} rows={3} maxLength={1000} minLength={10} disabled={!workspace.canSubmit} className="w-full resize-none bg-transparent px-1 text-xs outline-none placeholder:text-[#99999e] disabled:opacity-50" />
+            <textarea id="workspace-prompt" value={workspace.prompt} onChange={(event) => workspace.setPrompt(event.target.value)} onKeyDown={handlePromptKeyDown} aria-describedby="workspace-prompt-help" placeholder={revision ? "Describe a change to this revision..." : "Ask AgentForge to build..."} rows={3} maxLength={1000} minLength={10} disabled={!workspace.canSubmit} className="w-full resize-none bg-transparent px-1 text-xs outline-none placeholder:text-[#99999e] disabled:opacity-50" />
+            <p id="workspace-prompt-help" className="px-1 text-[10px] text-[#99999e]">Enter to send · Shift+Enter for a new line · Minimum 10 characters</p>
             <div className="mt-2 flex items-center justify-between">
               <span className="px-1 text-[10px] text-[#99999e]">Economy · {workspace.prompt.length}/1000</span>
               <button type="submit" disabled={!workspace.canSubmit || workspace.prompt.trim().length < 10} aria-label="Send prompt" className="grid size-7 place-items-center rounded-md bg-[#dddddf] text-[#111112] disabled:opacity-30">{busy ? "..." : <ArrowUp size={15} />}</button>

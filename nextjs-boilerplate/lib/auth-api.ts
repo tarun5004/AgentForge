@@ -18,6 +18,17 @@ type RegisterInput = LoginInput & {
   name: string;
 };
 
+// Only an explicit auth rejection should end a session; network/server failures should not.
+export class AuthApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "AuthApiError";
+    this.status = status;
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -52,6 +63,7 @@ async function requestSession(
     credentials: "include",
     headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(15_000),
   });
 
   const responseBody = await readJson(response);
@@ -62,7 +74,7 @@ async function requestSession(
         ? responseBody.message
         : "Authentication request failed.";
 
-    throw new Error(message);
+    throw new AuthApiError(message, response.status);
   }
 
   if (!isAuthSession(responseBody)) {
@@ -95,9 +107,12 @@ export function refreshSession(): Promise<AuthSession> {
 }
 
 export async function logout(): Promise<void> {
+  // Finish cookie rotation before revoking it; a late refresh must not reinstall a logout cookie.
+  if (refreshRequest) await refreshRequest.catch(() => undefined);
   const response = await fetch("/api/auth/logout", {
     method: "POST",
     credentials: "include",
+    signal: AbortSignal.timeout(15_000),
   });
 
   if (!response.ok) {

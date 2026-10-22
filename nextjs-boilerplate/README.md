@@ -34,7 +34,11 @@ The access token is kept in React memory. The refresh token is set and rotated b
 
 The installed Next rewrite proxy defaults to a 30-second timeout. `next.config.ts` explicitly permits 95 seconds, allowing the Project Service's 90-second AI deadline to respond before the browser client's 100-second deadline. This is bounded synchronous-request handling, not a promise of background completion or a deployment platform's maximum duration.
 
-A protected Project API `401` clears the cached user/access token before redirecting to `/login`. Redirecting alone would let AuthForm send the stale user back to the workspace repeatedly. `invalidateSession` is a stable client callback; it does not revoke refresh cookies or replace the existing server logout flow. Pending generation keys stay user/project-scoped for later reconciliation after sign-in.
+A protected Project API `401` first renews the session through the HttpOnly refresh cookie and retries the identical request once. Concurrent rejections share one refresh; late rejections reuse the newer token. Retrying preserves the body, idempotency key and cancellation deadline. Only a rejected refresh (`401`) or a second Project `401` clears identity and redirects to `/login`; network/server failures keep the session and draft visible. A late refresh cannot restore a logged-out session. `invalidateSession` does not revoke refresh cookies or replace server logout. Pending keys remain user/project-scoped for reconciliation after sign-in.
+
+Prompt keyboard controls: **Enter** sends a valid prompt, **Shift+Enter** adds a line. IME composition and held/repeated Enter do not submit. Minimum trimmed prompt length is 10 characters; in-flight submission controls remain disabled.
+
+Zero-cost session/keyboard browser regression: set `AGENTFORGE_TEST_MONGODB_URI` to an empty dedicated local `agentforge_test_*` database, then run `npm run verify:workspace -- --suite session`. Every API is intercepted; no real provider is called. The full verification suite includes this regression too. Logout waits for any pending cookie rotation before revoking the cookie.
 
 Authenticated workspace prompts call `POST /api/projects`. The Project Service validates the access token and prompt, then saves a draft project before any AI generation begins.
 

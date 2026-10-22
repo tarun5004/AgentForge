@@ -160,7 +160,7 @@ async function realSuite(suite, uri) {
 async function main() {
   const options = parseOptions(process.argv.slice(2));
   if (options.help) {
-    console.info('Set an explicit local AGENTFORGE_TEST_MONGODB_URI, then run with --suite all|loop|recovery|state|mocked. Windows/Chrome/local Mongo required. --fail-after-start verifies failure cleanup.');
+    console.info('Set an explicit local AGENTFORGE_TEST_MONGODB_URI, then run with --suite all|loop|recovery|state|mocked|session. Windows/Chrome/local Mongo required. --fail-after-start verifies failure cleanup.');
     return;
   }
   if (process.platform !== 'win32') throw new Error('This launcher currently requires Windows PowerShell.');
@@ -175,15 +175,15 @@ async function main() {
   await mkdir(artifactDirectory, { recursive: true });
   reportPath = resolve(artifactDirectory, `verification-${Date.now()}.json`);
   report.database = database;
-  if (options.suite === 'all' || options.suite === 'mocked' || options.failAfterStart) await startNext();
+  if (['all', 'mocked', 'session'].includes(options.suite) || options.failAfterStart) await startNext();
   if (options.failAfterStart) {
     fixture = start(process.execPath, [resolve(root, 'node_modules/tsx/dist/cli.mjs'), 'tests/frontend-history.fixture.mts'],
       { ...process.env, AGENTFORGE_TEST_MONGODB_URI: uri });
     await ready(fixture, 'http://127.0.0.1:4312/__fixture', value => value.fixtureId === 'agentforge-real-revision-loop-v1');
     throw new Error('Deliberate failure after server startup.');
   }
-  if (options.suite === 'all' || options.suite === 'mocked') {
-    for (const suite of ['links', 'history', 'access']) {
+  if (['all', 'mocked', 'session'].includes(options.suite)) {
+    for (const suite of options.suite === 'session' ? ['session'] : ['links', 'history', 'access', 'session']) {
       await browserSuite('scripts/verify-workspace-links.ps1', suite);
       report.suites.push({ suite, passed: true });
     }

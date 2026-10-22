@@ -1,3 +1,5 @@
+import { requestWithSession, type ProjectAccess } from "./session-request.ts";
+
 export type GeneratedFile = { path: string; content: string };
 export type FileChange = { path: string; status: "A" | "M" | "D" };
 export type Usage = { inputTokens: number; outputTokens: number; totalTokens: number };
@@ -123,10 +125,9 @@ function isGeneration(value: unknown): value is Generation {
 }
 
 // One error/JSON boundary handles all endpoints, including non-JSON proxy failures.
-async function request(path: string, token: string, init: RequestInit = {}): Promise<Record<string, unknown>> {
-  const response = await fetch(`/api/projects${path}`, {
+async function request(path: string, access: ProjectAccess, init: RequestInit = {}): Promise<Record<string, unknown>> {
+  const response = await requestWithSession(`/api/projects${path}`, access, {
     ...init, cache: "no-store",
-    headers: { Authorization: `Bearer ${token}`, ...init.headers },
   });
   let body: unknown = null;
   try { body = await response.json(); } catch { /* Status-based fallback handles proxy HTML. */ }
@@ -150,14 +151,14 @@ function projectPath(id: string): string {
 }
 
 // Save a draft once; generation retries reuse its returned ID.
-export async function createProject(prompt: string, token: string): Promise<Project> {
+export async function createProject(prompt: string, token: ProjectAccess): Promise<Project> {
   const body = await request("", token, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt }) });
   if (!isProject(body.project)) throw new Error("Project Service returned an invalid project response.");
   return body.project;
 }
 
 // Bounded project pages prevent loading the entire database into the sidebar.
-export async function listProjects(token: string, cursor: string | null = null, signal?: AbortSignal) {
+export async function listProjects(token: ProjectAccess, cursor: string | null = null, signal?: AbortSignal) {
   const query = new URLSearchParams({ limit: "20" });
   if (cursor) query.set("cursor", cursor);
   const body = await request(`?${query}`, token, { signal });
@@ -166,14 +167,14 @@ export async function listProjects(token: string, cursor: string | null = null, 
 }
 
 // Detail identifies the actual latest revision, independent of advisory status.
-export async function getProject(id: string, token: string, signal?: AbortSignal): Promise<Project> {
+export async function getProject(id: string, token: ProjectAccess, signal?: AbortSignal): Promise<Project> {
   const body = await request(projectPath(id), token, { signal });
   if (!isProject(body.project) || body.project.id !== id.toLowerCase()) throw new Error("Invalid project detail response.");
   return body.project;
 }
 
 // Revision pagination uses an exclusive version cursor, not the opaque project cursor.
-export async function listRevisions(id: string, token: string, cursor: string | null = null, signal?: AbortSignal) {
+export async function listRevisions(id: string, token: ProjectAccess, cursor: string | null = null, signal?: AbortSignal) {
   const query = new URLSearchParams({ limit: "20" });
   if (cursor) query.set("beforeVersion", cursor);
   const body = await request(`${projectPath(id)}/revisions?${query}`, token, { signal });
@@ -182,14 +183,14 @@ export async function listRevisions(id: string, token: string, cursor: string | 
 }
 
 // Restore files from an owned persisted snapshot, not local/demo data.
-export async function getRevision(projectId: string, revisionId: string, token: string, signal?: AbortSignal): Promise<Revision> {
+export async function getRevision(projectId: string, revisionId: string, token: ProjectAccess, signal?: AbortSignal): Promise<Revision> {
   const body = await request(`${projectPath(projectId)}/revisions${projectPath(revisionId)}`, token, { signal });
   if (!isRevision(body.revision) || body.revision.projectId !== projectId.toLowerCase() || body.revision.id !== revisionId.toLowerCase()) throw new Error("Invalid revision detail response.");
   return body.revision;
 }
 
 // One caller-owned key identifies one attempt and must survive transport retries.
-export async function generateProject(projectId: string, token: string, key: string, input: GenerationBody): Promise<Generation> {
+export async function generateProject(projectId: string, token: ProjectAccess, key: string, input: GenerationBody): Promise<Generation> {
   const body = await request(`${projectPath(projectId)}/generations`, token, {
     method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": key }, body: JSON.stringify(input),
     signal: AbortSignal.timeout(100_000),
@@ -199,7 +200,7 @@ export async function generateProject(projectId: string, token: string, key: str
 }
 
 // Read uncertainty without starting AI or publishing saved output.
-export async function getGeneration(projectId: string, generationId: string, token: string): Promise<GenerationStatus> {
+export async function getGeneration(projectId: string, generationId: string, token: ProjectAccess): Promise<GenerationStatus> {
   const body = await request(`${projectPath(projectId)}/generations${projectPath(generationId)}`, token);
   if (isGeneration(body.generation) && body.generation.id === generationId) return body.generation;
   const value = body.generation;
