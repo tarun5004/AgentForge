@@ -21,6 +21,8 @@ WORKDIR /app/nextjs-boilerplate
 RUN chown -R node:node /app/nextjs-boilerplate
 
 USER node
+# Docker Desktop can reach the separately running loopback-only local controller through this DNS name.
+ENV EXECUTION_SERVICE_URL=http://host.docker.internal:5002
 EXPOSE 3001
 
 CMD ["npm", "run", "dev", "--", "--hostname", "0.0.0.0"]

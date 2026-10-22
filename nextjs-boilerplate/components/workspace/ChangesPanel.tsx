@@ -29,7 +29,7 @@ export function ChangesPanel({ activeFile, changes, onFileSelect }: ChangesPanel
             : <button key={change.path} type="button" onClick={() => onFileSelect(change.path)} className={`${style} hover:bg-[#222224]`}>{content}</button>;
         })}
       </div>
-      <p className="border-t border-[#2b2b2e] p-4 text-[11px] text-[#99999e]">Manifest checks do not verify imports, builds or execution. Preview is not connected yet.</p>
+      <p className="border-t border-[#2b2b2e] p-4 text-[11px] text-[#99999e]">Manifest checks alone do not verify builds. Use Preview to build the selected saved revision locally.</p>
     </aside>
   );
 }

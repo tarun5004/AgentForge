@@ -51,7 +51,23 @@ Authenticated workspace prompts call `POST /api/projects`. The Project Service v
 - `useWorkspace.ts` keeps request/selection/prompt state above responsive panels. Abortable reads cannot overwrite another selected project's files.
 - Pending intent (key/prompt/base/optional generation ID) is stored in user/project-scoped sessionStorage, without tokens or generated code. Explicit retry reuses it; confirmed failures/new submissions use new keys. Disabled storage preserves in-session retries but cannot guarantee intent recovery after refresh.
 - Committed POST files remain visible if metadata reload fails. Deleted paths are shown as D, never selectable as current files; unchanged files receive no change badge. Legacy provenance is labelled unknown.
-- Preview/execution/build diagnostics remain unconnected, with sample terminal output explicitly labelled.
+- Preview builds the selected saved revision through the opt-in local Execution Service. Interactive terminal/build-log diagnostics remain unconnected and sample output stays labelled.
+
+## Local saved-revision preview
+
+Enable/start the trusted host-run controller using [Execution setup](../execution-service/README.md). The frontend proxies `/api/runs` to server-only `EXECUTION_SERVICE_URL` (host dev default `http://127.0.0.1:5002`; frontend Docker image default `http://host.docker.internal:5002`). Restart Next after changing this setting. Docker Desktop-to-controller health connectivity was tested without exposing the controller on a public bind address.
+
+Select a saved revision, then click **Preview**. A native modal freezes background selection while the backend builds. It polls status, supports Stop, and displays cleanup uncertainty instead of offering a blind retry. A definite 401 follows the existing single-refresh/session-expiry path; 422/429/503/build failures do not log out the user. Superseded/unmounted polls are aborted, response identity is checked, and the launcher resets by user/project/revision rather than carrying another project's iframe across navigation.
+
+The iframe accepts only validated loopback capability URLs and uses `sandbox="allow-scripts"` **without `allow-same-origin`**, plus `no-referrer`. No access token or provider key is put into the URL/frame. Preview is static frontend execution, not SSR/API routes, a terminal, HMR, arbitrary package installation, or Kubernetes. Closing a ready dialog leaves its bounded preview cache to expire; Stop removes it immediately. **Keep preview alive** is explicit authenticated activity, not an automatic polling heartbeat. A hard navigation during a build may leave bounded server work to finish or time out; client request abortion is not a server-cancel guarantee.
+
+Zero-cost UI regression with Next on a dedicated local port:
+
+```powershell
+powershell -NoProfile -File scripts/verify-workspace-links.ps1 -Suite preview -BaseUrl http://127.0.0.1:3002
+```
+
+This suite intercepts every API and preview document before navigation, covering success, cancellation acknowledgement, outage retry without logout, and cleanup-warning behavior. It does **not** prove real Auth/Mongo/provider execution. The separate Execution suite verifies the real API/Docker/preview-server/browser path with only Project ownership transport substituted. A paid-model-to-workspace-to-preview E2E has not been run. Existing dependency advisories still block public hostile multi-user execution.
 
 ## Verification
 
