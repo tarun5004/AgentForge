@@ -12,7 +12,9 @@
     "dev": "tsx watch --clear-screen=false src/server.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "test": "tsx --test src/features/runs/*.test.ts tests/*.test.mjs",
+    "test:docker": "tsx --test tests/docker.integration.ts"
   },
   "dependencies": {
     "dotenv": "^17.4.2",
