@@ -1,0 +1,111 @@
+# Local development only: no TLS, production database auth, or generated-code sandbox.
+name: agentforge-local
+
+x-api-health: &api-health
+  test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+process.env.PORT+'/_status/healthz',{signal:AbortSignal.timeout(3000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+  interval: 10s
+  timeout: 5s
+  retries: 12
+  start_period: 20s
+
+services:
+  mongodb:
+    image: mongo:8.0
+    volumes:
+      - mongo-data:/data/db
+    # Mongo is not published to the host; only this Compose network can reach it.
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "quit(db.adminCommand({ping:1}).ok ? 0 : 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  auth-service:
+    image: agentforge-auth:dev
+    build:
+      context: .
+      dockerfile: auth-service/Dockerfile
+    init: true
+    env_file: ./auth-service/.env
+    environment:
+      NODE_ENV: development
+      PORT: "4000"
+      MONGODB_URI: mongodb://mongodb:27017/auth-service
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    healthcheck: *api-health
+
+  ai-orchestrator-service:
+    image: agentforge-ai:dev
+    build:
+      context: .
+      dockerfile: ai-orchestrator-service/Dockerfile
+    init: true
+    env_file: ./ai-orchestrator-service/.env
+    environment:
+      NODE_ENV: development
+      # Node Fetch blocks port 6000, even for an otherwise healthy HTTP server.
+      PORT: "6001"
+    healthcheck: *api-health
+
+  project-service:
+    image: agentforge-project:dev
+    build:
+      context: .
+      dockerfile: project-service/dockerfile
+    init: true
+    env_file: ./project-service/.env
+    environment:
+      NODE_ENV: development
+      PORT: "3000"
+      MONGODB_URI: mongodb://mongodb:27017/project-service
+      AI_ORCHESTRATOR_URL: http://ai-orchestrator-service:6001
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      ai-orchestrator-service:
+        condition: service_healthy
+    healthcheck: *api-health
+
+  execution-service:
+    image: agentforge-execution:local
+    build:
+      context: .
+      dockerfile: execution-service/Dockerfile
+    init: true
+    env_file: ./execution-service/.env
+    environment:
+      PORT: "5000"
+    # This is only the status-service foundation; Redis/workers/runs are not connected.
+    healthcheck: *api-health
+
+  frontend:
+    image: agentforge-frontend:dev
+    build:
+      context: .
+      dockerfile: nextjs-boilerplate/dockerfile
+    init: true
+    ports:
+      - "127.0.0.1:${AGENTFORGE_WEB_PORT:-3001}:3001"
+    environment:
+      NODE_ENV: development
+      NEXT_TELEMETRY_DISABLED: "1"
+      AUTH_SERVICE_URL: http://auth-service:4000
+      PROJECT_SERVICE_URL: http://project-service:3000
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      project-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/login',{signal:AbortSignal.timeout(10000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 15s
+      retries: 18
+      start_period: 60s
+
+volumes:
+  # Normal down/rebuild keeps data; never use down -v unless deletion is intentional.
+  mongo-data:

@@ -5,6 +5,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY auth-service/package.json auth-service/package.json
 COPY project-service/package.json project-service/package.json
+COPY ai-orchestrator-service/package.json ai-orchestrator-service/package.json
 COPY nextjs-boilerplate/package.json nextjs-boilerplate/package.json
 COPY execution-service/package.json execution-service/package.json
 

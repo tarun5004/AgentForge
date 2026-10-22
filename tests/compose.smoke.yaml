@@ -1,0 +1,12 @@
+# Only the dedicated smoke runner uses these isolated database names and dummy model key.
+services:
+  auth-service:
+    environment:
+      MONGODB_URI: mongodb://mongodb:27017/agentforge_test_compose_auth
+  project-service:
+    environment:
+      MONGODB_URI: mongodb://mongodb:27017/agentforge_test_compose_projects
+  ai-orchestrator-service:
+    environment:
+      AI_GATEWAY_API_KEY: docker-smoke-not-a-provider-key
+      VERCEL_OIDC_TOKEN: ""

@@ -152,6 +152,9 @@ Never commit real `.env` files or API keys.
 
 ### Run applications
 
+For a one-command local Docker stack, see [Local Docker Compose](docs/LOCAL_DOCKER.md).
+It starts all five apps plus isolated MongoDB; it does not execute generated code or make AI usage free.
+
 Run each required application in its own terminal:
 
 ```bash

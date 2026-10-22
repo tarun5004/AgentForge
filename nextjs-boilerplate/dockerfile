@@ -2,12 +2,25 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
+# npm workspaces use the root lockfile, not a separate frontend dependency install.
+COPY package.json package-lock.json ./
+COPY auth-service/package.json ./auth-service/package.json
+COPY project-service/package.json ./project-service/package.json
+COPY ai-orchestrator-service/package.json ./ai-orchestrator-service/package.json
+COPY execution-service/package.json ./execution-service/package.json
+COPY nextjs-boilerplate/package.json ./nextjs-boilerplate/package.json
 
-RUN npm install
+RUN npm ci --workspace nextjs-boilerplate
 
-COPY . .
+# Next writes its development cache here, so this directory belongs to the runtime user.
+COPY --chown=node:node nextjs-boilerplate ./nextjs-boilerplate
+WORKDIR /app/nextjs-boilerplate
 
-EXPOSE 3000
+# The earlier package.json COPY already created this parent directory as root.
+# COPY --chown owns the copied files, but Next must also create cache/generated files here.
+RUN chown -R node:node /app/nextjs-boilerplate
 
-CMD ["npm","run","dev"]
+USER node
+EXPOSE 3001
+
+CMD ["npm", "run", "dev", "--", "--hostname", "0.0.0.0"]
