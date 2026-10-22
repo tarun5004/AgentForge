@@ -1,0 +1,19 @@
+# Dependencies container ke andar install hongi.
+**/node_modules
+
+# Credentials build context mein nahi bhejne.
+**/.env
+**/.env.*
+
+# Local build output container build mein reuse nahi karna.
+**/.next
+**/dist
+**/build
+**/coverage
+
+# Repository history, logs aur test artifacts unnecessary hain.
+.git
+.playwright-cli
+output
+.npm_cache
+**/*.log
