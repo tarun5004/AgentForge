@@ -1,6 +1,6 @@
 param(
     [string]$BaseUrl = 'http://localhost:3001',
-    [ValidateSet('links', 'history', 'access')][string]$Suite = 'links'
+    [ValidateSet('links', 'history', 'access', 'session')][string]$Suite = 'links'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -107,6 +107,11 @@ try {
         Invoke-BrowserCommand @('run-code', "async page => { const state = await page.evaluate(() => window.workspaceHistorySmokeState()); if (state.step !== 5) throw new Error('Expected five history checkpoints.'); }")
         Write-Host 'PASS protected-401 login recovery without a redirect loop.'
         Write-Host 'PASS 3/3 history browser scenarios. API mocked; real auth/database/provider not verified.'
+    } elseif ($Suite -eq 'session') {
+        Invoke-BrowserCommand @('goto', "$BaseUrl/workspace")
+        Invoke-BrowserCommand @('snapshot')
+        Invoke-BrowserCommand @('run-code', "--filename=$browserChecks")
+        Write-Host 'PASS session recovery and keyboard regressions. Every API intercepted; no real account, database or provider touched.'
     } else {
         $accessCases = @(
             @{ Name = 'legacy'; Query = '?project=100000000000000000000001'; Unavailable = $false },

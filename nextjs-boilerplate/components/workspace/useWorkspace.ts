@@ -12,6 +12,7 @@ import {
   type PendingGeneration,
 } from "@/lib/pending-generation";
 import { workspaceUrl, type WorkspaceSelection } from "@/lib/workspace-selection";
+import type { SessionAccess } from "@/lib/session-request";
 
 export type WorkspaceSnapshot = Pick<Revision, "id" | "version" | "parentRevisionId" | "sourcePrompt" | "summary" | "files" | "fileChanges" | "model" | "usage" | "validation">;
 
@@ -39,7 +40,7 @@ function isTerminalGenerationError(error: unknown): boolean {
 // State lives above responsive panels. URL IDs select data; Mongo remains the source of files.
 export function useWorkspace(
   selection: WorkspaceSelection,
-  token: string | null,
+  session: SessionAccess | null,
   userId: string | null,
   invalidateSession: () => void,
 ) {
@@ -80,14 +81,14 @@ export function useWorkspace(
 
   // Abort an older list request so load-more/reload cannot reorder sidebar results.
   const loadProjectPage = useCallback(async (cursor: string | null = null) => {
-    if (!token) return;
+    if (!session) return;
     listAbort.current?.abort();
     const controller = new AbortController();
     listAbort.current = controller;
     setListBusy(true);
     setListError("");
     try {
-      const page = await listProjects(token, cursor, controller.signal);
+      const page = await listProjects(session, cursor, controller.signal);
       if (controller.signal.aborted || !mounted.current) return;
       setProjects((current) => cursor ? [...current, ...page.projects.filter((item) => !current.some((saved) => saved.id === item.id))] : page.projects);
       setProjectCursor(page.nextCursor);
@@ -96,15 +97,15 @@ export function useWorkspace(
     } finally {
       if (!controller.signal.aborted && mounted.current) setListBusy(false);
     }
-  }, [token, reportError]);
+  }, [session, reportError]);
 
   useEffect(() => {
     mounted.current = true;
-    if (!token) return;
+    if (!session) return;
     const controller = new AbortController();
     listAbort.current = controller;
     // Initial loading is already true. Update state when the external request responds.
-    void listProjects(token, null, controller.signal).then((page) => {
+    void listProjects(session, null, controller.signal).then((page) => {
       if (controller.signal.aborted) return;
       setProjects(page.projects); setProjectCursor(page.nextCursor); setListError("");
     }).catch((error) => {
@@ -113,10 +114,10 @@ export function useWorkspace(
       if (!controller.signal.aborted) setListBusy(false);
     });
     return () => { mounted.current = false; controller.abort(); listAbort.current?.abort(); selectionAbort.current?.abort(); };
-  }, [token, reportError]);
+  }, [session, reportError]);
 
   useEffect(() => {
-    if (!token || !userId || busy || selection.error) return;
+    if (!session || !userId || busy || selection.error) return;
     const controller = new AbortController();
     selectionAbort.current = controller;
     // Independent metadata/history requests run together; explicit snapshots can start too.
@@ -130,12 +131,12 @@ export function useWorkspace(
           return;
         }
         const [savedProject, history, selected] = await Promise.all([
-          getProject(selection.projectId, token!, controller.signal),
-          listRevisions(selection.projectId, token!, null, controller.signal),
-          selection.revisionId ? getRevision(selection.projectId, selection.revisionId, token!, controller.signal) : Promise.resolve(null),
+          getProject(selection.projectId, session!, controller.signal),
+          listRevisions(selection.projectId, session!, null, controller.signal),
+          selection.revisionId ? getRevision(selection.projectId, selection.revisionId, session!, controller.signal) : Promise.resolve(null),
         ]);
         const snapshot = selected ?? (savedProject.latestRevision
-          ? await getRevision(savedProject.id, savedProject.latestRevision.id, token!, controller.signal) : null);
+          ? await getRevision(savedProject.id, savedProject.latestRevision.id, session!, controller.signal) : null);
         if (controller.signal.aborted || !mounted.current) return;
         setProject(savedProject); setRevision(snapshot); setRevisions(history.revisions); setRevisionCursor(history.nextCursor);
         setLoadedKey(selectionKey);
@@ -148,7 +149,7 @@ export function useWorkspace(
     }
     void loadSelection();
     return () => controller.abort();
-  }, [token, userId, busy, selection.projectId, selection.revisionId, selection.error, selectionKey, reload, reportError]);
+  }, [session, userId, busy, selection.projectId, selection.revisionId, selection.error, selectionKey, reload, reportError]);
 
   // Invalidate old GETs immediately, before route props arrive from Next navigation.
   function navigate(projectId: string | null, revisionId: string | null = null) {
@@ -163,12 +164,12 @@ export function useWorkspace(
 
   // Keep pagination tied to its original project even if selection changes mid-request.
   async function loadMoreRevisions() {
-    if (!token || !project || !revisionCursor || loadBusy || busy) return;
+    if (!session || !project || !revisionCursor || loadBusy || busy) return;
     const controller = selectionAbort.current;
     if (!controller) return;
     setLoadBusy(true);
     try {
-      const page = await listRevisions(project.id, token, revisionCursor, controller.signal);
+      const page = await listRevisions(project.id, session, revisionCursor, controller.signal);
       if (controller.signal.aborted || !mounted.current) return;
       setRevisions((current) => [...current, ...page.revisions.filter((item) => !current.some((saved) => saved.id === item.id))]);
       setRevisionCursor(page.nextCursor);
@@ -194,7 +195,7 @@ export function useWorkspace(
 
   // Freeze project/base/key for the whole attempt; no UI change may mutate an in-flight request.
   async function submit(retry = false) {
-    if (!token || !userId || submissionLock.current || (!retry && (loadBusy || selection.error))) return;
+    if (!session || !userId || submissionLock.current || (!retry && (loadBusy || selection.error))) return;
     const text = prompt.trim();
     if (!retry && (text.length < 10 || text.length > 1000 || pending || !visible)) return;
     if (retry && !pending) return;
@@ -204,7 +205,7 @@ export function useWorkspace(
     try {
       if (!intent) {
         if (!savedProject) {
-          savedProject = await createProject(text, token);
+          savedProject = await createProject(text, session);
           if (!mounted.current) return;
           setProject(savedProject); setRevision(null); setRevisions([]);
           setLoadedKey(workspaceUrl(savedProject.id));
@@ -216,7 +217,7 @@ export function useWorkspace(
       }
       if (!savedProject || savedProject.id !== intent.projectId) throw new Error("Reload this project before retrying.");
       setNotice(intent.body.baseRevisionId ? "Generating changes against the frozen selected revision..." : "Project saved. Generating its first revision...");
-      const result = await generateProject(intent.projectId, token, intent.key, intent.body);
+      const result = await generateProject(intent.projectId, session, intent.key, intent.body);
       clearPendingGeneration(userId, intent.projectId);
       acceptGeneration(result, savedProject);
     } catch (error) {
@@ -239,10 +240,10 @@ export function useWorkspace(
 
   // Explicit status checks do not retry AI; ready evidence loads the committed snapshot.
   async function checkPending() {
-    if (!pending?.generationId || !token || !project || busy) return;
+    if (!pending?.generationId || !session || !project || busy) return;
     submissionLock.current = true; setBusy(true); setSubmitError("");
     try {
-      const result = await getGeneration(pending.projectId, pending.generationId, token);
+      const result = await getGeneration(pending.projectId, pending.generationId, session);
       if (!mounted.current) return;
       if (result.status === "ready") {
         if (userId) clearPendingGeneration(userId, pending.projectId);

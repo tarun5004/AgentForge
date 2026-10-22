@@ -24,7 +24,7 @@ test("generation retries forward exactly the caller's key and selected base", as
   for (let retry = 0; retry < 2; retry++) await generateProject(projectId, "token", "stable-key", body);
   assert.equal(calls.length, 2);
   for (const call of calls) {
-    assert.equal((call.headers as Record<string, string>)["Idempotency-Key"], "stable-key");
+    assert.equal(new Headers(call.headers).get("Idempotency-Key"), "stable-key");
     assert.deepEqual(JSON.parse(call.body as string), body);
   }
 });
