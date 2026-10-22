@@ -201,3 +201,22 @@ If preflight reports a nonempty database, no records are deleted. Inspect that d
 Pinned Playwright CLI 0.1.22 is bootstrapped/version-checked once, then invoked directly so npm startup is not repeated for each click. Normal stderr notices do not masquerade as failures; actual exit codes and CLI assertion errors still fail the run. The launcher supplies unique browser session names and attempts to close only those sessions during cleanup.
 
 Use `--suite loop|recovery|state|mocked|all` to limit scope. `--fail-after-start` deliberately fails after both servers are ready so cleanup can be tested without browser writes; its expected exit code is 1. Hard OS termination/power loss cannot guarantee finally cleanup. The acceptance matrix in `docs/M1_ACCEPTANCE_REVIEW.md` separates implemented behavior, executed checks and remaining scope.
+
+### Full workspace-to-preview verification (zero provider cost)
+
+The separate **opt-in** `preview-real` suite extends the same launcher through the actual Execution API, Docker static build and workspace iframe. It is not included in `all`, so ordinary history checks do not unexpectedly require Docker. Build the trusted image first using [Execution setup](../execution-service/README.md); Linux Docker and ports 5310/5311 must also be available.
+
+```powershell
+# Explicit empty disposable database; never use an application database.
+$env:AGENTFORGE_TEST_MONGODB_URI='mongodb://127.0.0.1:27017/agentforge_test_workspace_preview'
+$env:AGENTFORGE_BROWSER_CHANNEL='msedge' # optional for real suites; default is chrome
+npm run verify:workspace -- --suite preview-real
+```
+
+The test composes real Auth/Project APIs, MongoDB and production Execution modules; **only the upstream AI response is a deterministic fixture**. No successful app/run response or iframe document is mocked. The production Preview server is configured for the test frontend's exact `http://localhost:3102` origin, using the merged origin-policy fix, not an overridden CSP header.
+
+Checks cover Enter-to-submit, saved v1, a real build and React counter click, refresh/session restoration, invalid-output failure preserving v1, manifest-valid but broken TSX producing a real failed build without an iframe, immutable-v1 reopen, Stop, same-key replay without another AI call, and another owner's create/read/cancel rejection. The broken revision being saved before its build explicitly demonstrates why a mandatory quality gate is still future work.
+
+Preflight refuses occupied ports, a nonempty test database, missing trusted image, non-Linux Docker or existing labeled preview containers; it never deletes unknown containers. Finally awaits owned builds/listeners, cleans only fixture-owned records, independently checks empty collections and confirms no labeled build containers. Reports include fixture-vs-real boundaries, `cleanup` and `containerCleanup`. `--suite preview-real --fail-after-start` exercises startup failure cleanup (expected exit 1). Hard host termination is not covered.
+
+This is not live-provider availability/quality/cost evidence, durable crash recovery or production multi-user security certification. Evidence and earlier failed runs are recorded in [the testing strategy](../docs/08_TESTING_STRATEGY.md).

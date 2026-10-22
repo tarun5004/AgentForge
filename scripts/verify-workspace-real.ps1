@@ -1,6 +1,6 @@
 param(
     [string]$BaseUrl = 'http://localhost:3102',
-    [ValidateSet('loop', 'recovery', 'state')][string]$Suite = 'loop'
+    [ValidateSet('loop', 'recovery', 'state', 'preview-real')][string]$Suite = 'loop'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -8,7 +8,9 @@ $sessionName = if ($env:AGENTFORGE_BROWSER_SESSION) { $env:AGENTFORGE_BROWSER_SE
 if ($sessionName -notmatch '^[a-zA-Z0-9-]+$') { throw 'Invalid test browser session name.' }
 $opened = $false
 $failed = $false
-$browserChecks = @{ loop = 'scripts/workspace-real.browser.js'; recovery = 'scripts/workspace-recovery.browser.js'; state = 'scripts/workspace-state.browser.js' }[$Suite]
+$browserChannel = if ($env:AGENTFORGE_BROWSER_CHANNEL) { $env:AGENTFORGE_BROWSER_CHANNEL } else { 'chrome' }
+if ($browserChannel -notin @('chrome', 'msedge', 'firefox', 'webkit')) { throw 'Unsupported verification browser channel.' }
+$browserChecks = @{ loop = 'scripts/workspace-real.browser.js'; recovery = 'scripts/workspace-recovery.browser.js'; state = 'scripts/workspace-state.browser.js'; 'preview-real' = 'scripts/workspace-preview-real.browser.js' }[$Suite]
 
 # Fail on assertion errors, not just on a successful invocation of the CLI executable.
 function Invoke-RealBrowser {
@@ -145,12 +147,15 @@ try {
     if ((Read-FixtureMarker '/api/auth/me') -ne $fixture.fixtureId -or (Read-FixtureMarker '/api/projects') -ne $fixture.fixtureId) {
         throw 'Next rewrites do not point at the isolated Auth/Project fixture. Refusing writes.'
     }
+    if ($Suite -eq 'preview-real' -and (-not $fixture.previewEnabled -or (Read-FixtureMarker '/api/runs') -ne 'agentforge-real-preview-v1')) {
+        throw 'Preview rewrite does not point at the isolated real Execution API. Refusing writes.'
+    }
     $nodeCommand = (Get-Command node.exe).Source
     $npxEntry = Join-Path (Split-Path (Get-Command npx.cmd).Source) 'node_modules/npm/bin/npx-cli.js'
     $null = New-Item -ItemType Directory -Force -Path 'output/playwright'
     $snapshotPath = "output/playwright/$sessionName.yml"
     $opened = $true
-    Invoke-RealBrowser @('open')
+    Invoke-RealBrowser @('open', "--browser=$browserChannel")
     Invoke-RealBrowser @('resize', '1440', '1000')
     Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
     Invoke-RealBrowser @('goto', "$BaseUrl/register")
@@ -158,7 +163,14 @@ try {
     Use-RealControl 'textbox' 'Email' 'frontend-slice5-20261012@agentforge.test'
     Use-RealControl 'textbox' 'Password' 'Disposable-test-password-13'
     Use-RealControl 'button' 'Create account'
-    if ($Suite -eq 'state') {
+    if ($Suite -eq 'preview-real') {
+        Invoke-RealBrowser @('snapshot', "--filename=$snapshotPath")
+        Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
+        Invoke-RealBrowser @('screenshot', "--filename=output/playwright/$sessionName-ready.png", '--full-page')
+        Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
+        Invoke-RealBrowser @('screenshot', "--filename=output/playwright/$sessionName.png", '--full-page')
+        Write-Host 'PASS real login/generation/reload/interactive Docker preview/failed generation/failed build/ownership/Stop. Only AI transport is a fixture.'
+    } elseif ($Suite -eq 'state') {
         Invoke-RealBrowser @('run-code', "async page => { await page.getByRole('textbox', { name: 'Describe a frontend page or change' }).waitFor(); }")
         Invoke-StateFlow
         Write-Host 'PASS 9/9 state checkpoints. Real services; controlled AI barrier/proxy uncertainty/read delay.'

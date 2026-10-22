@@ -24,11 +24,26 @@ Object.assign(process.env, {
 const { createApp: createAuthApp } = await import("../auth-service/src/app/app.ts");
 const { createApp: createProjectApp } = await import("../project-service/src/app/app.ts");
 await Promise.all(Object.values(mongoose.models).map((model) => model.init()));
+const previewEnabled = process.env.AGENTFORGE_TEST_PREVIEW === "1";
 const initialFiles = [
   { path: "app/page.tsx", content: "export default function Page() { return <main>Initial portfolio</main>; }" },
   { path: "app/globals.css", content: "body { color: white; }" },
   { path: "components/Old.tsx", content: "export default function Old() { return null; }" },
 ];
+// Only the opt-in preview suite needs an interactive build fixture; old history fixtures stay stable.
+if (previewEnabled) {
+  initialFiles[0]!.content = `'use client';
+import { useState } from 'react';
+export default function Page() {
+  const [count, setCount] = useState(0);
+  return <main><h1>Zero-cost portfolio preview</h1><button onClick={() => setCount(count + 1)}>Count {count}</button></main>;
+}`;
+}
+let stopPreview: (() => Promise<void>) | undefined;
+if (previewEnabled) {
+  const { startPreviewFixture } = await import("./frontend-preview.fixture.mts");
+  stopPreview = await startPreviewFixture();
+}
 const aiRequests: { prompt: string; baseVersion: number | null; baseMatchesInitial: boolean }[] = [];
 const fixtureEmail = "frontend-slice5-20261012@agentforge.test";
 const fixtureEmails = [fixtureEmail, "revision-loop-other@agentforge.test"];
@@ -79,7 +94,9 @@ const aiServer = createServer((request, response) => {
       }
       if (input.prompt.includes("slow")) await new Promise((resolve) => setTimeout(resolve, 2_000));
       const initial = !input.baseRevision;
-      const files = input.prompt.includes("invalid output") ? [] : initial ? initialFiles :
+      const files = previewEnabled && input.prompt.includes("broken preview syntax")
+        ? [{ path: "app/page.tsx", content: "export default function Page( { deliberately invalid TSX !!!" }]
+        : input.prompt.includes("invalid output") ? [] : initial ? initialFiles :
         [{ path: "app/page.tsx", content: `export default function Page() { return <main>Revised portfolio ${aiRequests.length}</main>; }` }];
       response.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ generation: {
         requestId: input.requestId, provider: "browser-test-fixture", model: "deterministic-fixture",
@@ -113,7 +130,7 @@ async function readFixtureStatus(response: import("node:http").ServerResponse) {
     const counts: Record<string, number> = {};
     for (const name of ["users", "projects", "revisions", "generations"]) counts[name] = await db.collection(name).countDocuments({});
     response.setHeader("Content-Type", "application/json");
-    response.end(JSON.stringify({ fixtureId, databaseName: target.pathname.slice(1), counts, aiRequests, heldGeneration: !!releaseGeneration }));
+    response.end(JSON.stringify({ fixtureId, databaseName: target.pathname.slice(1), counts, aiRequests, heldGeneration: !!releaseGeneration, previewEnabled }));
   } catch { response.writeHead(503).end("Fixture status unavailable."); }
 }
 // Remove only this fixture account and its owned records; never drop the database or other data.
@@ -123,6 +140,7 @@ async function shutdown() {
   // A failed browser must not leave server.close waiting on a held model request forever.
   releaseGeneration?.();
   process.exitCode = await finishFixtureCleanup(async () => {
+    await stopPreview?.();
     await Promise.all([aiServer, authServer, projectServer].map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
     const users = await db.collection("users").find({ email: { $in: fixtureEmails } }, { projection: { _id: 1 } }).toArray();
     const ownerIds = users.map((user) => user._id.toString());

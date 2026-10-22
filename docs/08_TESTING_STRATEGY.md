@@ -1,5 +1,32 @@
 # AgentForge V1 — Testing Strategy
 
+## Workspace-to-Docker preview follow-up — 2026-10-22
+
+Branch: `test/frontend-generation-preview`, fast-forwarded to merged Execution-origin dependency PR #12 (`0a35a51`) before restoring its own test work. No Execution/Auth/Project/AI application code changes are part of this frontend-verification slice. It reuses the existing launcher/fixture instead of adding a browser framework or production fake-provider mode.
+
+**Passing recorded run:** `npm run verify:workspace -- --suite preview-real`, explicit empty local `agentforge_test_preview_20261022_2340`, installed Edge channel. Launcher exit 0; ignored report `output/playwright/verification-1792692682129.json` has `preview-real: passed`, `cleanup: true`, `containerCleanup: true` and no failure marker. Real Auth/Project/Mongo, the actual Execution API, real Docker compilation/static export and browser iframe were used; only AI HTTP output was a deterministic fixture.
+
+| Boundary | Executed evidence |
+| --- | --- |
+| Browser → Auth/Project | Real disposable registration/session; Enter submits a prompt and persists owned v1. |
+| Saved revision → Execution | Browser submits IDs only; Execution loads actual owned Mongo snapshot through Project API, not fixture ownership responses. |
+| Docker → browser | Actual static build publishes an iframe; React counter changes Count 0 → Count 1. Inspected ready screenshot: `output/playwright/verification-24236-preview-real-ready.png`. |
+| Generation/build failures | Invalid AI output preserves v1; a later manifest-valid syntax error is saved as v2 but genuinely fails compilation, exposes no iframe and does not log out the user. No pre-publication quality gate is claimed. |
+| Ownership/recovery | A second real account receives 404 for foreign run create/read/cancel; anonymous read receives 401. Refresh restores session/files; v1 stays immutable; replaying its original key returns v1 without another AI fixture request. |
+| Stop and cleanup | Ready preview Stop removes the iframe and acknowledges cancellation. Exactly three AI fixture requests, two revisions and three Generation records were asserted before scoped cleanup. Launcher independently confirms zero users/projects/generations/revisions and no labeled preview containers after shutdown. |
+
+Earlier attempts are retained, not counted as success: Chrome launch timed out; then Edge reached Docker-ready but CSP hardcoded port-3001 parents blocked the port-3102 workspace iframe. PR #12 fixed exact configurable loopback ancestors without weakening sandbox/network policy. This passing run uses that production fix. Ignored run log: `output/playwright/preview-real-after-origin-merge.log`.
+
+Fresh helper checks in this follow-up: verification guards 3/3, native-command regression checks 12/12 and fixture-cleanup tests 4/4 passed. The production Execution dependency separately reran 19/19 tests plus typecheck/build before merge. A passing fixture flow is **not** proof of real-provider generation, model quality, provider spending, crash durability, public deployment or dependency remediation. Normal application database records and existing Compose containers were not modified.
+
+Explicit startup-failure test also completed: `--suite preview-real --fail-after-start` exited the expected 1, while its report `output/playwright/verification-1792692873953.json` confirmed `failed: true`, `cleanup: true`, `containerCleanup: true`. That deliberate failure is not a passing user flow; it proves the ordinary failure path releases fixture records/listeners without deleting unknown containers. Independent port and Docker checks found no dedicated listeners or labeled build containers afterward.
+
+After dedicated dev servers stopped, frontend unit tests **23/23**, lint and production build passed. `git diff --check` passed. These checks do not replace provider evaluation or the earlier labelled browser boundaries.
+
+Reproduction, port/database/image guards and optional browser-channel selection: [frontend guide](../nextjs-boilerplate/README.md#full-workspace-to-preview-verification-zero-provider-cost). Docker/browser verification is explicit opt-in and remains outside the default `all` suite.
+
+**Delivery recheck — 2026-10-23:** after AI-smoke PR #13 merged, the frontend branch fast-forwarded to `d2ab0d1`; its PR still contains only frontend verification helpers, fixtures and documentation. A fresh Edge `preview-real` run passed with dedicated database `agentforge_test_preview_delivery_20261023`; report `output/playwright/verification-1792694250739.json` confirms the real/fixture boundaries, `cleanup: true` and `containerCleanup: true`. Inspected screenshot `output/playwright/verification-10796-preview-real-ready.png` shows the built page and Count 1. The startup-failure rerun exited the expected 1; `verification-1792694405395.json` confirms failure and both cleanup flags. No dedicated listeners or labeled build containers remained. Verification guards 3/3, native-command checks 12/12, fixture cleanup 4/4, frontend tests 23/23, frontend lint/build, and Execution tests 19/19/typecheck/build passed again. No live provider call was made; existing Compose services were left running.
+
 ## Verification launcher lifecycle follow-up (2026-10-21)
 
 The earlier combined report recorded links/history/access/loop passes, then a recovery failure after response loss; it is not a six-suite success. A subsequent attempt had no completed summary and is not counted as a pass. Reusing the proxy across upstream fixture restarts was a suspected source of stale connections. The launcher now stops and awaits its owned Next process, then starts a fresh Next + fixture pair for each real suite. Assertions, application APIs and dependencies are unchanged.
