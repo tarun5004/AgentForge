@@ -1,6 +1,6 @@
 param(
     [string]$BaseUrl = 'http://localhost:3001',
-    [ValidateSet('links', 'history', 'access', 'session', 'preview')][string]$Suite = 'links'
+    [ValidateSet('links', 'history', 'access', 'session', 'preview', 'pending')][string]$Suite = 'links'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -8,6 +8,8 @@ $sessionName = if ($env:AGENTFORGE_BROWSER_SESSION) { $env:AGENTFORGE_BROWSER_SE
 if ($sessionName -notmatch '^[a-zA-Z0-9-]+$') { throw 'Invalid test browser session name.' }
 $browserOpened = $false
 $failed = $false
+$browserChannel = if ($env:AGENTFORGE_BROWSER_CHANNEL) { $env:AGENTFORGE_BROWSER_CHANNEL } else { 'chrome' }
+if ($browserChannel -notin @('chrome', 'msedge', 'firefox', 'webkit')) { throw 'Unsupported verification browser channel.' }
 
 # A failed browser assertion must fail the command, not produce a false green result.
 function Invoke-BrowserCommand {
@@ -56,7 +58,7 @@ try {
 
     # Each run gets a new browser session; existing user cookies/tabs are never reused.
     $browserOpened = $true
-    Invoke-BrowserCommand @('open')
+    Invoke-BrowserCommand @('open', "--browser=$browserChannel")
     Invoke-BrowserCommand @('resize', '1440', '1000')
     # File-based snippets avoid Windows command-line quoting of multiline JavaScript.
     $browserChecks = "scripts/workspace-$Suite.browser.js"
@@ -112,6 +114,11 @@ try {
         Invoke-BrowserCommand @('snapshot')
         Invoke-BrowserCommand @('run-code', "--filename=$browserChecks")
         Write-Host 'PASS preview success, cancellation, outage recovery and cleanup warning. Every API intercepted; no paid calls or real account/database used.'
+    } elseif ($Suite -eq 'pending') {
+        Invoke-BrowserCommand @('goto', "$BaseUrl/workspace?project=100000000000000000000001")
+        Invoke-BrowserCommand @('snapshot')
+        Invoke-BrowserCommand @('run-code', "--filename=$browserChecks")
+        Write-Host 'PASS pending/ready/failure/outage/refresh UI checkpoints. Every API intercepted; no backend, database, build or provider proof claimed.'
     } elseif ($Suite -eq 'session') {
         Invoke-BrowserCommand @('goto', "$BaseUrl/workspace")
         Invoke-BrowserCommand @('snapshot')

@@ -2,6 +2,26 @@
 
 This Next.js application provides AgentForge's authentication screens and Cursor-inspired AI development workspace.
 
+## B2/1: pending-generation compatibility — 2026-10-23
+
+The frontend accepts both the existing completed generation response and a future `202 {generation: {id, status: "pending", hasSavedResult, errorCode: null}}` response. It stores the accepted Generation ID alongside the existing user/project-scoped key/body **before** polling. GET-only polling waits two seconds between reads, is capped at 180 reads and a six-minute UI deadline, and stops on unmount, terminal evidence or a read failure. Each status GET has a ten-second deadline. No timer submits another generation POST or model call.
+
+While waiting, saved files remain visible and selection/submission controls stay frozen. A committed result advances the editor; a confirmed failed result keeps earlier files. Read outages (including proxy 502), malformed data and polling timeout preserve the key/ID for explicit status/replay. A definite 401 follows the existing session recovery path. Refresh restores pending intent and its manual controls; it does not automatically restart paid generation. Pending state is not a success or a build guarantee.
+
+Optional backend-issued `buildVerification` evidence has a separate runtime guard (status, policy, snapshot hash, runner image ID, check ID and timestamp). Only records carrying that evidence get the static-build badge. Legacy/manifest-only records retain their old label; the browser does not independently execute a build or cryptographically certify the backend's claim.
+
+**Rollout boundary:** this frontend-only slice does not add candidate authentication, enable a Project publication gate, change service environment files or alter saved data. Execution candidate checking and Project gating remain later compatible service slices. Until then the current backend continues returning its existing completed responses.
+
+Checks: `npm --workspace nextjs-boilerplate test`, `npm --workspace nextjs-boilerplate run lint`, `npm --workspace nextjs-boilerplate run build`, and `npm run test:verification`. The explicit UI contract check uses the existing CLI wrapper:
+
+```powershell
+# Run against an owned local frontend; every API request is intercepted before navigation.
+$env:AGENTFORGE_BROWSER_CHANNEL='msedge' # optional; default chrome
+powershell -NoProfile -File scripts/verify-workspace-links.ps1 -BaseUrl http://localhost:3102 -Suite pending
+```
+
+The browser check covers pending files/disabled selection, accepted-ID storage, ready-only v2 selection/badge, failed-check preservation and status-outage refresh without another POST or logout. This is **mocked API transport**, not real Auth/Mongo/build/provider evidence. Ignored artifacts: `output/playwright/frontend-pending-browser.log` and `frontend-pending-gate-20261023.png`. The test uses a fresh browser session and never reuses a real account's cookies.
+
 ## Local development
 
 Copy the environment example:

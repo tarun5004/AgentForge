@@ -62,7 +62,7 @@ export function ChatPanel({ workspace }: { workspace: WorkspaceState }) {
               <p className="text-[10px] text-[#a5b99c]">{revision.files.length} files · {revision.model ?? "Model unknown (legacy)"}{revision.usage ? ` · ${revision.usage.totalTokens} tokens` : " · Usage unknown"}</p>
               <p className="text-[10px] text-[#a5b99c]">{revision.parentRevisionId ? (parentVersion ? `Parent: v${parentVersion}` : `Parent: ${revision.parentRevisionId}`) : revision.validation ? "Initial revision" : "Parent unknown (legacy)"}</p>
               {project?.latestRevision && revision.id !== project.latestRevision.id && <p className="text-[10px] text-[#e8ce87]">Historical base selected. Latest is v{project.latestRevision.version}.</p>}
-              <p className="text-[10px] text-[#a5b99c]">{revision.validation ? "Manifest checked · build/execution not verified" : "Validation unknown (legacy)"}</p>
+              <p className="text-[10px] text-[#a5b99c]">{revision.buildVerification ? "Manifest checked · static build verified" : revision.validation ? "Manifest checked · build/execution not verified" : "Validation unknown (legacy)"}</p>
             </div>
           )}
           {project && (
@@ -80,7 +80,7 @@ export function ChatPanel({ workspace }: { workspace: WorkspaceState }) {
         </div>
         <form onSubmit={handleSubmit} className="border-t border-[#2b2b2e] p-3">
           {workspace.submitError && <p role="alert" className="mb-2 text-xs text-[#ffaaaa]">{workspace.submitError}</p>}
-          <p role="status" className="mb-2 text-[10px] text-[#99999e]">{busy ? workspace.notice : revision ? `Next prompt creates a new revision from v${revision.version}.` : workspace.notice}</p>
+          <p role="status" className="mb-2 text-[10px] text-[#99999e]">{busy || pending ? workspace.notice : revision ? `Next prompt creates a new revision from v${revision.version}.` : workspace.notice}</p>
           {pending && !busy && (
             <div className="mb-3 space-y-2 rounded border border-[#655738] p-2 text-[11px] text-[#e8ce87]">
               <p>Unconfirmed attempt retained: {pending.body.prompt ?? "Initial generation"}</p>

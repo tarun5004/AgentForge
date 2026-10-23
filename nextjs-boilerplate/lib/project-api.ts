@@ -4,6 +4,10 @@ export type GeneratedFile = { path: string; content: string };
 export type FileChange = { path: string; status: "A" | "M" | "D" };
 export type Usage = { inputTokens: number; outputTokens: number; totalTokens: number };
 export type Validation = { policyVersion: "frontend-manifest-v1"; status: "manifest_validated" };
+export type BuildVerification = {
+  status: "build_passed"; policyVersion: "next-static-build-v1"; snapshotHash: string;
+  runnerImageId: string; checkId: string; completedAt: string;
+};
 export type Project = {
   id: string; name: string; initialPrompt: string; template: "nextjs";
   status: "draft" | "generating" | "ready" | "failed";
@@ -19,6 +23,7 @@ export type Revision = RevisionSummary & {
   files: GeneratedFile[]; fileChanges: FileChange[] | null;
   provider: string | null; model: string | null; usage: Usage | null;
   latencyMs: number | null; validation: Validation | null; schemaVersion: number | null;
+  buildVerification?: BuildVerification | null;
 };
 export type Generation = {
   id: string; status: "ready"; revisionId: string; revisionVersion: number;
@@ -26,9 +31,13 @@ export type Generation = {
   provider: string; model: string; summary: string; files: GeneratedFile[];
   fileChanges: FileChange[] | null; validation: Validation | null;
   usage: Usage; latencyMs: number;
+  buildVerification?: BuildVerification | null;
 };
-export type GenerationStatus = Generation | {
-  id: string; status: "pending" | "failed"; hasSavedResult: boolean; errorCode: string | null;
+export type PendingGenerationStatus = {
+  id: string; status: "pending"; hasSavedResult: boolean; errorCode: null;
+};
+export type GenerationStatus = Generation | PendingGenerationStatus | {
+  id: string; status: "failed"; hasSavedResult: boolean; errorCode: string | null;
 };
 export type GenerationBody = { prompt?: string; baseRevisionId?: string };
 
@@ -106,12 +115,21 @@ function isValidation(value: unknown): value is Validation | null {
   return value === null || (isRecord(value) && value.policyVersion === "frontend-manifest-v1" && value.status === "manifest_validated");
 }
 
+// Build evidence is independent of manifest validation; legacy records have no such claim.
+function isBuildVerification(value: unknown): value is BuildVerification | null | undefined {
+  return value === undefined || value === null || (isRecord(value) && value.status === "build_passed" &&
+    value.policyVersion === "next-static-build-v1" && typeof value.snapshotHash === "string" && /^[a-f0-9]{64}$/.test(value.snapshotHash) &&
+    typeof value.runnerImageId === "string" && /^sha256:[a-f0-9]{64}$/.test(value.runnerImageId) &&
+    typeof value.checkId === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value.checkId) && isDate(value.completedAt));
+}
+
 // Complete snapshots carry nullable provenance for older records.
 function isRevision(value: unknown): value is Revision {
   return isRecord(value) && isFiles(value.files) && isChanges(value.fileChanges) &&
     (value.provider === null || typeof value.provider === "string") && (value.model === null || typeof value.model === "string") &&
     (value.usage === null || isUsage(value.usage)) && (value.latencyMs === null || isCounter(value.latencyMs)) &&
-    isValidation(value.validation) && (value.schemaVersion === null || value.schemaVersion === 2) && isRevisionSummary(value);
+    isValidation(value.validation) && isBuildVerification(value.buildVerification) &&
+    (value.schemaVersion === null || value.schemaVersion === 2) && isRevisionSummary(value);
 }
 
 // Ready output always identifies the committed revision and its actual version.
@@ -121,7 +139,14 @@ function isGeneration(value: unknown): value is Generation {
     (value.parentRevisionId === null || isProjectId(value.parentRevisionId)) &&
     (value.sourcePrompt === null || typeof value.sourcePrompt === "string") &&
     typeof value.provider === "string" && typeof value.model === "string" && typeof value.summary === "string" &&
-    isFiles(value.files) && isChanges(value.fileChanges) && isValidation(value.validation) && isUsage(value.usage) && isCounter(value.latencyMs);
+    isFiles(value.files) && isChanges(value.fileChanges) && isValidation(value.validation) &&
+    isBuildVerification(value.buildVerification) && isUsage(value.usage) && isCounter(value.latencyMs);
+}
+
+// An accepted attempt contains no committed files yet; never display it as a ready revision.
+function isPendingGeneration(value: unknown): value is PendingGenerationStatus {
+  return isRecord(value) && isProjectId(value.id) && value.status === "pending" &&
+    typeof value.hasSavedResult === "boolean" && value.errorCode === null;
 }
 
 // One error/JSON boundary handles all endpoints, including non-JSON proxy failures.
@@ -190,20 +215,21 @@ export async function getRevision(projectId: string, revisionId: string, token: 
 }
 
 // One caller-owned key identifies one attempt and must survive transport retries.
-export async function generateProject(projectId: string, token: ProjectAccess, key: string, input: GenerationBody): Promise<Generation> {
+export async function generateProject(projectId: string, token: ProjectAccess, key: string, input: GenerationBody): Promise<Generation | PendingGenerationStatus> {
   const body = await request(`${projectPath(projectId)}/generations`, token, {
     method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": key }, body: JSON.stringify(input),
     signal: AbortSignal.timeout(100_000),
   });
-  if (!isGeneration(body.generation)) throw new Error("Invalid generation response. Keep the request key and check again.");
+  if (!isGeneration(body.generation) && !isPendingGeneration(body.generation)) throw new Error("Invalid generation response. Keep the request key and check again.");
   return body.generation;
 }
 
 // Read uncertainty without starting AI or publishing saved output.
-export async function getGeneration(projectId: string, generationId: string, token: ProjectAccess): Promise<GenerationStatus> {
-  const body = await request(`${projectPath(projectId)}/generations${projectPath(generationId)}`, token);
+export async function getGeneration(projectId: string, generationId: string, token: ProjectAccess, signal?: AbortSignal): Promise<GenerationStatus> {
+  const body = await request(`${projectPath(projectId)}/generations${projectPath(generationId)}`, token, { signal });
   if (isGeneration(body.generation) && body.generation.id === generationId) return body.generation;
   const value = body.generation;
-  if (!isRecord(value) || value.id !== generationId || typeof value.status !== "string" || !["pending", "failed"].includes(value.status) || typeof value.hasSavedResult !== "boolean" || !(value.errorCode === null || typeof value.errorCode === "string")) throw new Error("Invalid generation status response.");
+  if (!isRecord(value) || value.id !== generationId || typeof value.status !== "string" || !["pending", "failed"].includes(value.status) || typeof value.hasSavedResult !== "boolean" ||
+    !(value.status === "pending" ? value.errorCode === null : value.errorCode === null || typeof value.errorCode === "string")) throw new Error("Invalid generation status response.");
   return value as GenerationStatus;
 }
