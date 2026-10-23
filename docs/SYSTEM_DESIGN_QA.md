@@ -88,6 +88,14 @@ Trace: [testing evidence](08_TESTING_STRATEGY.md), [gate integration](../project
 
 ## 10. What remains before calling it complete?
 
-Follow the [six-phase plan](AI_ENGINEERING_ROADMAP.md#portfolio-v1-delivery-plan--six-phases-2026-10-23). Durable jobs, scanners, bounded repair, cost enforcement, security release and deployment are separate acceptance criteria, not implicit benefits of having four services.
+Follow the [six-phase plan](AI_ENGINEERING_ROADMAP.md#portfolio-v1-delivery-plan--six-phases-2026-10-23), constrained by the current free-first local-demo scope. Durable jobs, scanners, bounded repair, cost controls and local release each need their own acceptance evidence. Full cloud deployment is not required. Explain production architecture as a proposed design, not an achieved deployment.
 
 Practice answer: “I used AI for implementation help. I can explain the service boundaries, the immutable commit point, the container/iframe boundary and failure recovery, and show the tests that support each claim. I also know which parts are still demo-only.”
+
+## 11. Why a local demo instead of a public production deployment?
+
+**Problem:** student budget does not justify continuously paying for model requests, compute and public execution isolation just to demonstrate engineering work.
+
+**Design:** show real local services, persistence, restricted builds, preview and failure recovery through repeatable tests and a labelled recording. A small static showcase can link the video, source and production architecture proposal without exposing the execution host.
+
+**Trade-off:** this proves the demonstrated workflow, not production scale, availability, cloud operation or real-model quality when AI responses are fixtures. Say exactly which boundaries are real. GitHub source publication and application deployment are separate actions; keeping the source public does not require running the full platform online.
