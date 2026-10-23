@@ -65,3 +65,11 @@
 **Why:** A vague portfolio request should not immediately invent personal details or consume a full generation. Structured decisions make the UI's next action explicit without an autonomous multi-agent loop or another provider framework. Existing four-service boundaries, revisions and execution checks remain useful.
 
 **Consequence:** `ready` is not user consent to generate. Project Service must later load owned answers, enforce confirmation and protect repeated submissions; this stateless internal endpoint alone does not do so. New calls cap output/time and disable SDK retries; this is not a dollar budget or Gateway-attempt guarantee. Fixtures prove contracts only. Model behavior, hallucination rate and live integration require separate measured verification with explicit spending approval. No paid call, security-policy expansion, schema migration or framework/package upgrade is included.
+
+## ADR-009: Reserve versioned requirement attempts; confirm separately
+
+**Decision (2026-10-23, A2):** Project owns bounded cumulative answers and assessments in a new versioned Brief collection. Unique project/version and project/key indexes arbitrate admission before AI. Fingerprints bind input; conditional completion/abandonment avoids late resurrection. Model-ready and human confirmation are separate transitions. An additive initial-generation route loads approved text and delegates existing publication/build logic; the legacy API remains compatible.
+
+**Why:** Browser state/stateless model calls cannot restore consent or protect retries. One atomic reservation fits standalone MongoDB without a new queue, service, mutable latest pointer or a multi-document transaction around AI. Existing SDK and database tools suffice; no new dependency.
+
+**Consequence:** Pending ambiguity requires read/replay or explicit abandonment, not an automatic paid retry. A new deliberate key can spend again; cancellation/refunds are not promised. Current consent is checked at admission, not a cross-document transaction that cancels future edits. Historical generation replay remains possible; follow-ups stay on the selected-base legacy API. Frontend conversation and live-model quality remain separate A3/A4 work.

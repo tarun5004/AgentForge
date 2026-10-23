@@ -114,8 +114,20 @@ Trace: [launcher](../scripts/verify-workspace.mjs), [fixture composition](../tes
 
 **Problem:** “Build my portfolio” lacks personal facts. Immediately generating can invent a name/projects or require an expensive rewrite.
 
-**Design:** a small model call returns typed `needs_clarification`, `ready` or `unsupported`, with bounded questions and a draft brief. The actual request/answers are data, not a fixed portfolio questionnaire. A complete request should skip unnecessary questions. Project-owned persistence and an explicit user-confirmation step are the next slices; `ready` alone is not consent to generate.
+**Design:** a small model call returns typed `needs_clarification`, `ready` or `unsupported`, with bounded questions and a draft brief. The actual request/answers are data, not a fixed portfolio questionnaire. A complete request should skip unnecessary questions. A2 now adds Project-owned persistence and explicit confirmation (question 14); frontend dialogue remains the next slice. `ready` alone is not consent to generate.
 
 **Trade-off:** this adds a model call when clarification is needed. Bound context/output/time and disable SDK retries for this new path, but do not call that a dollar guarantee. Schema tests prove shape/control flow, not factual correctness or real-model quality. Prompt instructions cannot eliminate hallucination; user review and evals remain necessary.
 
 Trace: [request/output checks](../ai-orchestrator-service/src/features/requirements/requirement.schema.ts), [instructions/context](../ai-orchestrator-service/src/features/requirements/requirement.prompt.ts), [bounded SDK call](../ai-orchestrator-service/src/features/requirements/requirement.service.ts), [no-spend tests](../ai-orchestrator-service/src/features/requirements/requirement.test.ts).
+
+## 14. Why store a versioned brief and require confirmation?
+
+**Question:** Why not resend the chat from browser state and generate when the model says ready?
+
+**Answer:** Refresh loses browser-only facts; a retry can spend twice; model-ready is not user consent. Project stores owned answers and one version/key before AI. A matching retry reads saved state. Different input under the same key conflicts. Human confirmation authorizes that exact ready snapshot; edits create an unconfirmed version.
+
+**Failure example:** the database saves an assessment but its acknowledgement is lost. Reread the record instead of repeating AI. A crash with no saved response stays visibly pending; explicit abandonment unblocks a new attempt, but cannot refund possible provider spend. Conditional writes reject late completion of abandoned work.
+
+**Evidence/limit:** 18 real HTTP/Mongo tests plus contract tests; model output is a fixture, not model-quality evidence. Initial generation uses stored approved text through the existing publisher. The old direct API remains available; frontend dialogue, paid-model smoke and global workflow enforcement are not claimed.
+
+Trace: [service flow](../project-service/src/services/brief.service.ts), [atomic repository writes](../project-service/src/repositories/brief.repository.ts), [behavior tests](../project-service/src/routes/brief.routes.integration.test.ts).

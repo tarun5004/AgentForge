@@ -2,6 +2,8 @@
 
 **Reviewed:** 2026-10-23. **Baseline:** clean `main` at `ab783d1` before this slice.
 
+**Delivery update (2026-10-23):** A1 merged through [PR #24](https://github.com/tarun5004/AgentForge/pull/24), main `462ee34`. A2 backend is implemented/verified on `feature/project-service-confirmed-brief`, awaiting separate Git delivery/review; A3 frontend and A4 paid-provider smoke are not complete. A2 evidence: 34 unit, 18 new brief HTTP/Mongo, 40 legacy integration and 5 deterministic gate tests passed; real Docker gate case skipped, Project typecheck/build and Execution build passed. No paid calls or application-database writes. [Contracts/setup/limits](../project-service/README.md#saved-requirements-and-confirmation-a2).
+
 This is the authoritative feature-priority plan for the clarified **live local AI workspace** goal. It supersedes the fixture-first completion target and sequencing in older roadmap sections, not their historical test evidence. The user asked for a retrospective, fresher-market check and implementation. This turn starts only the compatible AI Service requirement-assessment slice; later rows are not claims of completion or permission for spending/new infrastructure.
 
 ## 1. Product and decision rules
@@ -79,7 +81,7 @@ Critical dependency findings are a **parallel priority for separate service bran
 
 Default Git delivery is one service's compatible slice at a time. No commits/push/PR/merge are inferred from this turn's implementation request. Finish or preserve A1 before branching for A2; dependency merges or a declared stacked strategy are needed, never silently mixed PRs.
 
-## 6. A1 implementation contract (this branch)
+## 6. A1 implementation contract (merged AI slice)
 
 - `POST /internal/requirements` uses the existing `x-internal-service-token`; browsers never receive that token or call this internal route directly. Project Service remains responsible for JWT ownership and loading saved answers.
 - Request: `{ requestId, projectId, prompt, answers?: [{ question, answer }] }`. Strict unknown-field rejection; prompt 10–1000 characters; up to six answer pairs (question 240, answer 1000 characters); 20,000 serialized UTF-8 bytes. IDs are correlation context, not ownership proof.
@@ -89,10 +91,12 @@ Default Git delivery is one service's compatible slice at a time. No commits/pus
 - The endpoint does not save data, generate files, change the current generation API or prove real-model quality. Schema/HTTP tests use the SDK mock provider and reject non-loopback fetches. No fake provider mode is added to production.
 - Limitations: exact normalized repeat-question checks do not detect all paraphrases; prompt instructions cannot guarantee facts are not hallucinated. Timeout does not guarantee a submitted provider call stops billing. Human brief review and later evals are necessary.
 
-**Next A2 design checkpoint:** define stored brief/turn/version ownership, same-key submission and explicit confirmation. It must fit legacy projects and existing generation's 1000-character prompt contract without silently inventing facts, truncating answers or changing the chosen base. A1's new route is additive so it can merge before A2/A3.
+**A2 implemented checkpoint:** Project stores owned cumulative answers/assessments in versioned records, reserves unique version/key before AI, fingerprints requests, and separates ready from confirmation. Latest-version checks and conditional writes handle races/abandonment; uncertain outcomes never trigger automatic paid retry. The additive initial-generation route forwards only stored approved brief text (10–1000 characters). Legacy direct/follow-up generation remains unchanged and is not globally gated. No transcript engine, base auto-selection, background recovery or new dependency is included. See ADR-009 and the public API contract.
+
+**Next A3 slice:** after A2 review/merge, branch from clean updated main for frontend-only dialogue. Restore saved brief after auth, preserve one submission key, render questions/answers/uncertainty, review/Confirm/Generate controls, and use the new confirmed-brief endpoint for initial generation. Keep existing explicit-base follow-ups and generation polling/replay. Prove loading/empty/error/refresh and no-extra-call behavior with fixtures before separately approved A4 live testing.
 
 ## 7. Learning and completion policy
 
 For each slice, keep a short Q&A: what problem occurred, input/output path, chosen technique, simpler alternative, one failure, actual test evidence and remaining gap. AI assistance is disclosed honestly. Do not rewrite the whole roadmap each turn; update row status/evidence. Changes to acceptance/scope need a short reason in the decision log.
 
-Current evidence is recorded in the dated audit addendum and service README. A1 implementation is present on this focused branch: **39/39** service tests (13 new), typecheck and build passed without paid calls. A1 completion means an internal service capability, **not** a completed conversational UI, live-provider smoke or full AI-engineering portfolio. A2–F are not implemented by this slice.
+Current evidence is recorded in the dated audit addendum and service README. A1: **39/39** service tests (13 new), typecheck/build passed and PR #24 merged. A2 backend evidence is recorded above. These are service capabilities, **not** completed conversational UI, live-provider smoke or the full AI-engineering portfolio. A3/A4 and B–F remain open.

@@ -1,5 +1,15 @@
 # AgentForge V1 — Database Design
 
+## Implemented A2 brief storage (2026-10-23)
+
+Project Service adds `projectbriefs`, separate from code Revision history. Each record stores immutable project/version/request key/fingerprint/source prompt/cumulative answers, plus attempt status, validated nullable assessment, confirmation/error fields and timestamps. Owner is resolved through the parent Project's JWT ownership; caller-supplied owner IDs are not stored/trusted.
+
+Unique `(projectId, version)` and `(projectId, idempotencyKey)` indexes admit only one winner for a next-version/key reservation. Startup awaits model/index initialization before accepting HTTP. Latest is the indexed highest version, not a mutable pointer. One insert reserves pending work before the external request; conditional `pending → completed/failed` prevents abandoned work from reviving. Confirmation is a conditional completed/ready timestamp update, separate from model output.
+
+No transaction or lock is held around AI. Lost acknowledgements are reread; unknown outcomes keep identity and do not automatically repeat AI. Crash-before-completion can remain pending until explicit owner abandonment. Older confirmations remain historical, but new-generation admission checks the actual latest version. Edits after admission do not cancel in-flight generation. Existing Project/Generation/Revision schemas and legacy data remain unchanged; the direct-generation API is still supported. These are application guarantees, not protection against direct DB operators.
+
+Validation uses an explicit empty dedicated `agentforge_test_*` DB and scoped fixture cleanup, never application records. See [A2 routes/evidence](../project-service/README.md#saved-requirements-and-confirmation-a2).
+
 ## Implemented Slice 4 publication model (2026-10-12)
 
 This section supersedes the older allocator/optional-lineage descriptions in the dated slice notes below. Current production code uses existing unique indexes, not multi-document transactions or a mutable latest-revision pointer.
