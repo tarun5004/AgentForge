@@ -1,6 +1,7 @@
 import { Revision } from "../models/revision.model.js";
 import type { GeneratedFile, GenerationResult } from "../models/generation.model.js";
 import { mongo, Types } from "mongoose";
+import type { BuildVerification } from "../clients/build-verification.js";
 
 export type RevisionSummaryRecord = {
   _id: Types.ObjectId;
@@ -14,7 +15,7 @@ export type RevisionSummaryRecord = {
   sourcePrompt?: string | null;
 };
 
-export type RevisionReadRecord = RevisionSummaryRecord & { files: GeneratedFile[]; schemaVersion?: number } &
+export type RevisionReadRecord = RevisionSummaryRecord & { files: GeneratedFile[]; schemaVersion?: number; buildVerification?: BuildVerification } &
   Partial<Pick<GenerationResult, "provider" | "model" | "usage" | "latencyMs" | "fileChanges" | "validation">>;
 
 const REVISION_SUMMARY_FIELDS = {
@@ -23,7 +24,7 @@ const REVISION_SUMMARY_FIELDS = {
 } as const;
 const REVISION_DETAIL_FIELDS = {
   ...REVISION_SUMMARY_FIELDS, files: 1, fileChanges: 1, provider: 1, model: 1,
-  usage: 1, latencyMs: 1, validation: 1, schemaVersion: 1,
+  usage: 1, latencyMs: 1, validation: 1, schemaVersion: 1, buildVerification: 1,
 } as const;
 
 export async function findLatestRevisions(projectIds: string[]): Promise<RevisionSummaryRecord[]> {
@@ -82,6 +83,7 @@ export type NewRevision = {
   fileChanges: NonNullable<GenerationResult["fileChanges"]>;
   validation: NonNullable<GenerationResult["validation"]>;
   schemaVersion: 2;
+  buildVerification?: BuildVerification;
 };
 
 // Classify only the version uniqueness constraint; do not disguise other DB errors as conflicts.

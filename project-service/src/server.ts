@@ -1,6 +1,7 @@
 import { createApp } from "./app/app.js";
 import { connectDatabase, disconnectDatabase } from "./config/database.js";
 import { env } from "./config/env.js";
+import { drainCandidatePublications } from "./services/generation.build-gate.js";
 
 async function startServer(): Promise<void> {
   await connectDatabase();
@@ -13,6 +14,7 @@ async function startServer(): Promise<void> {
     );
 
     server.close(async () => {
+      await drainCandidatePublications();
       await disconnectDatabase();
       process.exit(0);
     });

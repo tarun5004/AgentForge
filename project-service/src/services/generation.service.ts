@@ -1,4 +1,7 @@
 import { requestProjectGeneration } from "../clients/ai-orchestrator.client.js";
+import { env } from "../config/env.js";
+import { matchingBuildVerification } from "../clients/build-verification.js";
+import { queueCandidatePublication } from "./generation.build-gate.js";
 import { AppError } from "../middlewares/error.middleware.js";
 import type { GenerationResult } from "../models/generation.model.js";
 import { prepareGenerationRequest, type GenerationInput } from "../clients/generation.contract.js";
@@ -56,6 +59,7 @@ function formatCompletedGeneration(generation: GenerationReadRecord, revision: R
     sourcePrompt: revision.sourcePrompt ?? null,
     fileChanges: revision.fileChanges?.map((change) => ({ path: change.path, status: change.status })) ?? null,
     validation: revision.validation ? { policyVersion: revision.validation.policyVersion, status: revision.validation.status } : null,
+    buildVerification: matchingBuildVerification(revision.buildVerification, revision.files),
     provider: metadata.provider,
     model: metadata.model,
     summary: revision.summary,
@@ -76,6 +80,7 @@ export async function replayGeneration(
   generation: GenerationReadRecord,
   fingerprint: string,
   emptyBody: boolean,
+  authorization = "",
 ) {
   const matches = generation.requestFingerprint
     ? generation.requestFingerprint === fingerprint
@@ -129,6 +134,7 @@ export async function replayGeneration(
     );
   }
   if (generation.result) {
+    if (generation.buildPolicyVersion) return queueCandidatePublication(generation, authorization);
     const committed = await publishGeneration(generation);
     return formatCompletedGeneration(generation, committed);
   }
@@ -147,6 +153,7 @@ export async function createGeneration(
   rawProjectId: unknown,
   idempotencyHeader: unknown,
   rawBody: unknown = undefined,
+  authorization = "",
 ) {
   const projectId = validateObjectId(rawProjectId, "projectId");
   const idempotencyKey = validateIdempotencyKey(idempotencyHeader);
@@ -166,7 +173,7 @@ export async function createGeneration(
   );
 
   if (existingGeneration) {
-    return replayGeneration(existingGeneration, intent.requestFingerprint, emptyBody);
+    return replayGeneration(existingGeneration, intent.requestFingerprint, emptyBody, authorization);
   }
 
   // Parentage and version order differ: an explicitly selected older owned revision is allowed.
@@ -177,7 +184,7 @@ export async function createGeneration(
     // The winner may have finished between our first key lookup and this head read.
     // Recheck before rejecting a retry as a new request against an existing revision.
     const winner = await findGenerationByKey(projectId, ownerId, idempotencyKey);
-    if (winner) return replayGeneration(winner, intent.requestFingerprint, emptyBody);
+    if (winner) return replayGeneration(winner, intent.requestFingerprint, emptyBody, authorization);
     throw new AppError(400, "A new generation requires a change prompt and baseRevisionId.", "BASE_REVISION_REQUIRED");
   }
   const expectedVersion = (head?.version ?? 0) + 1;
@@ -205,12 +212,13 @@ export async function createGeneration(
       ...intent,
       expectedVersion,
       requestPolicyVersion: "generation-request-v1",
+      ...(env.BUILD_GATE_ENABLED ? { buildPolicyVersion: "next-static-build-v1" as const } : {}),
     });
   } catch (error) {
     if (!isGenerationKeyDuplicate(error)) throw new AppError(503, "Generation outcome is unknown. Retry with the same key.", "OUTCOME_UNKNOWN");
     const winner = await findGenerationByKey(projectId, ownerId, idempotencyKey);
     if (!winner) throw new AppError(503, "Generation outcome is unknown. Retry with the same key.", "OUTCOME_UNKNOWN");
-    return replayGeneration(winner, intent.requestFingerprint, emptyBody);
+    return replayGeneration(winner, intent.requestFingerprint, emptyBody, authorization);
   }
   const generationId = generation._id.toString();
   try { await setProjectStatus(projectId, "generating"); }
@@ -223,6 +231,7 @@ export async function createGeneration(
     await saveGenerationResult(generationId, savedResult);
   } catch { throw unknownGenerationOutcome(generationId); }
   generation.result = savedResult;
+  if (generation.buildPolicyVersion) return queueCandidatePublication(generation, authorization);
   const revision = await publishGeneration(generation);
   return formatCompletedGeneration(generation, revision);
 }
@@ -272,7 +281,7 @@ export async function getGeneration(ownerId: string, rawProjectId: unknown, rawG
   }
   if (generation.status !== "pending" && generation.status !== "failed") throw unknownGenerationOutcome(generationId);
   // Old database error strings must not become an unbounded public response.
-  const safeCodes = ["REVISION_CONFLICT", "AI_GENERATION_FAILED", "AI_OUTPUT_INVALID", "CONTEXT_TOO_LARGE", "SNAPSHOT_TOO_LARGE"];
+  const safeCodes = ["REVISION_CONFLICT", "AI_GENERATION_FAILED", "AI_OUTPUT_INVALID", "CONTEXT_TOO_LARGE", "SNAPSHOT_TOO_LARGE", "BUILD_VERIFICATION_FAILED"];
   const response = {
     id: generationId, status: generation.status, hasSavedResult: !!generation.result,
     errorCode: generation.status === "failed"

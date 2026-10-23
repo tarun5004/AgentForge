@@ -49,3 +49,11 @@
 **Why:** Standalone MongoDB does not offer multi-document transactions. One atomic insertion gives a recoverable commit point without holding a lock around the provider call. Saved-output replay avoids a second paid call when publication is retried. Full snapshots keep revision reads independent of parent-chain reconstruction.
 
 **Consequence:** Competing keys can both spend model tokens but only one publishes at a captured version. Ambiguous acknowledgements require read/replay; there is no promise of background completion after a crash before output saving. Existing unique indexes remain unchanged and legacy provenance stays unknown. Manifest validation is not build/execution verification. Frontend restoration remains separate work.
+
+## ADR-007: Opt-in candidate build gate before the immutable commit
+
+**Decision (2026-10-23):** Capture build policy per new Generation, save AI output first, return 202 while a bounded in-process worker asks the existing trusted-host Execution controller to build that exact candidate. Require a separate service credential plus owner JWT; never persist the JWT. Bind successful proof to a canonical snapshot hash, fixed policy and pinned runner image, then enforce it again inside the publisher. Keep the Revision insertion as the only commit point.
+
+**Why:** The 120-second build does not fit the existing browser/proxy request deadline. Checking a saved Revision would be too late; raw browser-provided files would create a broader execution API. A stored candidate provides an owned, bounded source and supports retry without a repeated paid model call. Shared Docker admission avoids parallel preview/check resource consumption.
+
+**Consequence:** Infrastructure uncertainty remains pending, deterministic compile failure publishes nothing, and old successful revisions stay intact. A fresh authenticated same-key POST may resume checking/publication after restart, but there is no durable queue or automatic crash recovery. Gate-off/legacy records remain unverified; disabling configuration cannot bypass the policy of an already-gated candidate. Both controllers remain host-local, and existing dependency/public-isolation limitations are unchanged. No schema backfill, index migration, provider call or automatic repair is implied.

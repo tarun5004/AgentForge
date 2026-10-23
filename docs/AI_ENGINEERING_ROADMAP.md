@@ -4,6 +4,16 @@
 
 **Purpose:** Convert the current synchronous generation demo into a reliable, explainable code-generation platform through small, verifiable milestones.
 
+## Build-before-publication slice — 2026-10-23
+
+Frontend pending support (PR #17) and Execution candidate checks (PR #18) are merged. The Project B2/3 slice adds opt-in captured build policy, owner-plus-service authenticated candidate reads, bounded in-process checking and proof-enforced immutable publication. Build failure keeps prior revisions; uncertainty retains saved output/key; GET status never starts work. Setup/limitations: [Project Service](../project-service/README.md). This supersedes older manifest-only publication descriptions only for newly gated attempts.
+
+Evidence for this slice: Project **30/30 unit tests**, **40/40 existing Mongo integration tests**, **5/5 deterministic gate integration cases** (optional Docker case skipped in that run), and a separate explicit **6/6 gate run including real Project HTTP/Mongo/Execution HTTP/Docker publication** (real build case 105.7 seconds). Typecheck/build passed. Frontend **33/33**, lint/build and mocked-transport Edge pending/ready/failure/outage/refresh checks passed; Execution **44/44**, typecheck/build and real valid/invalid Docker candidate checks passed. Two dedicated test DBs were independently read after scoped cleanup: zero Project/Generation/Revision records. No labeled preview containers remained.
+
+Only model transport and most build cases were fixtures; the explicit real-build case used a trusted existing `:css-check` image. No paid model, real Auth-login browser-to-gate flow, normal app data, normal Compose activation, new dependencies, queue or public deployment was used. Gate remains off by default. Snapshot/policy/image-bound static build evidence is not a secret/dependency/security scanner or a full M3 completion claim. Durable jobs, actual crash-kill tests, bounded AI repair and deployment/isolation work remain separate phases.
+
+Self-audit identified an Execution policy-rejection classification follow-up: an unsupported stored frontend should be a terminal source-policy rejection rather than a retryable transport outage. It remains fail-closed (no publication); complete it on a separate Execution branch before considering B2 delivery finished.
+
 ## M1 verification follow-up — 2026-10-21
 
 PR #6 is merged (`5651d5e`). The focused `test/frontend-m1-verification` branch adds acceptance mapping, a 95-second proxy deadline aligned with the existing 90-second backend/100-second browser limits, repeatable state/status checks and an isolated one-command launcher. Each real suite gets a fresh Next + fixture pair to avoid carrying proxy connections across upstream restarts. No queue, provider expansion, execution service or deployment was added.

@@ -1,4 +1,5 @@
 import { Schema, Types, model } from "mongoose";
+import type { BuildVerification } from "../clients/build-verification.js";
 
 export type GeneratedFile = {
   path: string;
@@ -36,6 +37,8 @@ export type GenerationDocument = {
   requestFingerprint?: string;
   expectedVersion?: number;
   requestPolicyVersion?: string;
+  buildPolicyVersion?: "next-static-build-v1";
+  buildVerification?: BuildVerification;
   status: GenerationStatus;
   result?: GenerationResult;
   revisionId?: Types.ObjectId;
@@ -62,6 +65,15 @@ export const fileChangeSchema = new Schema<GeneratedFileChange>({
 export const manifestValidationSchema = new Schema<ManifestValidation>({
   policyVersion: { type: String, required: true, enum: ["frontend-manifest-v1"] },
   status: { type: String, required: true, enum: ["manifest_validated"] },
+}, { _id: false });
+
+// The complete proof is stored, not just a boolean that could refer to different source bytes.
+export const buildEvidenceSchema = new Schema<BuildVerification>({
+  status: { type: String, required: true, enum: ["build_passed"] },
+  policyVersion: { type: String, required: true, enum: ["next-static-build-v1"] },
+  snapshotHash: { type: String, required: true, match: /^[a-f0-9]{64}$/ },
+  runnerImageId: { type: String, required: true, match: /^sha256:[a-f0-9]{64}$/ },
+  checkId: { type: String, required: true }, completedAt: { type: String, required: true },
 }, { _id: false });
 
 const generationResultSchema = new Schema<GenerationResult>(
@@ -93,6 +105,8 @@ const generationSchema = new Schema<GenerationDocument>(
     requestFingerprint: { type: String, match: /^[a-f\d]{64}$/, immutable: true },
     expectedVersion: { type: Number, min: 1, immutable: true },
     requestPolicyVersion: { type: String, enum: ["generation-request-v1"], immutable: true },
+    buildPolicyVersion: { type: String, enum: ["next-static-build-v1"], immutable: true },
+    buildVerification: { type: buildEvidenceSchema, required: false },
     status: {
       type: String,
       enum: ["pending", "ready", "failed"],

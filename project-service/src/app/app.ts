@@ -3,6 +3,7 @@ import morgan from "morgan";
 
 import { errorHandler, notFoundHandler } from "../middlewares/error.middleware.js";
 import router from "./index.routes.js";
+import { createCandidateRouter } from "../routes/candidate.routes.js";
 
 export function createApp() {
   const app = express();
@@ -19,6 +20,7 @@ export function createApp() {
   });
 
   app.use("/api/projects", router);
+  app.use("/internal", createCandidateRouter());
   app.use(notFoundHandler);
   app.use(errorHandler);
 
