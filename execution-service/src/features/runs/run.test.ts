@@ -127,7 +127,7 @@ test("runner refuses new work after unconfirmed cleanup and does not create pre-
   assert.equal(calls.length, before);
   await assert.rejects(runner.build({ ...input, signal: new AbortController().signal }), RunCleanupError);
   const afterFailure = calls.length;
-  await assert.rejects(runner.build({ ...input, signal: new AbortController().signal }), /cleanup failure/);
+  await assert.rejects(runner.build({ ...input, signal: new AbortController().signal }), RunCleanupError);
   assert.equal(calls.length, afterFailure);
 });
 

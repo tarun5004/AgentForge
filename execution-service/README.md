@@ -80,6 +80,14 @@ API origin in the example: `http://127.0.0.1:5002`. Every run endpoint requires 
 - `429`: another build is active; `503`: feature disabled, stopping, or Project Service unavailable.
 - Build failures are recorded as `failed`, never `ready`. No compiler/daemon raw output is exposed as logs. The terminal UI remains unconnected.
 
+### Safe build failure messages
+
+Run responses keep the existing `BUILD_FAILED` / `CLEANUP_UNCONFIRMED` codes and fields. The `message` now distinguishes the trusted failing stage: container setup, source preparation, frontend build, export read or artifact validation. Explicit timeout, output-limit and unavailable-CLI events get fixed messages rather than a guessed source-level diagnosis. A nonzero build-command exit does **not** prove a particular syntax/type/import error.
+
+These messages contain no raw stderr, compiler excerpts, host paths, generated source or credentials. Internal typed reasons are not added to the public DTO. The existing frontend already renders `run.message`; it needs no contract or component change. Unknown errors retain the generic safe fallback. Clients should use the stable codes/state rather than parse message text.
+
+Cleanup failures take priority even if compilation also failed or the user pressed Stop. Later attempts remain blocked by the runner and keep `CLEANUP_UNCONFIRMED`; cancellation is confirmed only after cleanup. No automatic retry, model repair, public source-submission endpoint or new isolation policy is introduced.
+
 Run metadata/artifacts are in memory, not a durable job queue. Restart loses previews, not saved Project revisions. One build is admitted at a time, including cancellation cleanup. Repeated requests for the same building/ready revision reuse its run; a failed/expired/cancelled run can be deliberately retried. At most eight runs are retained (oldest evicted at capacity). Artifacts expire after **30 minutes idle**, with a **one-hour absolute lifetime**. Background status/asset polling does not count as activity. Future UI activity heartbeats must reflect actual user activity, not an unconditional timer.
 
 ## Isolation and limitations

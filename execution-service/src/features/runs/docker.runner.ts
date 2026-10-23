@@ -1,7 +1,7 @@
-import { dockerCommand } from "./docker.command.js";
+import { dockerCommand, DockerCommandError } from "./docker.command.js";
 import { parseArtifacts, type Artifacts } from "./run.artifacts.js";
 import type { Revision } from "./run.schema.js";
-import { RunCleanupError } from "./run.errors.js";
+import { RunBuildError, RunCleanupError, type BuildStage } from "./run.errors.js";
 
 const LABEL = "agentforge.local-preview";
 
@@ -32,23 +32,31 @@ export async function createDockerRunner(image: string, command = dockerCommand)
   return {
     // Cleanup is awaited before publishing artifacts; a killed CLI alone does not stop a build.
     async build({ id, previewPath, revision, signal }) {
-      if (cleanupFailed) throw new Error("Preview disabled after a container cleanup failure. Restart after operator cleanup.");
+      if (cleanupFailed) throw new RunCleanupError();
       if (signal.aborted) throw new Error("Build cancelled before admission.");
       const name = `agentforge-preview-${id}`;
+      let stage: BuildStage = "container";
       try {
         await command(buildContainerArgs(name, imageId), { signal });
         await command(["start", name], { signal });
+        stage = "prepare";
         await command(["exec", "-i", name, "node", "/runner/prepare.mjs"], {
           input: JSON.stringify({ files: revision.files, previewPath }), signal,
         });
+        stage = "compile";
         await command(["exec", "--workdir", "/work", name, "node", "/app/node_modules/next/dist/bin/next", "build", "--webpack"], {
           signal, timeoutMs: 120_000,
         });
+        stage = "export";
         const json = await command(["exec", name, "node", "/runner/export.mjs"], {
           signal, maxBytes: 9 * 1024 * 1024,
         });
         if (signal.aborted) throw new Error("Build cancelled.");
+        stage = "artifacts";
         return parseArtifacts(json);
+      } catch (error) {
+        // The failed stage is known; a command exit alone cannot diagnose a specific source error.
+        throw new RunBuildError(stage, error instanceof DockerCommandError ? error.reason : "command_failed");
       } finally {
         // Even if create lost its acknowledgement, the unique name identifies only this job.
         try {
