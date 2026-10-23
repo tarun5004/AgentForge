@@ -2,6 +2,8 @@
 
 AgentForge is a learning-focused, microservice-based AI frontend generation platform. The long-term product lets a user describe a website, review generated files, inspect terminal output, and launch an isolated preview from one developer workspace.
 
+**Delivery target:** a free-first localhost portfolio demo, source/design explanation, screen recording and an optional static showcase page. The full platform is not intended for public users or paid cloud deployment. Production architecture will be documented separately from what actually runs. Fixture/recorded AI output must be labelled; it is not proof of live model generation. See [current scope and cost boundaries](docs/AI_ENGINEERING_ROADMAP.md#current-product-boundary--local-portfolio-free-first-2026-10-23).
+
 The repository currently contains a working Cursor-inspired frontend, authentication, project persistence, and the first synchronous AI code-generation flow. Background queues and Kubernetes previews are intentionally not presented as complete yet.
 
 Current delivery planning is tracked in the [six-phase V1 plan](docs/AI_ENGINEERING_ROADMAP.md#portfolio-v1-delivery-plan--six-phases-2026-10-23). Start with the [System Design Q&A](docs/SYSTEM_DESIGN_QA.md) to understand the service boundaries, Docker/static preview, immutable publication and retry trade-offs. Optional host-local build-before-publication is implemented, but remains off in normal Compose unless deliberately configured. The separate `build-gate` browser suite verifies that path with deterministic AI transport; it does not spend provider credits or activate a public deployment.
