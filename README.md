@@ -8,6 +8,8 @@ The repository currently contains a working Cursor-inspired frontend, authentica
 
 Current delivery planning is tracked in the [six-phase V1 plan](docs/AI_ENGINEERING_ROADMAP.md#portfolio-v1-delivery-plan--six-phases-2026-10-23). Start with the [System Design Q&A](docs/SYSTEM_DESIGN_QA.md) to understand the service boundaries, Docker/static preview, immutable publication and retry trade-offs. Optional host-local build-before-publication is implemented, but remains off in normal Compose unless deliberately configured. The separate `build-gate` browser suite verifies that path with deterministic AI transport; it does not spend provider credits or activate a public deployment.
 
+For a clearly labelled **zero-provider-cost manual demo**, use [`npm run demo:local`](docs/LOCAL_DEMO.md) with an explicit empty disposable MongoDB and an existing trusted runner image. It enables the real build gate/Preview in isolated local services; AI responses are fixed fixtures. Enter stops it and cleans tracked demo data. Use a private browser window so localhost cookies do not replace your normal session.
+
 ## Current Version Zero
 
 ### Frontend workspace

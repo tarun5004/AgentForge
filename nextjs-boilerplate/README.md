@@ -243,6 +243,8 @@ This is not live-provider availability/quality/cost evidence, durable crash reco
 
 ### Build-gated browser-to-preview loop (Phase 1)
 
+For manual exploration/recording rather than automated assertions, follow [the local demo guide](../docs/LOCAL_DEMO.md). `npm run demo:local` keeps isolated services running until Enter and shows an explicit fixture-AI notice. It needs no paid key or Playwright bootstrap; disposable data is cleaned on normal exit.
+
 `preview-real` deliberately keeps its original gate-off behavior. The new opt-in `build-gate` suite enables captured build policy in the isolated test Project, real candidate checks in Execution, and the browser's 202/status flow. Both share the same actual Docker runner. Normal `.env`, Compose and application data are unchanged.
 
 ```powershell

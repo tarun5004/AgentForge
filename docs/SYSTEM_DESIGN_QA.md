@@ -99,3 +99,13 @@ Practice answer: “I used AI for implementation help. I can explain the service
 **Design:** show real local services, persistence, restricted builds, preview and failure recovery through repeatable tests and a labelled recording. A small static showcase can link the video, source and production architecture proposal without exposing the execution host.
 
 **Trade-off:** this proves the demonstrated workflow, not production scale, availability, cloud operation or real-model quality when AI responses are fixtures. Say exactly which boundaries are real. GitHub source publication and application deployment are separate actions; keeping the source public does not require running the full platform online.
+
+## 12. How does the free demo avoid model calls without faking the whole application?
+
+**Problem:** repeated manual UI tests should not consume a student's provider budget.
+
+**Design:** the isolated launcher points the real Project Service at a local deterministic AI HTTP fixture. It still uses real Auth, Mongo, candidate checks and Docker builds. The browser notice makes this boundary visible; no production fake-provider mode or new dependency is added.
+
+**Trade-off:** arbitrary prompts cannot create arbitrary designs in this mode. The notice is not a billing control; isolated routing avoids provider calls. Tracked registration IDs bound cleanup, while unknown data is preserved. Use a private browser profile because cookies do not isolate by port.
+
+Trace: [launcher](../scripts/verify-workspace.mjs), [fixture composition](../tests/frontend-history.fixture.mts), [manual walkthrough](LOCAL_DEMO.md).
