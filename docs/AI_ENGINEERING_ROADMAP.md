@@ -12,7 +12,7 @@ Evidence for this slice: Project **30/30 unit tests**, **40/40 existing Mongo in
 
 Only model transport and most build cases were fixtures; the explicit real-build case used a trusted existing `:css-check` image. No paid model, real Auth-login browser-to-gate flow, normal app data, normal Compose activation, new dependencies, queue or public deployment was used. Gate remains off by default. Snapshot/policy/image-bound static build evidence is not a secret/dependency/security scanner or a full M3 completion claim. Durable jobs, actual crash-kill tests, bounded AI repair and deployment/isolation work remain separate phases.
 
-Self-audit identified an Execution policy-rejection classification follow-up: an unsupported stored frontend should be a terminal source-policy rejection rather than a retryable transport outage. It remains fail-closed (no publication); complete it on a separate Execution branch before considering B2 delivery finished.
+Self-audit follow-up: Execution now classifies an owned hash-matching unsupported snapshot as terminal `CANDIDATE_UNSUPPORTED`, before Docker admission. Project already maps that explicit rejection to failed verification. Identity/hash/transport mismatches remain uncertain, never a build pass. A focused regression confirms unsupported source starts no container; Execution suite is now **45/45**. This correction changes failure classification, not the source policy or isolation boundary.
 
 ## M1 verification follow-up — 2026-10-21
 

@@ -2,6 +2,8 @@
 
 ## Candidate-check boundary (B2/2) — 2026-10-23
 
+Classification audit follow-up (`fix/execution-service-candidate-policy-errors`): a verified stored snapshot missing the canonical page was being mapped to retryable 503 by the broad transport catch. The client now checks envelope/hash first, then separately reports source-policy rejection as 422 `CANDIDATE_UNSUPPORTED`; Project's compatible client treats it as terminal verification failure. New regression proves zero Docker admission. Execution suite **45/45**, typecheck/build passed; cross-service gate regression covers the existing Project mapping. No policy relaxation, provider request or real app configuration change.
+
 Execution now has an opt-in server-to-server candidate check, with a separate service secret plus owner JWT forwarded to the configured Project authority. IDs/hash only; bounded stored source is revalidated and hashed independently. One pinned Docker runner shares admission across Preview/checks. Candidate artifacts are discarded, not published. Only a completed build/export/cleanup returns evidence. Busy, timeout, transport and cleanup uncertainty are not source-failure proof. No credentials are persisted in the in-memory result cache.
 
 - Unit/HTTP suite: **44/44 passed**; typecheck/build passed. Covers both credentials, foreign owner/mismatched hash, concurrent same-candidate deduplication, replay reauthorization, deterministic vs uncertain failure, strict body and shared runner admission.

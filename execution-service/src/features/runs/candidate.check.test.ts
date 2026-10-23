@@ -68,6 +68,20 @@ test("same candidate joins one build and replays proof only after reauthorizatio
   assert.equal(builds, 1); assert.equal(loads, 4); await checks.close();
 });
 
+test("an owned hash-matching unsupported snapshot is terminal and never enters Docker", async (t) => {
+  const files = [{ path: "components/Only.tsx", content: "export default function Only() { return <h1>No page</h1> }" }];
+  const unsupported = { ...input, snapshotHash: candidateHash(files) };
+  const server = createServer((_req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ candidate: { ...unsupported, files } }));
+  });
+  const origin = await listen(server); let builds = 0;
+  const checks = createCandidateChecks({ imageId, async build() { builds++; return new Map(); } }, createCandidateClient(origin, token));
+  t.after(async () => { server.close(); await checks.close(); });
+  await assert.rejects(checks.check(unsupported, "Bearer owner"), (error: unknown) => error instanceof RunError && error.statusCode === 422 && error.code === "CANDIDATE_UNSUPPORTED");
+  assert.equal(builds, 0);
+});
+
 test("compile failure is terminal, but cleanup and busy outcomes never claim a failed source build", async () => {
   for (const [failure, status, code] of [
     [new RunBuildError("compile"), 422, "BUILD_VERIFICATION_FAILED"],
