@@ -2,7 +2,7 @@ import { RunError } from "./run.errors.js";
 import { validateRevision, type CreateRunBody } from "./run.schema.js";
 
 // Bound upstream bodies before parsing so a bad internal response cannot exhaust memory.
-async function readJson(response: Response): Promise<unknown> {
+export async function readJson(response: Response): Promise<unknown> {
   const chunks: Uint8Array[] = [];
   let bytes = 0;
   if (!response.body) throw new Error("Missing response.");

@@ -7,6 +7,7 @@ export const logger = pino({
   redact: {
     paths: [
       "req.headers.authorization",
+      'req.headers["x-execution-check-token"]',
       "req.headers.cookie",
       "res.headers.set-cookie",
       "*.password",

@@ -64,6 +64,10 @@ function parseProjectUrl(value: string | undefined): string {
 }
 
 const localPreview = process.env.LOCAL_PREVIEW_ENABLED ?? "false";
+const checkToken = process.env.EXECUTION_CHECK_TOKEN;
+if (checkToken !== undefined && !/^[A-Za-z0-9_-]{32,256}$/.test(checkToken)) {
+  throw new Error("EXECUTION_CHECK_TOKEN must contain 32-256 URL-safe characters.");
+}
 // Validate configuration before opening listeners; never reflect arbitrary text into CSP headers.
 getPreviewFrameAncestors(process.env.PREVIEW_FRONTEND_ORIGIN);
 if (!["true", "false"].includes(localPreview)) throw new Error("LOCAL_PREVIEW_ENABLED must be true or false.");
@@ -86,4 +90,5 @@ export const env = Object.freeze({
   PREVIEW_FRONTEND_ORIGIN: process.env.PREVIEW_FRONTEND_ORIGIN,
   PROJECT_SERVICE_URL: parseProjectUrl(process.env.PROJECT_SERVICE_URL),
   PREVIEW_RUNNER_IMAGE: process.env.PREVIEW_RUNNER_IMAGE ?? "agentforge-preview-runner:local",
+  EXECUTION_CHECK_TOKEN: checkToken,
 });

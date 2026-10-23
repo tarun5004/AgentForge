@@ -6,13 +6,16 @@ import { createProjectClient } from "./features/runs/project.client.js";
 import { createRunService } from "./features/runs/run.service.js";
 import { createPreviewServer } from "./features/runs/preview.server.js";
 import { stopExecution } from "./shutdown.js";
+import { createCandidateChecks, createCandidateClient } from "./features/runs/candidate.check.js";
 
-const service = env.LOCAL_PREVIEW_ENABLED
-  ? createRunService(await createDockerRunner(env.PREVIEW_RUNNER_IMAGE), `http://127.0.0.1:${env.PREVIEW_PORT}`)
-  : undefined;
+const runner = env.LOCAL_PREVIEW_ENABLED ? await createDockerRunner(env.PREVIEW_RUNNER_IMAGE) : undefined;
+const service = runner ? createRunService(runner, `http://127.0.0.1:${env.PREVIEW_PORT}`) : undefined;
+const checks = runner && env.EXECUTION_CHECK_TOKEN
+  ? createCandidateChecks(runner, createCandidateClient(env.PROJECT_SERVICE_URL, env.EXECUTION_CHECK_TOKEN)) : undefined;
 const previewServer = service ? createPreviewServer(service, env.PREVIEW_FRONTEND_ORIGIN) : undefined;
 previewServer?.listen(env.PREVIEW_PORT, "127.0.0.1");
-const app = createApp(service ? { service, projects: createProjectClient(env.PROJECT_SERVICE_URL) } : undefined);
+const app = createApp(service ? { service, projects: createProjectClient(env.PROJECT_SERVICE_URL) } : undefined,
+  checks && env.EXECUTION_CHECK_TOKEN ? { checks, token: env.EXECUTION_CHECK_TOKEN } : undefined);
 // Docker control stays loopback-only; the existing unprivileged status container remains unchanged.
 const server = app.listen(env.PORT, service ? "127.0.0.1" : "0.0.0.0", () => {
   logger.info({ port: env.PORT }, "Execution service listening");
@@ -32,7 +35,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   forceShutdownTimer.unref();
 
   try {
-    await stopExecution(server, previewServer, () => service?.close() ?? Promise.resolve());
+    await stopExecution(server, previewServer, async () => { await Promise.all([service?.close(), checks?.close()]); });
     logger.info("Execution service stopped");
   } catch {
     logger.error("Execution service shutdown failed");

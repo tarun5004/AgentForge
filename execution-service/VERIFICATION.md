@@ -1,5 +1,15 @@
 # Local preview verification
 
+## Candidate-check boundary (B2/2) — 2026-10-23
+
+Execution now has an opt-in server-to-server candidate check, with a separate service secret plus owner JWT forwarded to the configured Project authority. IDs/hash only; bounded stored source is revalidated and hashed independently. One pinned Docker runner shares admission across Preview/checks. Candidate artifacts are discarded, not published. Only a completed build/export/cleanup returns evidence. Busy, timeout, transport and cleanup uncertainty are not source-failure proof. No credentials are persisted in the in-memory result cache.
+
+- Unit/HTTP suite: **44/44 passed**; typecheck/build passed. Covers both credentials, foreign owner/mismatched hash, concurrent same-candidate deduplication, replay reauthorization, deterministic vs uncertain failure, strict body and shared runner admission.
+- Real Docker candidate integration: **1/1 passed**, 54.1 seconds. Trusted existing `agentforge-preview-runner:css-check`; valid fixture returned hash/image-bound evidence and invalid TSX returned no proof. Both containers were removed. No paid model, normal Mongo records, browser or app rollout used.
+- First attempt failed at preparation because the new internal base path did not match the trusted template's `/preview/<UUID>/<48-hex>` policy. Fixed the caller to use the existing accepted format without registering/exposing a preview capability. Template policy was not weakened. The controlled rerun passed.
+
+Ignored evidence: `output/playwright/candidate-execution-unit-final.log`, `candidate-execution-docker.log` (first failure), `candidate-execution-docker-final.log` (passing rerun). Project gating remains the next compatible service slice; the token is unset by default and no real `.env` was changed. Existing dependency advisories and local-only/public-execution restrictions still apply.
+
 ## Safe build diagnostics (B1) — 2026-10-23
 
 Independent branch: `feature/execution-service-safe-build-diagnostics`, created from merged CSS fix PR #15 (`1de6c1f`). Scope is Execution only. No dependency, new endpoint, authentication, isolation, provider, real environment, Project schema/publication, or frontend component change.

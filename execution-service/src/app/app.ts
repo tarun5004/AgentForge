@@ -9,11 +9,12 @@ import { createRunRouter } from "../features/runs/run.routes.js";
 import { RunError } from "../features/runs/run.errors.js";
 import type { ProjectClient } from "../features/runs/project.client.js";
 import type { RunService } from "../features/runs/run.service.js";
+import { createCheckRouter, type CandidateChecks } from "../features/runs/candidate.check.js";
 
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
 
 // Dependencies are composed at startup; tests replace transport, never production behavior.
-export function createApp(preview?: { service: RunService; projects: ProjectClient }) {
+export function createApp(preview?: { service: RunService; projects: ProjectClient }, candidate?: { checks: CandidateChecks; token: string }) {
   const app = express();
 
   app.disable("x-powered-by");
@@ -33,6 +34,7 @@ export function createApp(preview?: { service: RunService; projects: ProjectClie
     }),
   );
   app.use(express.json({ limit: "32kb" }));
+  if (candidate) app.use("/internal/checks", createCheckRouter(candidate.checks, candidate.token));
 
   app.get("/_status/healthz", (_req, res) => {
     res.status(200).json({ ok: true, service: "execution-service" });
