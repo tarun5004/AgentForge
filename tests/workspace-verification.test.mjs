@@ -3,11 +3,13 @@ import { test } from 'node:test';
 import { assertEmptyCounts, parseOptions, runnerImage, validateTestUri } from '../scripts/workspace-verification.config.mjs';
 
 test('verification options are explicit, bounded and reject typo/duplicate scopes', () => {
-  assert.deepEqual(parseOptions([]), { suite: 'all', failAfterStart: false, help: false });
+  assert.deepEqual(parseOptions([]), { suite: 'all', failAfterStart: false, help: false, demo: false });
+  assert.equal(parseOptions(['--demo']).demo, true);
   for (const suite of ['all', 'loop', 'recovery', 'state', 'mocked', 'session', 'preview-real', 'build-gate']) assert.equal(parseOptions(['--suite', suite]).suite, suite);
   assert.equal(parseOptions(['--fail-after-start']).failAfterStart, true);
   assert.equal(parseOptions(['--help']).help, true);
-  for (const args of [['--suite'], ['--suite', 'production'], ['--force'], ['--suite', 'loop', '--suite', 'state'], ['--help', '--help']]) {
+  for (const args of [['--suite'], ['--suite', 'production'], ['--force'], ['--suite', 'loop', '--suite', 'state'], ['--help', '--help'],
+    ['--demo', '--suite', 'all'], ['--demo', '--fail-after-start'], ['--demo', '--demo']]) {
     assert.throws(() => parseOptions(args));
   }
 });

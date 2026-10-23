@@ -1,7 +1,9 @@
 import { createServer } from "node:http";
 import { once } from "node:events";
 import mongoose from "mongoose";
+import express from "express";
 import { finishFixtureCleanup } from "./fixture-cleanup.mts";
+import { registeredDemoUserId } from "./demo-accounts.mts";
 
 // Run this ESM fixture with tsx; never fall back to .env or a normal application database.
 const uri = process.env.AGENTFORGE_TEST_MONGODB_URI;
@@ -54,6 +56,8 @@ const aiRequests: { prompt: string; baseVersion: number | null; baseMatchesIniti
 const fixtureEmail = "frontend-slice5-20261012@agentforge.test";
 const fixtureEmails = [fixtureEmail, "revision-loop-other@agentforge.test"];
 const fixtureId = "agentforge-real-revision-loop-v1";
+const demoMode = process.env.AGENTFORGE_LOCAL_DEMO === "1";
+const demoUserIds = new Set<string>();
 let holdNextGeneration = false;
 let releaseGeneration: (() => void) | undefined;
 
@@ -124,11 +128,25 @@ const aiServer = createServer((request, response) => {
   });
 }).listen(4312, "127.0.0.1");
 const authApp = createAuthApp();
+const fixtureAuth = express();
+if (demoMode) {
+  // The wrapper observes IDs without changing production auth or capturing passwords/tokens.
+  fixtureAuth.use((request, response, next) => {
+    const sendJson = response.json.bind(response);
+    response.json = (body: unknown) => {
+      const id = registeredDemoUserId(request.method, request.originalUrl, response.statusCode, body);
+      if (id) demoUserIds.add(id);
+      return sendJson(body);
+    };
+    next();
+  });
+}
+fixtureAuth.use(authApp);
 const projectApp = createProjectApp();
 // Next must forward these markers: otherwise the runner refuses to write through its rewrites.
 const authServer = createServer((request, response) => {
   response.setHeader("x-agentforge-test-fixture", fixtureId);
-  authApp(request, response);
+  fixtureAuth(request, response);
 }).listen(4310, "127.0.0.1");
 const projectServer = createServer((request, response) => {
   response.setHeader("x-agentforge-test-fixture", fixtureId);
@@ -136,7 +154,8 @@ const projectServer = createServer((request, response) => {
 }).listen(4311, "127.0.0.1");
 await Promise.all([once(aiServer, "listening"), once(authServer, "listening"), once(projectServer, "listening")]);
 console.info("Browser fixture ready: real Auth :4310, Project :4311, deterministic AI :4312.");
-console.info(`Use only test email ${fixtureEmail}; no live provider keys are required.`);
+console.info(demoMode ? "MANUAL DEMO: AI responses are fixtures. Registered demo accounts are deleted on exit; use disposable details only."
+  : `Use only test email ${fixtureEmail}; no live provider keys are required.`);
 
 let stopping = false;
 // Report only safe fixture metadata/counts, never documents, tokens or the database URI.
@@ -146,10 +165,10 @@ async function readFixtureStatus(response: import("node:http").ServerResponse) {
     for (const name of ["users", "projects", "revisions", "generations"]) counts[name] = await db.collection(name).countDocuments({});
     response.setHeader("Content-Type", "application/json");
     response.end(JSON.stringify({ fixtureId, databaseName: target.pathname.slice(1), counts, aiRequests, heldGeneration: !!releaseGeneration,
-      previewEnabled, buildGateEnabled, checks: previewController?.checkEvidence() ?? null }));
+      previewEnabled, buildGateEnabled, demoMode, checks: previewController?.checkEvidence() ?? null }));
   } catch { response.writeHead(503).end("Fixture status unavailable."); }
 }
-// Remove only this fixture account and its owned records; never drop the database or other data.
+// Remove only fixed fixture accounts/observed demo registrations and their owned records, never unknown data.
 async function shutdown() {
   if (stopping) return;
   stopping = true;
@@ -160,7 +179,10 @@ async function shutdown() {
     const { drainCandidatePublications } = await import("../project-service/src/services/generation.build-gate.ts");
     await drainCandidatePublications();
     await Promise.all([aiServer, authServer, projectServer].map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
-    const users = await db.collection("users").find({ email: { $in: fixtureEmails } }, { projection: { _id: 1 } }).toArray();
+    const users = await db.collection("users").find({ $or: [
+      { email: { $in: fixtureEmails } },
+      { _id: { $in: [...demoUserIds].map((id) => new mongoose.Types.ObjectId(id)) } },
+    ] }, { projection: { _id: 1 } }).toArray();
     const ownerIds = users.map((user) => user._id.toString());
     const projects = await db.collection("projects").find({ ownerId: { $in: ownerIds } }, { projection: { _id: 1 } }).toArray();
     const projectIds = projects.map((project) => project._id);

@@ -2,7 +2,7 @@ const suites = ['all', 'loop', 'recovery', 'state', 'mocked', 'session', 'previe
 
 // Refuse typos/extra flags instead of silently running a different verification scope.
 export function parseOptions(args) {
-  const options = { suite: 'all', failAfterStart: false, help: false };
+  const options = { suite: 'all', failAfterStart: false, help: false, demo: false };
   const seen = new Set();
   for (let index = 0; index < args.length; index += 1) {
     const flag = args[index];
@@ -12,8 +12,12 @@ export function parseOptions(args) {
       options.suite = args[++index];
       if (!suites.includes(options.suite)) throw new Error('Unknown suite; use all, loop, recovery, state, mocked, session, preview-real or build-gate.');
     } else if (flag === '--fail-after-start') options.failAfterStart = true;
+    else if (flag === '--demo') options.demo = true;
     else if (flag === '--help') options.help = true;
     else throw new Error('Unknown verification option.');
+  }
+  if (options.demo && (seen.has('--suite') || options.failAfterStart)) {
+    throw new Error('Manual demo cannot be combined with a verification suite or deliberate startup failure.');
   }
   return options;
 }

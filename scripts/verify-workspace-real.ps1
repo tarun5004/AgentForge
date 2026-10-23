@@ -160,8 +160,13 @@ try {
     Invoke-RealBrowser @('resize', '1440', '1000')
     Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
     Invoke-RealBrowser @('goto', "$BaseUrl/register")
+    if ($fixture.demoMode) {
+        Invoke-RealBrowser @('run-code', "async page => { await page.getByRole('complementary', { name: 'Local fixture demo' }).filter({ hasText: 'No live model calls in this launcher.' }).waitFor(); }")
+    }
     Use-RealControl 'textbox' 'Name' 'Revision loop owner'
-    Use-RealControl 'textbox' 'Email' 'frontend-slice5-20261012@agentforge.test'
+    # Manual mode deliberately uses an account outside the legacy cleanup email allowlist.
+    $registrationEmail = if ($fixture.demoMode) { 'manual-demo-owner@agentforge.test' } else { 'frontend-slice5-20261012@agentforge.test' }
+    Use-RealControl 'textbox' 'Email' $registrationEmail
     Use-RealControl 'textbox' 'Password' 'Disposable-test-password-13'
     Use-RealControl 'button' 'Create account'
     if ($Suite -in @('preview-real', 'build-gate')) {
