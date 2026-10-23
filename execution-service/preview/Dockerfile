@@ -12,7 +12,7 @@ RUN npm ci --workspace nextjs-boilerplate --include-workspace-root=false --ignor
     && npm cache clean --force
 # npm may keep the frontend's Node types nested when another workspace uses a different version.
 RUN test -e node_modules/@types/node || ln -s /app/nextjs-boilerplate/node_modules/@types/node node_modules/@types/node
-COPY execution-service/preview/prepare.mjs execution-service/preview/export.mjs execution-service/preview/read-file.mjs execution-service/preview/read-input.mjs /runner/
+COPY execution-service/preview/prepare.mjs execution-service/preview/export.mjs execution-service/preview/read-file.mjs execution-service/preview/read-input.mjs execution-service/preview/layout.mjs /runner/
 ENV NEXT_TELEMETRY_DISABLED=1
 USER node
 # Code arrives later over stdin; this process holds no secrets and exposes no port.

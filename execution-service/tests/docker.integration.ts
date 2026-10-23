@@ -34,6 +34,8 @@ async function verifyBrowser(url: string) {
   const cli = process.env.AGENTFORGE_PLAYWRIGHT_CLI;
   assert.ok(cli, "AGENTFORGE_PLAYWRIGHT_CLI must identify the installed Playwright CLI entry.");
   const execute = promisify(execFile);
+  const channel = process.env.AGENTFORGE_BROWSER_CHANNEL ?? "chrome";
+  assert.ok(["chrome", "msedge", "firefox", "webkit"].includes(channel));
   const session = `execution-${randomUUID().slice(0, 8)}`;
   // Fail on CLI-reported assertion errors even when its process exits successfully.
   async function browser(...args: string[]) {
@@ -41,11 +43,13 @@ async function verifyBrowser(url: string) {
     assert.doesNotMatch(output.stdout + output.stderr, /### Error/);
   }
   try {
-    await browser("open", url);
+    await browser("open", url, `--browser=${channel}`);
     await browser("snapshot");
     await browser("run-code", `--filename=${resolve("tests/preview.browser.js")}`);
+    await browser("screenshot", `--filename=${resolve("../output/playwright/execution-preview-css.png")}`);
   } finally {
-    await browser("close").catch(() => undefined);
+    // A successful page check must not hide a leaked browser session during teardown.
+    await browser("close");
   }
 }
 
@@ -66,7 +70,7 @@ export default async function Page() {
   }, { path: "components/Counter.tsx", content: `'use client';
 import {useState} from 'react';
 export default function Counter() { const [count,setCount] = useState(0); return <button onClick={() => setCount(count+1)}>Count {count}</button>; }`,
-  }] };
+  }, { path: "app/globals.css", content: "body { background-color: rgb(12, 34, 56); color: rgb(240, 241, 242); }" }] };
   const projectApi = createServer((req, res) => {
     // Only this HTTP ownership boundary is a fixture; execution and preview are real.
     if (req.headers.authorization !== "Bearer fixture-owner") { res.writeHead(404).end(); return; }
@@ -97,6 +101,18 @@ export default function Counter() { const [count,setCount] = useState(0); return
     const html = await (await fetch(run.previewUrl)).text();
     assert.match(html, /AgentForge real Docker preview/);
     assert.match(html, /readonly:true,offline:true,noSecret:true/);
+    // A build can succeed while silently dropping unimported CSS; verify the actual asset chain.
+    const stylesheet = (html.match(/<link\b[^>]*>/g) ?? []).find(tag => /rel="stylesheet"/.test(tag));
+    assert.ok(stylesheet, "Saved globals.css must be linked from the exported HTML.");
+    const href = stylesheet.match(/href="([^"]+)"/)?.[1];
+    assert.ok(href, "Stylesheet link must identify an exported asset.");
+    const cssUrl = new URL(href, run.previewUrl);
+    assert.equal(cssUrl.origin, new URL(run.previewUrl).origin);
+    assert.ok(cssUrl.pathname.startsWith(new URL(run.previewUrl).pathname));
+    const css = await fetch(cssUrl);
+    assert.equal(css.status, 200);
+    assert.match(css.headers.get("content-type")!, /text\/css/);
+    assert.match(await css.text(), /background-color:/);
     assert.equal((await dockerCommand(["ps", "-aq", "--filter", `name=agentforge-preview-${accepted.run.id}`])).trim(), "");
     if (process.env.VERIFY_PREVIEW_BROWSER === "1") await verifyBrowser(run.previewUrl);
   } finally {

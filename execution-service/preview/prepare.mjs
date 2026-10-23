@@ -1,6 +1,7 @@
 import { mkdir, writeFile, symlink } from "node:fs/promises";
 import { dirname } from "node:path";
 import { readInput } from "./read-input.mjs";
+import { createFallbackLayout } from "./layout.mjs";
 
 // This trusted entry point runs BEFORE generated code, with no host-mounted directories.
 async function prepare() {
@@ -19,9 +20,8 @@ async function prepare() {
     resolveJsonModule: true, isolatedModules: true, skipLibCheck: true,
   }, include: ["**/*.ts", "**/*.tsx", ".next/types/**/*.ts"], exclude: ["node_modules"] }));
   await mkdir("/work/app");
-  if (!files.some((file) => file.path === "app/layout.tsx")) {
-    await writeFile("/work/app/layout.tsx", 'import type { ReactNode } from "react";\nexport default function Layout({children}: {children: ReactNode}) { return <html lang="en"><body>{children}</body></html>; }');
-  }
+  const fallbackLayout = createFallbackLayout(files);
+  if (fallbackLayout !== null) await writeFile("/work/app/layout.tsx", fallbackLayout);
   for (const file of files) {
     if (typeof file.path !== "string" || !/^(app|components|lib)\/[a-zA-Z0-9_./-]+\.(tsx|ts|css)$/.test(file.path) ||
       file.path.split("/").some((part) => !part || part === "." || part === "..") ||
