@@ -109,3 +109,13 @@ Practice answer: “I used AI for implementation help. I can explain the service
 **Trade-off:** arbitrary prompts cannot create arbitrary designs in this mode. The notice is not a billing control; isolated routing avoids provider calls. Tracked registration IDs bound cleanup, while unknown data is preserved. Use a private browser profile because cookies do not isolate by port.
 
 Trace: [launcher](../scripts/verify-workspace.mjs), [fixture composition](../tests/frontend-history.fixture.mts), [manual walkthrough](LOCAL_DEMO.md).
+
+## 13. Why ask questions before generating code?
+
+**Problem:** “Build my portfolio” lacks personal facts. Immediately generating can invent a name/projects or require an expensive rewrite.
+
+**Design:** a small model call returns typed `needs_clarification`, `ready` or `unsupported`, with bounded questions and a draft brief. The actual request/answers are data, not a fixed portfolio questionnaire. A complete request should skip unnecessary questions. Project-owned persistence and an explicit user-confirmation step are the next slices; `ready` alone is not consent to generate.
+
+**Trade-off:** this adds a model call when clarification is needed. Bound context/output/time and disable SDK retries for this new path, but do not call that a dollar guarantee. Schema tests prove shape/control flow, not factual correctness or real-model quality. Prompt instructions cannot eliminate hallucination; user review and evals remain necessary.
+
+Trace: [request/output checks](../ai-orchestrator-service/src/features/requirements/requirement.schema.ts), [instructions/context](../ai-orchestrator-service/src/features/requirements/requirement.prompt.ts), [bounded SDK call](../ai-orchestrator-service/src/features/requirements/requirement.service.ts), [no-spend tests](../ai-orchestrator-service/src/features/requirements/requirement.test.ts).
