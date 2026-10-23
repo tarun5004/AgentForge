@@ -1,7 +1,7 @@
 import { dockerCommand, DockerCommandError } from "./docker.command.js";
 import { parseArtifacts, type Artifacts } from "./run.artifacts.js";
 import type { Revision } from "./run.schema.js";
-import { RunBuildError, RunCleanupError, type BuildStage } from "./run.errors.js";
+import { RunBuildError, RunCleanupError, RunError, type BuildStage } from "./run.errors.js";
 
 const LABEL = "agentforge.local-preview";
 
@@ -16,7 +16,7 @@ export function buildContainerArgs(name: string, imageId: string): string[] {
 }
 
 export type BuildInput = { id: string; previewPath: string; revision: Revision; signal: AbortSignal };
-export type Runner = { build(input: BuildInput): Promise<Artifacts> };
+export type Runner = { imageId?: string; build(input: BuildInput): Promise<Artifacts> };
 
 // The trusted local operator controls Docker. This is NOT a public multi-tenant sandbox.
 export async function createDockerRunner(image: string, command = dockerCommand): Promise<Runner> {
@@ -28,12 +28,17 @@ export async function createDockerRunner(image: string, command = dockerCommand)
   const orphans = (await command(["ps", "-aq", "--filter", `label=${LABEL}=true`])).trim();
   if (orphans) throw new Error("Previous preview containers need operator cleanup before startup.");
   let cleanupFailed = false;
+  let building = false;
 
   return {
+    imageId,
     // Cleanup is awaited before publishing artifacts; a killed CLI alone does not stop a build.
     async build({ id, previewPath, revision, signal }) {
       if (cleanupFailed) throw new RunCleanupError();
       if (signal.aborted) throw new Error("Build cancelled before admission.");
+      // Preview and candidate checks share THIS runner, so neither can bypass the single build slot.
+      if (building) throw new RunError(429, "BUILD_BUSY", "One local build is already running.");
+      building = true;
       const name = `agentforge-preview-${id}`;
       let stage: BuildStage = "container";
       try {
@@ -66,6 +71,8 @@ export async function createDockerRunner(image: string, command = dockerCommand)
         } catch {
           cleanupFailed = true;
           throw new RunCleanupError();
+        } finally {
+          building = false;
         }
       }
     },

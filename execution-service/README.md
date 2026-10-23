@@ -139,3 +139,16 @@ It serves fixed fixture HTML through the actual Preview server on owned random l
 Local tests use fixture transport, **not evidence of real MongoDB ownership persistence**. Docker integration now submits a real HTTP run request, forwards its bearer token to a fixture Project API, runs a real Next.js build, reads status and exported HTML through the production API/preview server, rejects invalid TSX, cancels an active build, and verifies exact container cleanup. The optional browser opens the actual API-returned capability URL, clicks a React counter, and checks sandbox storage/fetch restrictions. No artifact lookup bypass is used. No model/provider calls or application database writes are made. This is still not the logged-in workspace generation-to-preview flow: real Auth/Mongo and frontend wiring require separate verification.
 
 References: [Docker execution limits](https://docs.docker.com/engine/containers/run/), [Docker security boundary](https://docs.docker.com/engine/security/), [Next.js static exports](https://nextjs.org/docs/app/guides/static-exports).
+
+## Candidate build checks (B2/2, opt-in)
+
+The trusted host controller can expose `POST /internal/checks` when local preview is enabled and `EXECUTION_CHECK_TOKEN` is configured. Leave it unset during staged rollout until Project Service implements its candidate endpoint. No normal environment files or running controllers are changed automatically.
+
+- Headers: owner `Authorization: Bearer ...` plus server-only `X-Execution-Check-Token` (32–256 random URL-safe characters, same secret in Project).
+- Strict body: `{projectId, generationId, snapshotHash}` only. No source, command, image, URL or owner field.
+- Execution fetches `/internal/projects/:projectId/generations/:generationId/candidate` from its configured loopback Project origin, forwarding both credentials. Project verifies the JWT owner. Execution independently validates the snapshot and SHA-256 over path-sorted `JSON.stringify([{path,content}])` UTF-8 bytes.
+- The pinned, restricted Docker runner is shared with Preview: one build at a time. Successful response: `{buildVerification: {status: "build_passed", policyVersion: "next-static-build-v1", snapshotHash, runnerImageId, checkId, completedAt}}`. Evidence is returned only after export validation and container removal; no unpublished preview URL is created.
+- 422 `BUILD_VERIFICATION_FAILED` means the compile command exited unsuccessfully, not a certified diagnosis of source syntax. 429 busy and 503 unavailable/cleanup outcomes are uncertain; they must not publish a candidate. Raw compiler/provider messages are not returned.
+- Eight in-memory check entries deduplicate/replay checks; ownership is rechecked even on a hit. Restart can repeat a build. This is not a durable queue and never calls a model. The handler may outlast a browser request; Project must call it from its async worker, not inside its old synchronous generation deadline.
+
+Verification: `npm --workspace execution-service test`, `run typecheck`, `run build`. Explicit real Docker check: `RUN_DOCKER_TESTS=1`, select the trusted `PREVIEW_RUNNER_IMAGE`, then `npm --workspace execution-service run test:candidate-docker`. Fixture source only; no paid AI or normal Mongo records.
