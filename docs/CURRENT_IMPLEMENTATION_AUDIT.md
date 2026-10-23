@@ -1,5 +1,29 @@
 # AgentForge Current Implementation Audit
 
+## Current retrospective addendum — 2026-10-23
+
+This section supersedes the stale capability classifications in the **historical M0 audit below**. Baseline inspected: `main` `ab783d1`; A1 implementation is isolated on `feature/ai-orchestrator-requirement-clarification`. No paid model, application MongoDB probe/write, normal Compose reconfiguration or public deployment was performed in this review.
+
+| Finding | Current source evidence | Consequence |
+| --- | --- | --- |
+| Live model integration exists | AI `src/features/generations/generation.service.ts` calls Gateway `generateText` + `Output.object`; `generation.prompt.ts` bounds scope. | Do not build a second unrelated model integration. A passing mocked SDK/HTTP test does not establish provider auth or quality. |
+| Project history/replay exist | Project `generation.service.ts`, `generation.publication.ts`, revision repositories/routes. | Preserve immutable publication/idempotency; the M0 missing-history findings are historical. |
+| Direct-to-generation UI, no requirement conversation | Frontend `components/workspace/useWorkspace.ts` `submit` creates a project and calls `generateProject`; Project forwards generation intent. No brief/clarification endpoint was present before A1. | First missing user outcome is clarification and user-confirmed brief, not more fixture output. |
+| Actual build/preview, not general agent tools | Execution `candidate.check.ts`, `docker.runner.ts`, `preview.server.ts`; frontend `PreviewLauncher.tsx`. | Real local static output exists. Builds are server-triggered, not LLM tool calls; no live terminal/general backend runtime/Kubernetes implementation claim. |
+| Gate is opt-in; recovery isn't durable scheduling | Project `config/env.ts` defaults `BUILD_GATE_ENABLED` false; candidate worker lives in-process. | Show actual mode/proof; do not infer worker crash recovery or a mandatory safety scan from build success. |
+| Runtime RAG/MCP/Python evaluation absent in reviewed paths | Memory design is explicitly target-only; workspace package scripts/dependencies and service paths do not wire a retriever, vector store, MCP server or Python eval runtime. No `.github/workflows` directory found. | Add meaningful evidence-producing slices, not a framework rename. |
+| Current dependency advisory gate is not clean | Fresh `npm audit --json`: 11 findings (2 critical, 8 high, 1 moderate). Packages include direct `next` and transitive `proxy-addr`; dev/tooling chains also contribute. | Separate scoped advisory/exposure review and compatible patch tests. Do not claim all findings exploitable or run broad auto-fix. Keep host-local restriction. |
+
+**Safe checks actually executed before A1:** AI tests 26/26, Project tests 30/30, Execution tests 45/45, frontend unit tests 33/33; all exit 0. These are unit/contract checks, not new Mongo/Docker/browser/live-provider runs. Fresh npm audit is a finding, **not a pass**. The complete unauthenticated Gateway model catalog was fetched: 478 entries, current source default listed; this proves listing only, not account access/structured-output quality. Installed SDK 7.0.105 versus npm-reported 7.0.150 is the same major; no dependency upgrade was made.
+
+**Retrospective correction:** previous work conflated zero-cost fixture verification with the user's intended main experience. Keep the fixtures for tests, but the release must support a real configured model that clarifies, generates and feeds the existing local Preview. Another source of complexity was repeated overlapping milestone plans; [the stable delivery contract](AI_PORTFOLIO_DELIVERY_PLAN.md) now defines outcome/acceptance order. No evidence supports deleting ownership, immutable history, build bounds or tests as “overengineering”; those protect the real workflow. New services/queues/frameworks need a demonstrated purpose.
+
+**A1 change/validation:** added strict requirement input/output schemas, a pure bounded prompt builder, existing Gateway/SDK assessment with timeout/output caps and zero SDK retries, an internal authenticated route, route-specific sanitized errors and explicit unknown-usage metadata. AI suite **39/39** (13 new cases), typecheck, build and whitespace checks passed. Tests use the real SDK mock provider and real loopback HTTP with non-loopback fetches refused; they are not live-model evaluation. This is not yet persisted or connected to the UI. Legacy generation API behavior remains unchanged. See the AI Service README for the exact contract/limits.
+
+---
+
+## Historical M0 audit (2026-10-10)
+
 **Audit date:** 2026-10-10
 
 **Milestone:** M0 — audit and architecture baseline

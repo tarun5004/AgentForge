@@ -4,6 +4,12 @@
 
 **Purpose:** Convert the current synchronous generation demo into a reliable, explainable code-generation platform through small, verifiable milestones.
 
+## Authoritative continuation — live local AI workspace (2026-10-23)
+
+The user clarified that advanced, useful AI skills must be demonstrated through **real model-driven local functionality**, not replaced by the fixture demo. The [AI portfolio delivery contract](AI_PORTFOLIO_DELIVERY_PLAN.md) is now the priority/acceptance source: a dated fresher-role sample, retrospective, skill-to-feature evidence map, core versus optional scope, and ordered service-specific phases A–F. Older six-phase/M0 sections below are historical proposals and evidence; their fixture-first completion target is not the final product requirement.
+
+Start A1 (AI requirement assessment), then A2 owned saved/confirmed brief, A3 dialogue UI, and A4 explicitly budgeted provider-to-preview verification. Tests remain zero-provider-cost; the user's implementation request is not permission for a paid call, account change or public deployment. Critical dependency triage is also recorded as a separate service-branch priority. No stack rewrite, extra runtime service, vector database or generic agent framework is installed by this planning update.
+
 ## Current product boundary — local portfolio, free-first (2026-10-23)
 
 The user clarified that this is a student major/CV project, not a service for public users. This section supersedes public-production deployment and paid-smoke requirements in older plans. Required outcome: a reliable localhost demo, understandable source/design, an honest screen recording, and a small static showcase linking the video, repository, architecture and limitations. Production architecture is a documented target, not a deployed or verified production claim.

@@ -4,8 +4,11 @@ import morgan from "morgan";
 import { createGenerationController } from "./features/generations/generation.controller.js";
 import { errorHandler, notFoundHandler } from "./middlewares/error.middleware.js";
 import { requireInternalToken } from "./middlewares/internal-auth.middleware.js";
+import { createRequirementController } from "./features/requirements/requirement.controller.js";
+import { assessRequirements } from "./features/requirements/requirement.service.js";
 
-export function createApp() {
+// Both internal APIs share authentication; the default assessor always uses the configured live model.
+export function createApp(requirementAssessor: typeof assessRequirements = assessRequirements) {
   const app = express();
 
   app.use(morgan("dev"));
@@ -20,6 +23,8 @@ export function createApp() {
     requireInternalToken,
     createGenerationController,
   );
+
+  app.post("/internal/requirements", requireInternalToken, createRequirementController(requirementAssessor));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

@@ -23,6 +23,31 @@ For a host-only server, set `PORT=6001` and the matching Project `AI_ORCHESTRATO
 
 Routes: free health `GET /_status/healthz`; authenticated `POST /internal/generations` using `x-internal-service-token`. Request fields are `requestId`, `projectId`, `prompt`, `template: nextjs`, `mode: economy`, plus optional server-loaded `baseRevision`. The response is `{ generation }`, including upserts/deletions, model/usage/latency and `manifest_validated` policy metadata. See [the implemented contract](../docs/05_OPENAPI_SPEC.md#implemented-slice-3--internal-context-and-file-change-boundary-2026-10-12).
 
+## Requirement assessment — A1 (2026-10-23)
+
+`POST /internal/requirements` uses the **same internal service token**, existing Gateway credentials and configured model. The normal service implementation calls the model; it does not use a canned questionnaire. No new package or environment variable is required. This is an additive internal capability, **not yet connected to Project persistence or the browser**.
+
+```json
+{
+  "requestId": "brief-1",
+  "projectId": "66d123456789abcdef123456",
+  "prompt": "Build my portfolio website",
+  "answers": []
+}
+```
+
+Returns `{ assessment }` with `status: needs_clarification | ready | unsupported`, a short `message`, draft `brief`, up to three `questions`, `requestId`, `policyVersion`, model, token usage and latency. Unavailable usage fields are `null`, not a false zero-token claim. Questions should cover essential missing facts rather than repeat supplied answers. `ready` means ready for **human review**, never automatic permission to generate. Unsupported backend functionality is outside the existing frontend-only scope. The endpoint returns no files and executes no code.
+
+- Input is strict: prompt 10–1000 characters; valid project ID; at most six question/answer pairs, question 240 and answer 1000 characters; serialized UTF-8 context at most 20,000 bytes. Unknown identity/model/file/chat fields and duplicate normalized answered questions are rejected.
+- New SDK call: at most 1500 output tokens, 45-second total timeout and **zero SDK retries**; no tools, automatic repair or application fallback. Existing generation keeps its original behavior. One HTTP call does not guarantee a hard dollar limit or a single internal Gateway provider attempt. Another POST can spend again; A1 has no idempotency store. A timeout does not prove provider-side cancellation.
+- Input/JSON errors: 400; internal authentication: 401; excessive context/body: 413; provider/output errors: sanitized 502. Model-output validation errors never masquerade as invalid user input. Logging does not print answers, briefs, raw provider errors or credentials.
+- The internal caller must verify JWT/project ownership and load trusted saved answers. A `projectId` in this body is correlation data, not authorization. Prompt instructions and exact duplicate checks cannot guarantee zero hallucination, prevent all injection or detect paraphrased repeated questions.
+- Next slices: Project-owned persisted brief/answer/confirmation state, then conversational UI. Handle the bounded-answer limit visibly (edit/restart the brief rather than force a false ready result). A real provider behavior/quality smoke needs explicit spending approval; no paid request was made for A1.
+
+Run `npm --workspace ai-orchestrator-service run test`, `run typecheck`, and `run build`. The new tests exercise the actual SDK with `MockLanguageModelV4` and real loopback HTTP, while refusing external fetches. They prove contracts, authentication, bounds, usage forwarding, SDK no-retry and error classification—not that a real model reliably asks the right questions. The [delivery contract](../docs/AI_PORTFOLIO_DELIVERY_PLAN.md) and [retrospective](../docs/CURRENT_IMPLEMENTATION_AUDIT.md#current-retrospective-addendum--2026-10-23) track remaining work.
+
+**Executed A1 evidence:** service suite **39/39** (26 existing + 13 requirement tests), typecheck and build passed. New HTTP cases prove 401 before assessment, strict 400/413 without a model invocation, a structured 200 and sanitized model-output 502. SDK tests confirm one call on a retryable error and explicit unknown-usage metadata. No provider call, database write, browser UI test or Compose rebuild was performed; normal UI behavior has not changed yet.
+
 ## Safe generation smoke command
 
 The next verification step after the deterministic workspace-to-preview test is checking the actual model boundary. This helper reuses the **running service HTTP API**, not a second provider adapter or a production fake-model mode.
@@ -64,7 +89,7 @@ This container command is also a dry-run. Appending `--execute --allow-paid` wou
 - A successful smoke proves a validated manifest was returned by that service call, not that a revision was saved, built or previewed. It does not certify model quality or application security. Finish provider-to-persistence-to-preview verification separately after explicitly approving a paid run.
 - Service errors remain sanitized: `HTTP_401` points to internal authentication; `HTTP_502` is the current generic upstream/output failure, not a diagnosis of insufficient credits or a specific provider outage. Find the request in service/Gateway logs rather than guessing from that status.
 
-## Validation evidence for this slice
+## Historical generation-smoke validation evidence (before A1)
 
 ```powershell
 npm --workspace ai-orchestrator-service test

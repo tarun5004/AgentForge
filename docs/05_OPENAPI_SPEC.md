@@ -2,6 +2,27 @@
 
 The V1 target contract uses `/api/v1` and request IDs. These are future conventions, not guarantees of the current application. The implemented Project Service routes below use `/api/projects` and the existing `{ message }` error wrapper.
 
+## A1 internal requirement assessment — 2026-10-23
+
+**Implemented on AI Service only.** POST `/internal/requirements`, header `x-internal-service-token` (same as internal generation). Not a browser/public route and not a saved-conversation endpoint. Existing generation contracts are unchanged. Details: [AI Service README](../ai-orchestrator-service/README.md#requirement-assessment--a1-2026-10-23).
+
+Request is a strict object:
+
+```json
+{
+  "requestId": "brief-1",
+  "projectId": "66d123456789abcdef123456",
+  "prompt": "Build my portfolio website",
+  "answers": [{ "question": "What name should appear?", "answer": "Varun" }]
+}
+```
+
+`requestId` 1–100 trimmed characters, project MongoDB ID, prompt 10–1000 trimmed characters, optional answers default `[]`, maximum six pairs (question 1–240, answer 1–1000 trimmed characters). Duplicate normalized question identities are invalid. Serialized parsed context ≤20,000 UTF-8 bytes. No `ownerId`, model, credentials, arbitrary files or message roles accepted. Ownership/loading of answers remains the authenticated Project caller's responsibility.
+
+200 wrapper: `{ assessment: { requestId, status, message, brief, questions, policyVersion, model, usage, latencyMs } }`. Status is `needs_clarification | ready | unsupported`; message 1–400, brief 10–1000 trimmed characters, questions array at most three 1–240-character strings. Only `needs_clarification` has a nonempty array; duplicate/already answered exact-normalized questions fail output validation. `ready` is ready for human review, not generation approval. Policy is `frontend-requirements-v1`; usage has `inputTokens/outputTokens/totalTokens` as numbers or `null` when unavailable, never invented zeros. No files or revision ID are returned.
+
+400 invalid request/JSON; 401 invalid internal token; 413 request/context too large with `CONTEXT_TOO_LARGE`; 502 sanitized AI/provider/output failure. Output failures are not input 400s. A1 has no persistence, idempotency, automatic repair or tools. New SDK call has 1500 output-token cap, 45-second timeout, zero SDK retries; these are not a hard billing guarantee. Public saved brief/confirmation APIs and the UI remain future compatible slices, not claimed by this route.
+
 ## B2 backend contract — opt-in build-before-publication (2026-10-23)
 
 This section supersedes the historical frontend-only B2/1 and manifest-only Slice 4 descriptions **for newly gated attempts**. Gate-off/legacy behavior stays compatible. Activation/setup and limits: [Project Service](../project-service/README.md#opt-in-candidate-build-gate-b23).
