@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { Runner } from "./docker.runner.js";
 import { readJson } from "./project.client.js";
 import { RunBuildError, RunCleanupError, RunError } from "./run.errors.js";
-import { validateRevision } from "./run.schema.js";
+import { revisionSchema, validateRevision } from "./run.schema.js";
 
 const id = z.string().regex(/^[a-f0-9]{24}$/);
 export const checkInputSchema = z.strictObject({
@@ -46,9 +46,11 @@ export function createCandidateClient(projectOrigin: string, serviceToken: strin
       const body = await readJson(response) as { candidate?: { projectId?: string; generationId?: string; snapshotHash?: string; files?: unknown } };
       const candidate = body.candidate;
       if (candidate?.projectId !== input.projectId || candidate.generationId !== input.generationId || candidate.snapshotHash !== input.snapshotHash) throw new Error();
-      const revision = validateRevision({ id: input.generationId, projectId: input.projectId, files: candidate.files });
+      const revision = revisionSchema.parse({ id: input.generationId, projectId: input.projectId, files: candidate.files });
       if (candidateHash(revision.files) !== input.snapshotHash) throw new RunError(422, "CANDIDATE_INVALID", "Candidate identity or source policy did not match.");
-      return revision;
+      // Verified source can still be unsupported (for example no app/page.tsx); repeating transport cannot fix it.
+      try { return validateRevision(revision); }
+      catch { throw new RunError(422, "CANDIDATE_UNSUPPORTED", "Candidate is not supported by the static frontend template."); }
     } catch (error) {
       if (error instanceof RunError) throw error;
       throw new RunError(503, "CANDIDATE_UNAVAILABLE", "Candidate could not be verified with Project Service.");
