@@ -40,6 +40,7 @@ async (page) => {
           if (state.mode === 'concurrent' && path.endsWith('/revisions')) await new Promise(resolve => setTimeout(resolve, 150));
           return unauthorized();
         }
+        if (path.endsWith('/brief')) return route.fulfill({ json: { brief: null } });
         if (path.endsWith('/revisions')) return route.fulfill({ json: { revisions: [], nextCursor: null } });
         if (path === `/api/projects/${project.id}`) return route.fulfill({ json: { project } });
         if (path === '/api/projects') return route.fulfill({ json: { projects: [], nextCursor: null } });
@@ -54,10 +55,10 @@ async (page) => {
         if (state.mode !== 'generation401' && (state.creates.length === 1 || state.mode === 'retry401')) return unauthorized();
         return route.fulfill({ status: 201, json: { project } });
       }
-      if (path === `/api/projects/${project.id}/generations` && method === 'POST') {
+      if (path === `/api/projects/${project.id}/brief` && method === 'POST') {
         state.generations.push({ key: request.headers()['idempotency-key'], body: request.postDataJSON() });
         if (state.mode === 'generation401' && state.generations.length === 1) return unauthorized();
-        return route.fulfill({ status: 502, json: { message: 'Test AI unavailable.', code: 'AI_GENERATION_FAILED' } });
+        return route.fulfill({ status: 502, json: { message: 'Test AI unavailable.', code: 'ASSESSMENT_OUTCOME_UNKNOWN' } });
       }
       state.unexpected++;
       await route.abort('failed');
@@ -74,13 +75,20 @@ async (page) => {
   async function start(mode, query = '') {
     await page.evaluate(value => window.setSessionTestCase(value), mode);
     await page.goto(`${origin}/workspace${query}`);
-    await prompt.waitFor();
-    await page.waitForFunction(() => !document.querySelector('#workspace-prompt')?.disabled);
+    if (query) await page.getByRole('button', { name: 'Assess saved request' }).waitFor();
+    else {
+      await prompt.waitFor();
+      await page.waitForFunction(() => !document.querySelector('#workspace-prompt')?.disabled);
+    }
   }
   // An API outage should be visible without discarding the prompt or authenticated workspace.
   async function expectPreserved() {
     await page.getByRole('main').getByRole('alert').waitFor();
-    if (new URL(page.url()).pathname !== '/workspace' || await prompt.inputValue() !== text) throw new Error('Failure lost the session or prompt.');
+    const saved = page.getByRole('region', { name: 'Project requirements' });
+    const current = await read();
+    if (current.generations.length) await saved.waitFor();
+    const preserved = current.generations.length ? (await saved.innerText()).includes(text) : await prompt.inputValue() === text;
+    if (new URL(page.url()).pathname !== '/workspace' || !preserved) throw new Error(`Failure lost the session or prompt in ${current.mode}.`);
   }
 
   for (const mode of ['create401', 'generation401']) {

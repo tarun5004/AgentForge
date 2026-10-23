@@ -92,7 +92,7 @@ async function ready(child, url, expected) {
 // Counts are independently read through a separate client; no database drop is ever used.
 async function emptyDatabase() {
   const counts = {};
-  for (const name of ['users', 'projects', 'revisions', 'generations']) counts[name] = await client.db().collection(name).countDocuments({});
+  for (const name of ['users', 'projects', 'revisions', 'generations', 'projectbriefs']) counts[name] = await client.db().collection(name).countDocuments({});
   assertEmptyCounts(counts);
   return counts;
 }
@@ -170,7 +170,7 @@ async function realSuite(suite, uri) {
 async function main() {
   const options = parseOptions(process.argv.slice(2));
   if (options.help) {
-    console.info('Set an explicit local AGENTFORGE_TEST_MONGODB_URI, then use --suite all|loop|recovery|state|mocked|session|preview-real|build-gate, or --demo for a manual fixture-AI demo. Docker modes need Linux Docker plus an existing trusted PREVIEW_RUNNER_IMAGE (default agentforge-preview-runner:local). --fail-after-start verifies failure cleanup; it cannot be combined with --demo.');
+    console.info('Set an explicit local AGENTFORGE_TEST_MONGODB_URI, then use --suite all|loop|recovery|state|mocked|session|requirements|preview-real|build-gate, or --demo for a manual fixture-AI demo. Docker modes need Linux Docker plus an existing trusted PREVIEW_RUNNER_IMAGE (default agentforge-preview-runner:local). --fail-after-start verifies failure cleanup; it cannot be combined with --demo.');
     return;
   }
   if (process.platform !== 'win32') throw new Error('This launcher currently requires Windows PowerShell.');
@@ -211,13 +211,13 @@ async function main() {
     report.manualDemo.stopped = true;
     return;
   }
-  if (['all', 'mocked', 'session'].includes(options.suite) || options.failAfterStart) await startNext(preview);
+  if (['all', 'mocked', 'session', 'requirements'].includes(options.suite) || options.failAfterStart) await startNext(preview);
   if (options.failAfterStart) {
     await startFixture(uri, preview, options.suite === 'build-gate');
     throw new Error('Deliberate failure after server startup.');
   }
-  if (['all', 'mocked', 'session'].includes(options.suite)) {
-    for (const suite of options.suite === 'session' ? ['session'] : ['links', 'history', 'access', 'session']) {
+  if (['all', 'mocked', 'session', 'requirements'].includes(options.suite)) {
+    for (const suite of ['session', 'requirements'].includes(options.suite) ? [options.suite] : ['links', 'history', 'access', 'session', 'requirements']) {
       await browserSuite('scripts/verify-workspace-links.ps1', suite);
       report.suites.push({ suite, passed: true });
     }

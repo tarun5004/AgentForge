@@ -13,7 +13,7 @@ async (page) => {
           if (path.endsWith('/refresh')) state.refreshes += 1;
         } else if (path === '/api/projects') {
           state.projectId = (await response.json()).project.id;
-        } else if (/^\/api\/projects\/[a-f\d]{24}\/generations$/.test(path)) {
+        } else if (/^\/api\/projects\/[a-f\d]{24}(?:\/brief\/[a-f\d]{24})?\/generations$/.test(path)) {
           state.generations.push((await response.json()).generation);
           state.requests.push({ key: response.request().headers()['idempotency-key'], body: response.request().postDataJSON() });
         }
@@ -27,6 +27,9 @@ async (page) => {
       if (state.errors) throw new Error('Uncaught browser/observer error.');
       if (state.stage === 0) {
         if (!state.token || !state.projectId || state.generations.length !== 1) throw new Error('Initial generation was not captured.');
+        const saved = await fetch(`http://127.0.0.1:4311/api/projects/${state.projectId}/brief`, { headers: { Authorization: `Bearer ${state.token}` } });
+        const brief = (await saved.json()).brief;
+        if (!saved.ok || !brief?.confirmedAt || brief.assessment?.brief !== state.generations[0].sourcePrompt) throw new Error('Confirmed saved brief did not drive the initial generation.');
       } else if (state.stage === 1) {
         if (!state.refreshes || state.generations.length !== 1) throw new Error('Refresh must restore a session, not regenerate.');
       } else if (state.stage >= 2) {
@@ -72,7 +75,7 @@ async (page) => {
           }
           const status = await (await fetch('http://127.0.0.1:4312/__fixture')).json();
           if (status.aiRequests.length !== 2 || status.aiRequests[1].baseVersion !== 1 || !status.aiRequests[1].baseMatchesInitial ||
-              status.counts.users !== 2 || status.counts.projects !== 1 || status.counts.revisions !== 2 || status.counts.generations !== 2) {
+              status.counts.users !== 2 || status.counts.projects !== 1 || status.counts.revisions !== 2 || status.counts.generations !== 2 || status.counts.projectbriefs !== 1) {
             throw new Error('Unexpected model calls, selected base or persisted record counts.');
           }
         }

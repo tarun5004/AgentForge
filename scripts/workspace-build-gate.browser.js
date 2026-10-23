@@ -19,11 +19,11 @@ async (page) => {
           if (path.endsWith('/refresh')) state.refreshes++;
         } else if (path === '/api/projects' && request.method() === 'POST') {
           state.projectId = (await response.json()).project.id;
-        } else if (/^\/api\/projects\/[a-f\d]{24}\/generations$/.test(path) && request.method() === 'POST') {
+        } else if (/^\/api\/projects\/[a-f\d]{24}(?:\/brief\/[a-f\d]{24})?\/generations$/.test(path) && request.method() === 'POST') {
           const generation = (await response.json()).generation;
           if (response.status() !== 202 || generation.status !== 'pending' || generation.revisionId || generation.files) throw new Error('Expected an unpublished 202 candidate.');
           state.accepted.push(generation.id);
-          state.firstRequest ??= { key: request.headers()['idempotency-key'], body: request.postData() };
+          state.firstRequest ??= { path, key: request.headers()['idempotency-key'], body: request.postData() };
         } else if (/^\/api\/projects\/[a-f\d]{24}\/generations\/[a-f\d]{24}$/.test(path)) {
           const generation = (await response.json()).generation;
           state.statuses.set(generation.id, generation);
@@ -60,7 +60,7 @@ async (page) => {
       if (checkpoint === 'pending') {
         if (state.accepted.length !== 1 || fixture.counts.revisions !== 0 || fixture.counts.generations !== 1 ||
             fixture.aiRequests.length !== 1 || !fixture.checks.held) throw new Error('Candidate published early, repeated AI or did not reach the check barrier.');
-        const duplicate = await fetch(`${base}/generations`, { method: 'POST', headers: { ...headers, 'Idempotency-Key': state.firstRequest.key }, body: state.firstRequest.body });
+        const duplicate = await fetch(`http://127.0.0.1:4311${state.firstRequest.path}`, { method: 'POST', headers: { ...headers, 'Idempotency-Key': state.firstRequest.key }, body: state.firstRequest.body });
         if (duplicate.status !== 202 || (await duplicate.json()).generation.id !== state.accepted[0]) throw new Error('Pending replay changed attempt.');
         return { checkpoint, passed: true };
       }
@@ -90,7 +90,7 @@ async (page) => {
         if (failed?.status !== 'failed' || failed.errorCode !== 'BUILD_VERIFICATION_FAILED') throw new Error('Broken candidate did not fail verification.');
         if (!state.refreshes || state.accepted.length !== 2 || fixture.aiRequests.length !== 2 || fixture.counts.revisions !== 1 ||
             fixture.counts.generations !== 2 || fixture.counts.users !== 2 || fixture.checks.started !== 2 || fixture.checks.completed !== 1) throw new Error('Failure/reload changed saved history or repeated work.');
-        const replay = await fetch(`${base}/generations`, { method: 'POST', headers: { ...headers, 'Idempotency-Key': state.firstRequest.key }, body: state.firstRequest.body });
+        const replay = await fetch(`http://127.0.0.1:4311${state.firstRequest.path}`, { method: 'POST', headers: { ...headers, 'Idempotency-Key': state.firstRequest.key }, body: state.firstRequest.body });
         if (replay.status !== 201 || (await replay.json()).generation.revisionId !== first.revisionId) throw new Error('Ready replay lost original revision.');
         if (![...state.runs.values()].some(run => run.state === 'cancelled')) throw new Error('Stop not acknowledged.');
         if (fixture.aiRequests[1].baseVersion !== 1 || !fixture.aiRequests[1].baseMatchesInitial) throw new Error('Wrong base reached AI fixture.');
@@ -108,6 +108,8 @@ async (page) => {
     await page.evaluate(() => window.buildGateAction('hold-check'));
     await prompt.fill('Build a portfolio website page');
     await prompt.press('Enter');
+    await page.getByRole('button', { name: 'Confirm brief', exact: true }).click();
+    await page.getByRole('button', { name: 'Generate code', exact: true }).click();
     await page.getByRole('status').filter({ hasText: 'Attempt accepted.' }).waitFor();
     await page.getByText('No generated files. Submit a prompt or choose a saved revision.', { exact: true }).waitFor();
     await page.evaluate(() => window.buildGateEvidence('pending'));

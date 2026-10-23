@@ -2,6 +2,35 @@
 
 This Next.js application provides AgentForge's authentication screens and Cursor-inspired AI development workspace.
 
+## A3: requirements before initial generation — 2026-10-23
+
+New-project flow: **Send request → answer essential questions → review draft brief → Confirm brief → Generate code**. A complete request may go directly to review, but model-ready never automatically starts generation. Questions/brief come from AI Orchestrator through the authenticated Project Service, not a hardcoded questionnaire or a browser-held provider key. This needs A1 and A2 backend code (PRs #24/#25); rebuild outdated local service images before manual use. No new dependency or environment variable.
+
+- Draft projects load saved requirements after session restoration. Existing revisions keep their explicit selected-base follow-up flow. The initial composer is hidden for saved drafts so typed text cannot be silently ignored in favor of the stored initial prompt.
+- Answers and request state live in the shell-owned hook, above responsive panels. Editing an answer requires reassessment and fresh consent. Loading/error/unsupported/pending states have explicit controls; failures never invent files or start Preview.
+- A bounded user/project-scoped sessionStorage record holds assessment key/version/answers for **explicit** same-key replay after refresh. It is untrusted retry metadata, not the source of saved briefs. It contains personal answer text: use non-secret project details. No JWTs, provider keys or generated files are stored there. If storage is disabled, only the mounted shell retains retry identity; a hard refresh cannot recover an unsaved key.
+- GET/reload never starts AI. Unknown results keep their key; no automatic POST retry except the existing one-time definite-401 session refresh with identical identity. A request never received by the server may start its first model call on explicit replay. New attempts/abandonment warn about possible additional spend; abandonment cannot cancel/refund provider work.
+- Initial generation sends only the confirmed brief ID plus a separate key and empty body. That brief ID survives generation refresh/retry; pending polling/status checks stay unchanged. Old stored generation intents remain compatible with the original API. No global consent retrofit, streaming, tools, RAG or live-provider quality claim is included.
+
+Implementation: [workspace state](components/workspace/useWorkspace.ts), [requirements panel](components/workspace/RequirementPanel.tsx), [runtime guards and retry storage](lib/requirement-brief.ts), [API helpers](lib/project-api.ts).
+
+```powershell
+npm --workspace nextjs-boilerplate test
+npm --workspace nextjs-boilerplate run lint
+npm --workspace nextjs-boilerplate run build
+# Against an isolated owned frontend: all API requests are intercepted before navigation.
+powershell -NoProfile -File scripts/verify-workspace-links.ps1 -Suite requirements -BaseUrl http://localhost:3102
+# Real Auth/Project/Mongo; only AI transport is a deterministic fixture. Requires an empty dedicated DB.
+$env:AGENTFORGE_TEST_MONGODB_URI='mongodb://127.0.0.1:27017/agentforge_test_brief_ui_your_run'
+node scripts/verify-workspace.mjs --suite loop
+```
+
+The requirements UI suite checks questions, resize-preserved answers, lost acknowledgement + refresh/same-key replay, edit-invalidated confirmation, explicit generation and saved-file reload. The real-loop fixture now supports assessment/confirmation and cleans only its own Brief records alongside Project/Generation/Revision data. Neither fixture measures model reasoning/quality; budget-approved live-provider-to-preview smoke remains A4.
+
+Verified 2026-10-23: **40/40 frontend unit tests**, lint/build, 8 launcher tests, 12 native-command checks, and 4 cleanup tests passed. Browser suites passed for requirements, session/keyboard, pending generation, and 4/4 access/legacy cases. First browser run exposed the answer-reset bug described in the design Q&A; a session assertion needed to wait for saved-draft navigation rather than an obsolete composer, and a concurrent access run timed out taking a screenshot (solo rerun passed). These failures are not silently counted as passes.
+
+Real Auth/Project/Mongo browser loop: **5/5 checkpoints passed**, including stored-confirmation → v1, refresh, selected-base v2, immutable v1 reopening, same-key replay and second-owner 404s. Recovery **7/7** and state **9/9** also passed after adapting the initial consent route: failed follow-ups preserve v1; lost-success replay adds no model call; responsive layout retains request identity; status recovery uses GET; delayed project-A reads cannot replace project-B files. Only AI HTTP output was a fixture, with controlled response loss/barriers/read delays in the corresponding suites. Cleanup independently returned zero users/projects/projectbriefs/generations/revisions; the owned temporary Mongo container was removed without touching application data. Reports: ignored `output/playwright/verification-1792753838275.json` (loop), `verification-1792769299142.json` (recovery), `verification-1792769452247.json` (state); screenshots: `requirements-questions.png`, `requirements-complete.png`. Preview/build-gate browser suites were adapted but **not rerun** in A3. No live provider call, generated-code execution, production deployment or security certification.
+
 ## B2/1: pending-generation compatibility — 2026-10-23
 
 The frontend accepts both the existing completed generation response and a future `202 {generation: {id, status: "pending", hasSavedResult, errorCode: null}}` response. It stores the accepted Generation ID alongside the existing user/project-scoped key/body **before** polling. GET-only polling waits two seconds between reads, is capped at 180 reads and a six-minute UI deadline, and stops on unmount, terminal evidence or a read failure. Each status GET has a ten-second deadline. No timer submits another generation POST or model call.

@@ -6,7 +6,7 @@ async (page) => {
     page.on('pageerror', () => { state.errors += 1; });
     // Capture identity privately; never expose tokens or alter application/storage state.
     page.on('request', request => {
-      if (request.method() === 'POST' && /^\/api\/projects\/[a-f\d]{24}\/generations$/.test(new URL(request.url()).pathname)) {
+      if (request.method() === 'POST' && /^\/api\/projects\/[a-f\d]{24}(?:\/brief\/[a-f\d]{24})?\/generations$/.test(new URL(request.url()).pathname)) {
         state.requests.push({ key: request.headers()['idempotency-key'], body: request.postDataJSON() });
       }
     });
@@ -17,7 +17,7 @@ async (page) => {
         if (response.request().method() !== 'POST') return;
         if (response.ok() && ['/api/auth/register', '/api/auth/refresh'].includes(path)) state.token = (await response.json()).accessToken;
         else if (response.ok() && path === '/api/projects') state.projectId = (await response.json()).project.id;
-        else if (/^\/api\/projects\/[a-f\d]{24}\/generations$/.test(path)) {
+        else if (/^\/api\/projects\/[a-f\d]{24}(?:\/brief\/[a-f\d]{24})?\/generations$/.test(path)) {
           const body = await response.json();
           if (response.status() === 201) state.successes.push(body.generation);
           else if (response.status() === 502 && state.stage === 1) state.failed = body;

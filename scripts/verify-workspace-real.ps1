@@ -50,10 +50,19 @@ function Read-FixtureMarker {
     }
 }
 
+# Initial generation now requires separate human-review and consent controls, never a direct POST.
+function Confirm-InitialBrief {
+    Invoke-RealBrowser @('run-code', "async page => { await page.getByRole('button', { name: 'Confirm brief', exact: true }).waitFor(); }")
+    Use-RealControl 'button' 'Confirm brief'
+    Invoke-RealBrowser @('run-code', "async page => { await page.getByRole('button', { name: 'Generate code', exact: true }).waitFor(); }")
+    Use-RealControl 'button' 'Generate code'
+}
+
 # Exercise rejection and uncertainty separately: only an uncertain attempt should reuse its key.
 function Invoke-RecoveryFlow {
     Use-RealControl 'textbox' 'Describe a frontend page or change' 'Build a simple portfolio page for my CV'
     Use-RealControl 'button' 'Send prompt'
+    Confirm-InitialBrief
     Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v1', { exact: true }).waitFor(); }")
     Use-RealControl 'button' 'page.tsx A'
     Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
@@ -99,6 +108,7 @@ function Invoke-RecoveryFlow {
 function Invoke-StateFlow {
     Use-RealControl 'textbox' 'Describe a frontend page or change' 'Build a portfolio website page'
     Use-RealControl 'button' 'Send prompt'
+    Confirm-InitialBrief
     Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v1', { exact: true }).waitFor(); }")
     Use-RealControl 'button' 'page.tsx A'
     Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
@@ -120,6 +130,7 @@ function Invoke-StateFlow {
     Use-RealControl 'button' 'New conversation'
     Use-RealControl 'textbox' 'Describe a frontend page or change' 'Build a contact website page'
     Use-RealControl 'button' 'Send prompt'
+    Confirm-InitialBrief
     Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v1', { exact: true }).waitFor(); }")
     Use-RealControl 'button' 'page.tsx A'
     Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
@@ -192,6 +203,7 @@ try {
     } else {
     Invoke-RealBrowser @('run-code', "async page => { await page.getByRole('textbox', { name: 'Describe a frontend page or change' }).fill('Build a simple portfolio page for my CV'); }")
     Use-RealControl 'button' 'Send prompt'
+    Confirm-InitialBrief
     Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v1', { exact: true }).waitFor(); }")
     Use-RealControl 'button' 'page.tsx A'
     Invoke-RealBrowser @('run-code', '--filename=scripts/workspace-real.browser.js')

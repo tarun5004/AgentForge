@@ -9,7 +9,7 @@ async (page) => {
     page.on('pageerror', () => { state.errors += 1; });
     // Observe keys and safe metadata privately, never print bearer tokens or change app state.
     page.on('request', request => {
-      if (request.method() === 'POST' && /\/api\/projects\/[^/]+\/generations$/.test(new URL(request.url()).pathname)) {
+      if (request.method() === 'POST' && /\/api\/projects\/[^/]+(?:\/brief\/[^/]+)?\/generations$/.test(new URL(request.url()).pathname)) {
         state.posts.push({ key: request.headers()['idempotency-key'], body: request.postDataJSON() });
       }
     });
@@ -24,7 +24,7 @@ async (page) => {
         const method = response.request().method();
         if (method === 'POST' && response.ok() && ['/api/auth/register', '/api/auth/refresh'].includes(path)) state.token = (await response.json()).accessToken;
         else if (method === 'POST' && response.ok() && path === '/api/projects') state.projects.push((await response.json()).project.id);
-        else if (method === 'POST' && /\/api\/projects\/[^/]+\/generations$/.test(path)) {
+        else if (method === 'POST' && /\/api\/projects\/[^/]+(?:\/brief\/[^/]+)?\/generations$/.test(path)) {
           const body = await response.json();
           if (response.status() === 201) state.results.push(body.generation);
           else if (response.status() === 503 && body.code === 'OUTCOME_UNKNOWN') state.uncertain = body;

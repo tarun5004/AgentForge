@@ -58,6 +58,8 @@ async (page) => {
         await route.fulfill({ json: { project: path.endsWith(legacyId) ? legacy : draft } });
       } else if (path === `/api/projects/${legacyId}/revisions` || path === `/api/projects/${draftId}/revisions`) {
         await route.fulfill({ json: { revisions: path.includes(legacyId) ? [summary] : [], nextCursor: null } });
+      } else if (path === `/api/projects/${draftId}/brief`) {
+        await route.fulfill({ json: { brief: null } });
       } else if (path === `/api/projects/${legacyId}/revisions/${legacyRevisionId}`) {
         state.legacyReads += 1;
         await route.fulfill({ json: { revision } });
@@ -117,7 +119,11 @@ async (page) => {
       throw new Error('Draft/error/recovery must not show legacy or demo files.');
     }
   }
-  if (checkpoint === 'draft' || checkpoint === 'recovery') {
+  if (checkpoint === 'draft') {
+    await page.getByRole('button', { name: 'Assess saved request', exact: true }).waitFor();
+    if (await prompt.count()) throw new Error('Draft should use saved requirements, not an ignored editable initial prompt.');
+  }
+  if (checkpoint === 'recovery') {
     await page.getByText('No generated files. Submit a prompt or choose a saved revision.', { exact: true }).waitFor();
     await prompt.fill('A harmless draft that is never submitted');
     if (await page.getByRole('main').getByRole('alert').count() ||

@@ -131,3 +131,13 @@ Trace: [request/output checks](../ai-orchestrator-service/src/features/requireme
 **Evidence/limit:** 18 real HTTP/Mongo tests plus contract tests; model output is a fixture, not model-quality evidence. Initial generation uses stored approved text through the existing publisher. The old direct API remains available; frontend dialogue, paid-model smoke and global workflow enforcement are not claimed.
 
 Trace: [service flow](../project-service/src/services/brief.service.ts), [atomic repository writes](../project-service/src/repositories/brief.repository.ts), [behavior tests](../project-service/src/routes/brief.routes.integration.test.ts).
+
+## 15. How does the frontend avoid accidental AI work on refresh?
+
+**Question:** Why not call generation from an effect whenever a ready brief loads?
+
+**Answer:** React effects can rerun on navigation, session restoration or development remounts. Effects only GET saved state. Assessment, confirmation and generation are explicit events with frozen project/key/body; response-ready is not permission to generate. Owner/project-scoped tab storage preserves retry identity, while the backend owns facts/consent/files. Existing generation polling remains GET-only.
+
+**Debug example:** browser network showed a saved assessment, but no answer fields rendered. An empty-selection transition reset answer state without resetting its snapshot marker, so the next load incorrectly skipped restoration. Resetting both fixed it; the regression now covers first submission, resize and hard refresh. This is why a successful typecheck alone was insufficient.
+
+**Trade-off:** tab storage can contain non-secret answer text; disabled storage loses unsaved retry identity on hard refresh. Server pending work still needs explicit read/replay/abandonment. Fixtures prove UI/contracts and real-service fixtures prove persistence; neither proves live model quality or provider billing behavior.

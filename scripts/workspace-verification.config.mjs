@@ -1,4 +1,4 @@
-const suites = ['all', 'loop', 'recovery', 'state', 'mocked', 'session', 'preview-real', 'build-gate'];
+const suites = ['all', 'loop', 'recovery', 'state', 'mocked', 'session', 'requirements', 'preview-real', 'build-gate'];
 
 // Refuse typos/extra flags instead of silently running a different verification scope.
 export function parseOptions(args) {
@@ -10,7 +10,7 @@ export function parseOptions(args) {
     seen.add(flag);
     if (flag === '--suite') {
       options.suite = args[++index];
-      if (!suites.includes(options.suite)) throw new Error('Unknown suite; use all, loop, recovery, state, mocked, session, preview-real or build-gate.');
+      if (!suites.includes(options.suite)) throw new Error('Unknown suite; use all, loop, recovery, state, mocked, session, requirements, preview-real or build-gate.');
     } else if (flag === '--fail-after-start') options.failAfterStart = true;
     else if (flag === '--demo') options.demo = true;
     else if (flag === '--help') options.help = true;
@@ -36,7 +36,7 @@ export function validateTestUri(value) {
 
 // Unknown or nonzero counts are a refusal, not permission to broaden cleanup filters.
 export function assertEmptyCounts(counts) {
-  if (['users', 'projects', 'revisions', 'generations'].some(name => counts[name] !== 0)) {
+  if (['users', 'projects', 'revisions', 'generations', 'projectbriefs'].some(name => counts[name] !== 0)) {
     throw new Error('Dedicated verification database is not empty; no records were deleted.');
   }
 }
