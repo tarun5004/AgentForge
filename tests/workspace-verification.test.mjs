@@ -1,15 +1,21 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { assertEmptyCounts, parseOptions, validateTestUri } from '../scripts/workspace-verification.config.mjs';
+import { assertEmptyCounts, parseOptions, runnerImage, validateTestUri } from '../scripts/workspace-verification.config.mjs';
 
 test('verification options are explicit, bounded and reject typo/duplicate scopes', () => {
   assert.deepEqual(parseOptions([]), { suite: 'all', failAfterStart: false, help: false });
-  for (const suite of ['all', 'loop', 'recovery', 'state', 'mocked', 'session', 'preview-real']) assert.equal(parseOptions(['--suite', suite]).suite, suite);
+  for (const suite of ['all', 'loop', 'recovery', 'state', 'mocked', 'session', 'preview-real', 'build-gate']) assert.equal(parseOptions(['--suite', suite]).suite, suite);
   assert.equal(parseOptions(['--fail-after-start']).failAfterStart, true);
   assert.equal(parseOptions(['--help']).help, true);
   for (const args of [['--suite'], ['--suite', 'production'], ['--force'], ['--suite', 'loop', '--suite', 'state'], ['--help', '--help']]) {
     assert.throws(() => parseOptions(args));
   }
+});
+
+test('runner image selection uses one validated existing tag for preflight and fixture', () => {
+  assert.equal(runnerImage(undefined), 'agentforge-preview-runner:local');
+  assert.equal(runnerImage('agentforge-preview-runner:css-check'), 'agentforge-preview-runner:css-check');
+  for (const image of ['', '-option', 'image; docker rm', 'image\nsecret']) assert.throws(() => runnerImage(image));
 });
 
 test('database guard accepts only named local disposable targets', () => {

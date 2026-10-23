@@ -240,3 +240,22 @@ Checks cover Enter-to-submit, saved v1, a real build and React counter click, re
 Preflight refuses occupied ports, a nonempty test database, missing trusted image, non-Linux Docker or existing labeled preview containers; it never deletes unknown containers. Finally awaits owned builds/listeners, cleans only fixture-owned records, independently checks empty collections and confirms no labeled build containers. Reports include fixture-vs-real boundaries, `cleanup` and `containerCleanup`. `--suite preview-real --fail-after-start` exercises startup failure cleanup (expected exit 1). Hard host termination is not covered.
 
 This is not live-provider availability/quality/cost evidence, durable crash recovery or production multi-user security certification. Evidence and earlier failed runs are recorded in [the testing strategy](../docs/08_TESTING_STRATEGY.md).
+
+### Build-gated browser-to-preview loop (Phase 1)
+
+`preview-real` deliberately keeps its original gate-off behavior. The new opt-in `build-gate` suite enables captured build policy in the isolated test Project, real candidate checks in Execution, and the browser's 202/status flow. Both share the same actual Docker runner. Normal `.env`, Compose and application data are unchanged.
+
+```powershell
+$env:AGENTFORGE_TEST_MONGODB_URI='mongodb://127.0.0.1:27017/agentforge_test_your_unique_gate_run'
+$env:PREVIEW_RUNNER_IMAGE='agentforge-preview-runner:css-check' # choose an EXISTING trusted image with the CSS fix
+$env:AGENTFORGE_BROWSER_CHANNEL='msedge' # optional; default chrome
+npm run verify:workspace -- --suite build-gate
+```
+
+The launcher never pulls/builds a runner image; its preflight and fixture use the same validated image name. Docker suites remain outside default `all`.
+
+Checks: real registration/session; Enter prompt; a test-only barrier proves 202 candidate is not a Revision; same-key pending replay adds no model request; actual build evidence appears on committed v1; a second build produces interactive preview/CSS in a sandbox iframe; refresh restores v1/proof; broken TSX fails the pre-publication check without creating v2; foreign-owner run/status access is rejected; Stop removes the iframe; replay adds no paid/model request. Only AI Orchestrator HTTP output is a deterministic transport fixture, not real provider evaluation. The barrier/counters exist solely in test composition; production source/admission/cleanup is unchanged.
+
+Reports identify `buildGate: true`, real-vs-fixture boundaries and independent DB/container cleanup results. The deliberate `--suite build-gate --fail-after-start` case must exit 1 and still report cleanup. Never treat a failed/interrupted run as a pass. Hard OS crash durability, normal demo activation and a separately approved live-provider smoke remain outside this test.
+
+Design reasoning and practice questions: [System Design Q&A](../docs/SYSTEM_DESIGN_QA.md).

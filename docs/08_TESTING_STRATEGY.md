@@ -1,5 +1,27 @@
 # AgentForge V1 — Testing Strategy
 
+## Build-gated browser flow — 2026-10-23
+
+Scope: `test/frontend-build-gate-e2e`, from merged build-gate main `0df5037`. No application-service/UI behavior, dependency, real `.env`, normal Compose or deployment change. Existing launcher/fixtures now support explicit opt-in `--suite build-gate`, with process-only fake service credentials and deterministic AI Orchestrator HTTP output. Old history/preview suites explicitly stay gate-off. The operator-selected existing runner image is validated and shared by preflight/fixture; no image is pulled/built by verification.
+
+**Executed pass:** Edge, dedicated `agentforge_test_gate_browser_20261023_b84f`, trusted existing `agentforge-preview-runner:css-check`. Launcher exited 0; `output/playwright/verification-1792731826489.json` records build-gate pass, `buildGate: true`, `cleanup: true`, `containerCleanup: true`. Browser success log: `build-gate-browser-e2e.log`. Inspected ready screenshot `verification-24488-build-gate-ready.png` shows real exported CSS and interactive Count 1.
+
+| Boundary | Actual evidence |
+| --- | --- |
+| Auth + submission | Real disposable registration/session, Enter prompt, owned Project/Generation stored. Not a direct login-form endpoint test. |
+| Unpublished pending | A test-only pre-build barrier holds the real candidate check. POST returns 202 without files/revision ID; Mongo has one Generation and zero Revisions. Same-key replay joins that attempt without a second AI fixture call. |
+| Build → publication | Real candidate read/authentication, pinned restricted Docker build/export/cleanup, stored proof and immutable v1. Browser GET polling selects ready only; persisted source/proof match the committed response. |
+| Saved revision → preview | Actual run API loads the real saved revision. A second real build serves the interactive iframe; Count 0 → 1, body background `rgb(12, 34, 56)`, sandbox exactly `allow-scripts`. Candidate artifacts are not reused. |
+| Failure + refresh | Hard refresh restores v1/proof/session. A second AI fixture response contains invalid TSX; its real candidate build fails. No v2 is published; v1/source/proof remain unchanged and the user stays authenticated. |
+| Ownership + replay + Stop | Second real owner receives 404 on foreign run create/read/cancel and Generation status. Anonymous run read is 401. Stop removes iframe; ready same-key replay returns v1. Exactly two fixture AI calls, two Generations and one Revision. |
+| Cleanup | Fixture-owned users/projects/generations/revisions removed; a separate launcher Mongo client and later independent probe confirmed all four counts zero. Dedicated ports released, no labeled build containers; six normal Compose containers stayed healthy. |
+
+**Negative startup check:** `--suite build-gate --fail-after-start` exited the expected 1, not counted as a user-flow pass. Report `verification-1792732127613.json` records `failed: true` with both cleanup flags true; no fixture records remained. Log: `build-gate-browser-startup-failure.log`. Hard OS crash cleanup is not promised.
+
+Additional checks: verification-option/image guards **4/4**, actual native-command regressions **12/12**, fixture cleanup **4/4**, frontend unit **33/33**, frontend lint/production build, Auth/Project builds and Execution typecheck/build passed. Narrow strict TypeScript check of the modified Preview fixture passed. An exploratory single-compiler check combining Auth + Project source failed on their existing incompatible global Express `Request.user` declarations (`email` required vs optional); it is **not** a passing check. Service-local builds remain the supported boundaries. No application type was weakened or unrelated auth refactor attempted.
+
+This evidence does not test a real model/provider, its costs/quality, the AI Orchestrator runtime itself, normal demo gate activation, a durable queue or public execution security. Phase 1's zero-cost slice is verified; the entire six-phase plan is not complete. Reproduce using [the frontend guide](../nextjs-boilerplate/README.md#build-gated-browser-to-preview-loop-phase-1); design practice is in [System Design Q&A](SYSTEM_DESIGN_QA.md).
+
 ## Workspace-to-Docker preview follow-up — 2026-10-22
 
 Branch: `test/frontend-generation-preview`, fast-forwarded to merged Execution-origin dependency PR #12 (`0a35a51`) before restoring its own test work. No Execution/Auth/Project/AI application code changes are part of this frontend-verification slice. It reuses the existing launcher/fixture instead of adding a browser framework or production fake-provider mode.
