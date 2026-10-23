@@ -1,6 +1,6 @@
 # Execution Service — local static preview
 
-This independent feature branch adds an **opt-in local-only execution backend**. It does not enable the frontend Preview button, change AI generation, merge other branches, or make a paid provider request.
+This service provides an **opt-in local-only execution backend**. The frontend's saved-revision Preview integration is separate; it requires an enabled local controller and the matching proxy configuration. Execution does not generate code or change Project revision ownership/publication. See [the frontend setup](../nextjs-boilerplate/README.md#local-saved-revision-preview).
 
 ## Flow and trust boundaries
 
@@ -23,6 +23,12 @@ Project Service remains the identity/ownership authority. Execution forwards the
 The existing AI contract generates frontend-only App Router files using React, Next.js and plain CSS. A trusted scaffold provides the package/config files. Static export builds both server components and client bundles in the isolated build container, then serves only HTML/CSS/JS. React client interactions work, but SSR, API routes, server actions, external fetches, arbitrary package installation, Tailwind tooling, dynamic server features and interactive terminals are not supported. The template is not a general-purpose execution shell.
 
 No Redis, queue, Kubernetes cluster or cloud sandbox is introduced. The existing `REDIS_URL` remains an unused foundation setting.
+
+### Generated styles and the fallback layout
+
+When the snapshot has no `app/layout.tsx`, the trusted template supplies a minimal root layout. If that snapshot also contains the exact `app/globals.css` path, the fallback imports it so Next includes the stylesheet in the static export. A page-only snapshot gets no missing-file import. If the snapshot supplies its own root layout, it is preserved unchanged and owns its CSS imports; the template does not inject imports into generated source or automatically import every CSS module.
+
+Rebuild the trusted runner image after changing `preview/` helpers: a running controller pins the old image ID until restarted. A successful build alone does not prove styling loaded; the Docker regression verifies the HTML's CSS link and served asset, and its optional browser check verifies computed background color as well as the React counter. See [Next.js global CSS](https://nextjs.org/docs/app/getting-started/css#global-css).
 
 ## Setup (repository root, PowerShell)
 
@@ -58,7 +64,7 @@ The runner image uses explicit `COPY` statements and its own restrictive Dockerf
 
 ## HTTP contracts
 
-API origin in the example: `http://127.0.0.1:5002`. Every run endpoint requires `Authorization: Bearer <access token>`. Obtain the token through the existing login/session flow; never commit it or paste it into support reports. Frontend wiring belongs to a separate service-scoped feature branch.
+API origin in the example: `http://127.0.0.1:5002`. Every run endpoint requires `Authorization: Bearer <access token>`. Obtain the token through the existing login/session flow; never commit it or paste it into support reports. The frontend forwards these calls through its separately configured Execution proxy.
 
 | Endpoint | Request | Result |
 | --- | --- | --- |
