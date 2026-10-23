@@ -6,7 +6,7 @@ import { APICallError } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 
 import { buildRequirementPrompt, REQUIREMENT_INSTRUCTIONS } from "./requirement.prompt.js";
-import { requirementRequestSchema, validateRequirementAssessment } from "./requirement.schema.js";
+import { assessmentSchemaFor, requirementRequestSchema, validateRequirementAssessment } from "./requirement.schema.js";
 
 // Fake credentials precede config imports; reject all non-loopback fetches as an extra no-spend boundary.
 process.env.AI_GATEWAY_API_KEY = "requirements-test-not-a-real-key";
@@ -74,6 +74,30 @@ test("prompt carries supplied answers as data, not invented facts or unrelated p
   assert.ok(REQUIREMENT_INSTRUCTIONS.includes("untrusted data"));
 });
 
+test("default-first instructions cover the reported small-component case without a styling interview", () => {
+  // Prompt assertions check the guidance we send, not a real model's understanding of it.
+  for (const rule of ["Prefer ready", "at most ONE", "Fonts, colors", "clearly labelled placeholders",
+    "clarification round is over", "build a small tarun raj name componet"]) {
+    assert.ok(REQUIREMENT_INSTRUCTIONS.includes(rule), rule);
+  }
+});
+
+test("first assessment allows one core question but rejects a multi-question survey", () => {
+  const request = requirementRequestSchema.parse(input);
+  assert.deepEqual(validateRequirementAssessment(questions, request), questions);
+  assert.throws(() => validateRequirementAssessment({ ...questions, questions: ["What kind of page?", "What font?"] }, request));
+});
+
+test("after answers the schema allows a draft or unsupported result, never paraphrased follow-up questions", () => {
+  const request = requirementRequestSchema.parse({ ...input, answers: [
+    { question: "What is its purpose?", answer: "Personal branding, developer, initials logo and good font" },
+  ] });
+  assert.equal(assessmentSchemaFor(request).safeParse(ready).success, true);
+  assert.equal(assessmentSchemaFor(request).safeParse({ ...ready, status: "unsupported" }).success, true);
+  assert.throws(() => validateRequirementAssessment({ ...questions, questions: ["Where will the component appear?"] }, request));
+  assert.deepEqual(JSON.parse(buildRequirementPrompt(request)).answers, request.answers);
+});
+
 test("assessment accepts consistent ready, clarification and unsupported states", () => {
   const request = requirementRequestSchema.parse(input);
   for (const assessment of [ready, questions, { ...ready, status: "unsupported" }]) {
@@ -111,6 +135,32 @@ test("ready fixture with supplied answers goes through the SDK without another c
   const result = await assessRequirements(request, assessmentModel(ready));
   assert.equal(result.status, "ready");
   assert.equal(result.brief, ready.brief);
+});
+
+test("simple name-component ready output is preserved without adding questions or another model call", async () => {
+  const request = requirementRequestSchema.parse({ ...input, prompt: "build a small tarun raj name componet" });
+  const draft = { ...ready, brief: "Build a standalone Tarun Raj name component with a readable system font and responsive spacing." };
+  const model = assessmentModel(draft);
+  const result = await assessRequirements(request, model);
+  assert.equal(result.status, "ready");
+  assert.equal(result.brief, draft.brief);
+  assert.deepEqual(result.questions, []);
+  assert.equal(model.doGenerateCalls.length, 1);
+});
+
+test("SDK rejects another clarification round rather than silently promoting unfinished output", async () => {
+  const request = requirementRequestSchema.parse({ ...input, answers: [{ question: "Purpose?", answer: "Personal branding" }] });
+  const model = assessmentModel({ ...questions, questions: ["Should clicking it open a URL?"] });
+  await assert.rejects(assessRequirements(request, model));
+  assert.equal(model.doGenerateCalls.length, 1);
+});
+
+test("unsupported backend work stays unsupported after answers", async () => {
+  const request = requirementRequestSchema.parse({ ...input, answers: [{ question: "Purpose?", answer: "Real payment processing" }] });
+  const unsupported = { ...ready, status: "unsupported" as const, brief: "Real payment processing needs backend capabilities outside the frontend-only scope." };
+  const result = await assessRequirements(request, assessmentModel(unsupported));
+  assert.equal(result.status, "unsupported");
+  assert.deepEqual(result.questions, []);
 });
 
 test("unknown provider usage is explicit rather than a fabricated zero-token claim", async () => {
@@ -178,4 +228,19 @@ test("HTTP invalid-output failure remains sanitized 502, not input 400 or authen
   const text = await response.text();
   assert.ok(!text.includes("Contradiction"));
   assert.ok(!text.includes(process.env.INTERNAL_SERVICE_TOKEN!));
+});
+
+test("HTTP rejects a model's second question round as upstream failure without retry or forced readiness", async (t) => {
+  const model = assessmentModel({ ...questions, questions: ["Where will it appear on the page?"] });
+  const app = createApp((request) => assessRequirements(request, model));
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  t.after(() => { server.closeAllConnections(); return new Promise<void>((resolve) => server.close(() => resolve())); });
+  const response = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/internal/requirements`, {
+    method: "POST", headers: { "content-type": "application/json", "x-internal-service-token": "requirements-test-internal" },
+    body: JSON.stringify({ ...input, answers: [{ question: "Purpose?", answer: "Personal branding" }] }),
+  });
+  assert.equal(response.status, 502);
+  assert.deepEqual(await response.json(), { message: "AI requirement assessment failed. Please try again." });
+  assert.equal(model.doGenerateCalls.length, 1);
 });

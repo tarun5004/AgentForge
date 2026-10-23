@@ -3,7 +3,7 @@ import { generateText, gateway, Output, type LanguageModel } from "ai";
 import { env } from "../../config/env.js";
 import { buildRequirementPrompt, REQUIREMENT_INSTRUCTIONS } from "./requirement.prompt.js";
 import {
-  REQUIREMENT_POLICY_VERSION, requirementAssessmentSchema, validateRequirementAssessment,
+  REQUIREMENT_POLICY_VERSION, assessmentSchemaFor, validateRequirementAssessment,
   type RequirementRequest,
 } from "./requirement.schema.js";
 
@@ -17,7 +17,7 @@ export async function assessRequirements(request: RequirementRequest, model: Lan
     maxOutputTokens: 1500,
     maxRetries: 0,
     timeout: 45_000,
-    output: Output.object({ schema: requirementAssessmentSchema }),
+    output: Output.object({ schema: assessmentSchemaFor(request) }),
   });
 
   let assessment;
