@@ -11,7 +11,7 @@ Use Node 22+ and the repository's root npm workspaces/lockfile. Copy this servic
 | `PORT` | Legacy server default is 6000, which Node Fetch blocks. Use 6001 for host HTTP clients; Compose already overrides it to 6001. |
 | `INTERNAL_SERVICE_TOKEN` | Must match Project Service. Server-side only. |
 | `AI_GATEWAY_API_KEY` or `VERCEL_OIDC_TOKEN` | Existing Gateway authentication; never a browser variable. |
-| `AI_MODEL` | Existing server-owned model selection. Confirm the configured ID against the current Gateway catalog before a live request. |
+| `AI_MODEL` | Server-owned model selection; default `google/gemini-2.5-flash`. Confirm the exact ID, free-credit eligibility and pricing before a live request. |
 
 From the repository root:
 
@@ -19,13 +19,21 @@ From the repository root:
 npm --workspace ai-orchestrator-service run dev
 ```
 
-For a host-only server, set `PORT=6001` and the matching Project `AI_ORCHESTRATOR_URL` locally before testing; [the Docker guide](../docs/LOCAL_DOCKER.md) explains the existing blocked-port finding. This slice does not rewrite your real `.env` files or change the legacy server default. The smoke helper defaults to 6001 and explicitly rejects 6000.
+For a host-only server, set `PORT=6001` and the matching Project `AI_ORCHESTRATOR_URL` locally before testing; [the Docker guide](../docs/LOCAL_DOCKER.md) explains the existing blocked-port finding. Changing `AI_MODEL` does not change ports or credentials; the legacy port default remains unchanged. The smoke helper defaults to 6001 and explicitly rejects 6000.
+
+### Free-credit model selection — 2026-10-23
+
+The configured Gemini 3.7 Flash request returned Gateway 403 `no_providers_available`; a bounded diagnostic captured the actual reason: the free tier does not have access to that model. The example and fallback now use **`google/gemini-2.5-flash`**: the current [model directory](https://vercel.com/ai-gateway/models?freeTier=true&q=gemini-2.5-flash) lists Free AI Gateway Credit eligibility, and the live catalog lists structured-output support and no-training availability across its providers. Model access/capabilities/pricing can change; this is a dated selection, not a permanent guarantee.
+
+Free-credit eligibility is **not zero-priced/unlimited inference**: calls deduct token usage from available Gateway credits. No direct Google key, new adapter or SDK rewrite is needed; both assessment and generation already read `AI_MODEL`. Explicitly configured values still override the fallback. Restart a host process after editing its local `.env`; Compose needs `docker compose up -d --no-deps --force-recreate ai-orchestrator-service` to reload `env_file` (a plain restart retains its old environment). No paid fallback, top-up, budget or account-policy change is part of model selection.
+
+**Executed verification:** 39 service tests, typecheck/build and two fresh-process default/override checks passed. Four actual Gateway calls completed the isolated browser flow: essential questions → supplied answers → saved brief → explicit confirmation → generated v1 → Docker build/interactive iframe → selected-base follow-up v2 → build/Preview → refresh. Reported/account-observed cost **$0.0110388**, below the approved $2 total budget; no automatic retries or repair calls. Normal Compose's **AI service only** was recreated, and its configured model plus health 200 were confirmed; other services/data were not restarted/rebuilt. This does not certify the normal stack's older images as the newly tested source. [Detailed evidence, billing, cleanup and limits](LIVE_VERIFICATION.md).
 
 Routes: free health `GET /_status/healthz`; authenticated `POST /internal/generations` using `x-internal-service-token`. Request fields are `requestId`, `projectId`, `prompt`, `template: nextjs`, `mode: economy`, plus optional server-loaded `baseRevision`. The response is `{ generation }`, including upserts/deletions, model/usage/latency and `manifest_validated` policy metadata. See [the implemented contract](../docs/05_OPENAPI_SPEC.md#implemented-slice-3--internal-context-and-file-change-boundary-2026-10-12).
 
 ## Requirement assessment — A1 (2026-10-23)
 
-`POST /internal/requirements` uses the **same internal service token**, existing Gateway credentials and configured model. The normal service implementation calls the model; it does not use a canned questionnaire. No new package or environment variable is required. This is an additive internal capability, **not yet connected to Project persistence or the browser**.
+`POST /internal/requirements` uses the **same internal service token**, existing Gateway credentials and configured model. The normal service implementation calls the model; it does not use a canned questionnaire. No new package or environment variable is required. A2/A3 connect it to owned Project briefs and the browser's separate review/confirmation/generation controls.
 
 ```json
 {
