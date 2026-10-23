@@ -27,5 +27,6 @@ if (!Number.isInteger(port) || port <= 0) {
 export const env = {
   PORT: port,
   INTERNAL_SERVICE_TOKEN: getRequiredEnv("INTERNAL_SERVICE_TOKEN"),
-  AI_MODEL: process.env.AI_MODEL?.trim() || "google/gemini-3.7-flash",
+  // This local-demo default was free-credit eligible when checked; operators can override it.
+  AI_MODEL: process.env.AI_MODEL?.trim() || "google/gemini-2.5-flash",
 };
