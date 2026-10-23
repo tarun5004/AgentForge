@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   createProject, generateProject, getGeneration, getProject, getRevision,
   listProjects, listRevisions, ProjectApiError,
-  type Generation, type Project, type Revision, type RevisionSummary,
+  type Generation, type GenerationStatus, type Project, type Revision, type RevisionSummary,
 } from "@/lib/project-api";
 import {
   clearPendingGeneration, readPendingGeneration, savePendingGeneration,
@@ -13,8 +13,9 @@ import {
 } from "@/lib/pending-generation";
 import { workspaceUrl, type WorkspaceSelection } from "@/lib/workspace-selection";
 import type { SessionAccess } from "@/lib/session-request";
+import { pollGeneration } from "@/lib/generation-poll";
 
-export type WorkspaceSnapshot = Pick<Revision, "id" | "version" | "parentRevisionId" | "sourcePrompt" | "summary" | "files" | "fileChanges" | "model" | "usage" | "validation">;
+export type WorkspaceSnapshot = Pick<Revision, "id" | "version" | "parentRevisionId" | "sourcePrompt" | "summary" | "files" | "fileChanges" | "model" | "usage" | "validation" | "buildVerification">;
 
 // Preserve the committed POST snapshot if a later metadata reload fails; no dates are invented.
 function snapshotFromGeneration(result: Generation): WorkspaceSnapshot {
@@ -22,6 +23,7 @@ function snapshotFromGeneration(result: Generation): WorkspaceSnapshot {
     id: result.revisionId, version: result.revisionVersion, parentRevisionId: result.parentRevisionId,
     sourcePrompt: result.sourcePrompt, summary: result.summary, files: result.files,
     fileChanges: result.fileChanges, model: result.model, usage: result.usage, validation: result.validation,
+    buildVerification: result.buildVerification ?? null,
   };
 }
 
@@ -66,6 +68,7 @@ export function useWorkspace(
   const listAbort = useRef<AbortController | null>(null);
   const submissionLock = useRef(false);
   const mounted = useRef(true);
+  const pollAbort = useRef<AbortController | null>(null);
   const selectionKey = workspaceUrl(selection.projectId, selection.revisionId);
   const visible = loadedKey === selectionKey;
 
@@ -113,7 +116,7 @@ export function useWorkspace(
     }).finally(() => {
       if (!controller.signal.aborted) setListBusy(false);
     });
-    return () => { mounted.current = false; controller.abort(); listAbort.current?.abort(); selectionAbort.current?.abort(); };
+    return () => { mounted.current = false; controller.abort(); listAbort.current?.abort(); selectionAbort.current?.abort(); pollAbort.current?.abort(); };
   }, [session, reportError]);
 
   useEffect(() => {
@@ -140,7 +143,9 @@ export function useWorkspace(
         if (controller.signal.aborted || !mounted.current) return;
         setProject(savedProject); setRevision(snapshot); setRevisions(history.revisions); setRevisionCursor(history.nextCursor);
         setLoadedKey(selectionKey);
-        setPending(readPendingGeneration(userId!, savedProject.id));
+        const restoredIntent = readPendingGeneration(userId!, savedProject.id);
+        setPending(restoredIntent);
+        if (restoredIntent) setNotice("Saved attempt restored. Check status or retry the same attempt; no new request key is needed.");
       } catch (error) {
         if (!controller.signal.aborted && mounted.current) setLoadError(reportError(error));
       } finally {
@@ -217,7 +222,21 @@ export function useWorkspace(
       }
       if (!savedProject || savedProject.id !== intent.projectId) throw new Error("Reload this project before retrying.");
       setNotice(intent.body.baseRevisionId ? "Generating changes against the frozen selected revision..." : "Project saved. Generating its first revision...");
-      const result = await generateProject(intent.projectId, session, intent.key, intent.body);
+      let result: GenerationStatus = await generateProject(intent.projectId, session, intent.key, intent.body);
+      if (!mounted.current) return;
+      if (result.status === "pending") {
+        intent = { ...intent, generationId: result.id };
+        savePendingGeneration(userId, intent); setPending(intent);
+        setNotice("Attempt accepted. Waiting for generation and build verification; saved files stay unchanged...");
+        const controller = new AbortController();
+        pollAbort.current = controller;
+        const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(360_000)]);
+        const projectId = intent.projectId;
+        const generationId = result.id;
+        result = await pollGeneration(generationId, () => getGeneration(projectId, generationId, session,
+          AbortSignal.any([signal, AbortSignal.timeout(10_000)])), signal);
+      }
+      if (result.status === "failed") throw new ProjectApiError("Generation or build verification failed. Saved files remain unchanged.", 502, "GENERATION_FAILED", result.id);
       clearPendingGeneration(userId, intent.projectId);
       acceptGeneration(result, savedProject);
     } catch (error) {
@@ -226,7 +245,7 @@ export function useWorkspace(
         if (error instanceof ProjectApiError && error.generationId) intent = { ...intent, generationId: error.generationId };
         const terminal = isTerminalGenerationError(error);
         if (terminal) { clearPendingGeneration(userId, intent.projectId); setPending(null); }
-        else { savePendingGeneration(userId, intent); setPending(intent); }
+        else { savePendingGeneration(userId, intent); setPending(intent); setNotice("Completion is not confirmed. Check status or retry the same attempt."); }
         setSubmitError(`${reportError(error)} ${terminal ? "Saved files are unchanged; a new submission uses a new key." : "Outcome not confirmed. Check status or retry this same attempt."}`);
       } else {
         setSubmitError(`${reportError(error)} Check saved projects before creating another draft.`);
@@ -251,7 +270,7 @@ export function useWorkspace(
       } else if (result.status === "failed") {
         if (userId) clearPendingGeneration(userId, pending.projectId);
         setPending(null); setSubmitError(`Attempt failed: ${result.errorCode ?? "GENERATION_FAILED"}. Saved files remain available.`);
-      } else setNotice(result.hasSavedResult ? "Output is saved. Retry the same attempt to publish it." : "Attempt is pending; completion is not yet confirmed.");
+      } else setNotice(result.hasSavedResult ? "Output is saved; verification or publication is not confirmed. Check status or retry the same attempt." : "Attempt is pending; completion is not yet confirmed.");
     } catch (error) { if (mounted.current) setSubmitError(reportError(error)); }
     finally { submissionLock.current = false; if (mounted.current) setBusy(false); }
   }

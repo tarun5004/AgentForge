@@ -2,6 +2,20 @@
 
 The V1 target contract uses `/api/v1` and request IDs. These are future conventions, not guarantees of the current application. The implemented Project Service routes below use `/api/projects` and the existing `{ message }` error wrapper.
 
+## B2/1 frontend rollout contract (2026-10-23)
+
+**Consumer compatibility implemented; backend candidate gate not yet enabled/implemented by this slice.** Existing synchronous `201 {generation}` ready responses and ready same-key replays remain supported. The frontend also accepts a future accepted response:
+
+```json
+{"generation":{"id":"300000000000000000000001","status":"pending","hasSavedResult":false,"errorCode":null}}
+```
+
+That proposed server response uses HTTP 202 and contains no committed files/revision ID. The browser persists the accepted ID with its unchanged `Idempotency-Key`/body, then reads the existing owner-scoped `GET /api/projects/{projectId}/generations/{generationId}`. Pending GETs never start AI, verify code or publish a revision. Ready GET evidence selects the committed snapshot; failed evidence retains previous files. A GET outage/timeout is uncertainty, not a terminal generation failure. No automatic POST retries are introduced by polling.
+
+Optional `buildVerification` on ready Generation/Revision responses is separate from manifest validation: `{status: "build_passed", policyVersion: "next-static-build-v1", snapshotHash: "64 lowercase hex", runnerImageId: "sha256:64 lowercase hex", checkId: "UUID", completedAt: "ISO timestamp"}`. Missing/null stays unverified. The frontend validates this shape; only the future Project gate may attest a matching candidate hash and actual check result. This slice does not implement that backend attestation, endpoint/authentication or any schema migration.
+
+User/project-scoped pending intent contains no access tokens or files. Bounded GET polling stops on unmount/read failure/terminal status or its UI deadline; refresh offers explicit status/replay controls with the same identity. See [frontend setup and verification](../nextjs-boilerplate/README.md#b21-pending-generation-compatibility--2026-10-23).
+
 ## Frontend consumer — Slice 5 (2026-10-12)
 
 No server routes/contracts changed in this frontend slice. The Next workspace consumes the reads and follow-ups below through existing same-origin rewrites after session restoration. `/workspace?project=<id>&revision=<id>` stores selection IDs only; repeated/malformed IDs or a revision without a project show an invalid-link state. A project-only link loads its derived latest revision.
