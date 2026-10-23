@@ -1,5 +1,6 @@
 import { prepareGenerationRequest, validateGenerationResponse } from "../clients/generation.contract.js";
 import { AppError } from "../middlewares/error.middleware.js";
+import { matchingBuildVerification } from "../clients/build-verification.js";
 import {
   markGenerationFailed,
   markGenerationReady,
@@ -90,6 +91,11 @@ async function prepareSavedRevision(generation: GenerationReadRecord): Promise<N
   if (result.fileChanges && JSON.stringify(result.fileChanges) !== JSON.stringify(checked.snapshot.fileChanges)) {
     throw unknownGenerationOutcome(id);
   }
+  // Enforce captured policy here as well as in the worker: every replay/publication path hits this guard.
+  const buildVerification = matchingBuildVerification(generation.buildVerification, checked.snapshot.files);
+  if (generation.buildPolicyVersion && (generation.buildPolicyVersion !== "next-static-build-v1" || !buildVerification)) {
+    throw unknownGenerationOutcome(id);
+  }
   return {
     projectId: generation.projectId.toString(), generationId: id,
     version: expectedVersion, parentRevisionId: baseId, sourcePrompt: generation.sourcePrompt,
@@ -97,6 +103,7 @@ async function prepareSavedRevision(generation: GenerationReadRecord): Promise<N
     provider: checked.provider, model: checked.model, usage: checked.usage, latencyMs: checked.latencyMs,
     validation: { policyVersion: "frontend-manifest-v1" as const, status: "manifest_validated" as const },
     schemaVersion: 2 as const,
+    ...(generation.buildPolicyVersion && buildVerification ? { buildVerification } : {}),
   };
 }
 

@@ -93,9 +93,10 @@ export async function createGenerationController(
       projectId,
       req.header("idempotency-key"),
       req.body,
+      req.header("authorization") ?? "",
     );
 
-    res.status(201).json({ generation });
+    res.status(generation.status === "pending" ? 202 : 201).json({ generation });
   } catch (error) {
     next(error);
   }

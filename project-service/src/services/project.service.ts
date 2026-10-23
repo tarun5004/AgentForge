@@ -1,4 +1,5 @@
 import { AppError } from "../middlewares/error.middleware.js";
+import { matchingBuildVerification } from "../clients/build-verification.js";
 import {
   insertProject,
   findOwnedProjectForRead,
@@ -171,6 +172,7 @@ export async function getRevision(
     latencyMs: revision.latencyMs ?? null,
     validation: revision.validation ? { policyVersion: revision.validation.policyVersion, status: revision.validation.status } : null,
     schemaVersion: revision.schemaVersion ?? null,
+    buildVerification: matchingBuildVerification(revision.buildVerification, revision.files),
   };
   assertReadResponseSize({ revision: result });
   return result;

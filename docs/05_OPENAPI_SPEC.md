@@ -2,6 +2,23 @@
 
 The V1 target contract uses `/api/v1` and request IDs. These are future conventions, not guarantees of the current application. The implemented Project Service routes below use `/api/projects` and the existing `{ message }` error wrapper.
 
+## B2 backend contract — opt-in build-before-publication (2026-10-23)
+
+This section supersedes the historical frontend-only B2/1 and manifest-only Slice 4 descriptions **for newly gated attempts**. Gate-off/legacy behavior stays compatible. Activation/setup and limits: [Project Service](../project-service/README.md#opt-in-candidate-build-gate-b23).
+
+`BUILD_GATE_ENABLED=true` captures `buildPolicyVersion: next-static-build-v1` at attempt creation. After AI output is saved, POST generation returns **202** `{generation: {id, status: "pending", hasSavedResult: true, errorCode: null}}`. It contains no committed Revision ID/files. A bounded process-local worker requests Execution verification and persists matching evidence before publication. The unchanged GET-generation route only reads persisted status. Terminal build rejection yields `failed` / `BUILD_VERIFICATION_FAILED`; infrastructure uncertainty stays pending. Committed GET/201 replay and Revision detail add `buildVerification` with the exact shape below, or null for unverified legacy data. Disabling the flag cannot bypass a previously captured policy.
+
+Internal contracts (not exposed through the frontend proxy):
+
+| Method/path | Authentication/input | Result |
+| --- | --- | --- |
+| GET `/internal/projects/:projectId/generations/:generationId/candidate` on Project | Owner JWT **and** separate `X-Execution-Check-Token`; valid matching owned IDs, no query | 200 `{candidate: {projectId, generationId, snapshotHash, files}}`, no-store; 403 missing/wrong service credential; 401 invalid JWT; 404 unavailable/foreign candidate. |
+| POST `/internal/checks` on Execution | Same two headers; strict `{projectId, generationId, snapshotHash}` only | 200 `{buildVerification}` only after exact candidate validation, pinned fixed-template build/export and confirmed cleanup. No preview capability. 422 compile rejection, 429 build busy, 503 unavailable/cleanup uncertainty. |
+
+Hash: SHA-256 of UTF-8 `JSON.stringify` over complete `{path,content}` objects sorted lexicographically by path, not locale-dependent. Project verifies proof hash against its revalidated final snapshot; policy/runner/check/time are recorded. Browser JWT is forwarded in active-request memory, not stored as a durable worker credential. The service token is server-only, redacted in Execution logging and distinct from JWT/AI tokens.
+
+Explicit same-key replay resumes saved output/proof; GET never resumes work. Lost build acknowledgement can repeat a local check after cache eviction/restart, never another AI request if saved output exists. Existing immutable Revision and unique version/generation indexes remain the commit authority. This is not durable queue/restart automation, arbitrary-code API access, dependency/secret scanning or public sandbox approval.
+
 ## B2/1 frontend rollout contract (2026-10-23)
 
 **Consumer compatibility implemented; backend candidate gate not yet enabled/implemented by this slice.** Existing synchronous `201 {generation}` ready responses and ready same-key replays remain supported. The frontend also accepts a future accepted response:

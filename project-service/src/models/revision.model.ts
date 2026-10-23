@@ -1,9 +1,10 @@
 import { Schema, Types, model } from "mongoose";
 
 import {
-  fileChangeSchema, manifestValidationSchema,
+  fileChangeSchema, manifestValidationSchema, buildEvidenceSchema,
   type GeneratedFile, type GeneratedFileChange, type ManifestValidation, type TokenUsage,
 } from "./generation.model.js";
+import type { BuildVerification } from "../clients/build-verification.js";
 
 export type RevisionDocument = {
   projectId: Types.ObjectId;
@@ -20,6 +21,7 @@ export type RevisionDocument = {
   latencyMs?: number;
   validation?: ManifestValidation;
   schemaVersion?: number;
+  buildVerification?: BuildVerification;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -59,6 +61,7 @@ const revisionSchema = new Schema<RevisionDocument>(
     latencyMs: { type: Number, min: 0, immutable: true },
     validation: { type: manifestValidationSchema, immutable: true },
     schemaVersion: { type: Number, enum: [2], immutable: true },
+    buildVerification: { type: buildEvidenceSchema, immutable: true },
   },
   { timestamps: true },
 );

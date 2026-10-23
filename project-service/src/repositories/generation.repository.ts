@@ -4,6 +4,7 @@ import {
   type GenerationDocument,
   type GenerationResult,
 } from "../models/generation.model.js";
+import type { BuildVerification } from "../clients/build-verification.js";
 
 export type GenerationReadRecord = GenerationDocument & { _id: Types.ObjectId };
 
@@ -16,6 +17,7 @@ type NewGenerationAttempt = {
   requestFingerprint: string;
   expectedVersion: number;
   requestPolicyVersion: "generation-request-v1";
+  buildPolicyVersion?: "next-static-build-v1";
 };
 
 // Recognize only this unique index. Other duplicate errors must not masquerade as retries.
@@ -75,5 +77,13 @@ export async function markGenerationFailed(
   await Generation.updateOne(
     { _id: generationId, status: "pending" },
     { $set: { status: "failed", errorCode, failedAt: new Date() } },
+  );
+}
+
+// Save only the first proof on a still-pending gated attempt; reread after a racing acknowledgement.
+export async function saveBuildVerification(generationId: string, proof: BuildVerification): Promise<void> {
+  await Generation.updateOne(
+    { _id: generationId, status: "pending", buildPolicyVersion: "next-static-build-v1", buildVerification: { $exists: false } },
+    { $set: { buildVerification: proof } }, { runValidators: true },
   );
 }
