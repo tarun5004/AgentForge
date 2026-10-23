@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import type { Artifacts } from "./run.artifacts.js";
 import type { Runner } from "./docker.runner.js";
-import { RunError, RunCleanupError } from "./run.errors.js";
+import { RunError, RunBuildError, RunCleanupError } from "./run.errors.js";
 import type { Revision } from "./run.schema.js";
 
 const IDLE_MS = 30 * 60_000;
@@ -97,7 +97,8 @@ export function createRunService(runner: Runner, previewOrigin: string, now = Da
           } else {
             run.state = "failed";
             run.errorCode = "BUILD_FAILED";
-            run.message = "Build failed. Check template compatibility and the local Docker setup.";
+            run.message = error instanceof RunBuildError ? error.message
+              : "Build failed. Check template compatibility and the local Docker setup.";
           }
         } finally {
           building = false;

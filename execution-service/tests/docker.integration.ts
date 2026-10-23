@@ -13,6 +13,7 @@ import { createRunService, type RunService } from "../src/features/runs/run.serv
 import { dockerCommand, DockerCommandError } from "../src/features/runs/docker.command.js";
 import { createDockerRunner } from "../src/features/runs/docker.runner.js";
 import { createPreviewServer } from "../src/features/runs/preview.server.js";
+import { RunBuildError } from "../src/features/runs/run.errors.js";
 
 // Real HTTP listeners use isolated ports instead of the user's running app ports.
 async function listen(server: Server) {
@@ -55,8 +56,14 @@ async function verifyBrowser(url: string) {
 
 // Opt-in real Docker proof: no model call, no normal application database, no host source mount.
 test("real Next.js export, isolation probes, invalid build, cancellation and exact cleanup", { timeout: 240_000 }, async () => {
+  const startedAt = Date.now();
+  // Safe test-only checkpoints locate a timeout without printing source, credentials or capability URLs.
+  function checkpoint(stage: string) {
+    process.stdout.write(`# preview-check ${JSON.stringify({ stage, elapsedMs: Date.now() - startedAt })}\n`);
+  }
   assert.equal(process.env.RUN_DOCKER_TESTS, "1", "Set RUN_DOCKER_TESTS=1 explicitly; build the trusted runner image first.");
   const runner = await createDockerRunner(process.env.PREVIEW_RUNNER_IMAGE ?? "agentforge-preview-runner:local");
+  checkpoint("runner-ready");
   const revision = { id: "66d987654321abcdef123456", projectId: "66d123456789abcdef123456", files: [{
     path: "app/page.tsx", content: `import {writeFileSync} from 'node:fs';
 import Counter from '../components/Counter';
@@ -94,7 +101,9 @@ export default function Counter() { const [count,setCount] = useState(0); return
       body: JSON.stringify({ projectId: revision.projectId, revisionId: revision.id }) });
     assert.equal(response.status, 202);
     const accepted = await response.json() as { run: { id: string } };
+    checkpoint("first-build-accepted");
     await service.find(accepted.run.id).task;
+    checkpoint("first-build-settled");
     const status = await fetch(`${apiOrigin}/api/runs/${accepted.run.id}`, { headers });
     const { run } = await status.json() as { run: { state: string; previewUrl: string } };
     assert.equal(run.state, "ready", diagnostic instanceof DockerCommandError ? diagnostic.diagnostic : String(diagnostic));
@@ -113,6 +122,7 @@ export default function Counter() { const [count,setCount] = useState(0); return
     assert.equal(css.status, 200);
     assert.match(css.headers.get("content-type")!, /text\/css/);
     assert.match(await css.text(), /background-color:/);
+    checkpoint("exported-css-verified");
     assert.equal((await dockerCommand(["ps", "-aq", "--filter", `name=agentforge-preview-${accepted.run.id}`])).trim(), "");
     if (process.env.VERIFY_PREVIEW_BROWSER === "1") await verifyBrowser(run.previewUrl);
   } finally {
@@ -120,12 +130,22 @@ export default function Counter() { const [count,setCount] = useState(0); return
     await Promise.all([close(api), close(preview), close(projectApi)]);
   }
   const badId = randomUUID();
+  checkpoint("invalid-build-starting");
   await assert.rejects(runner.build({ id: badId, previewPath: `/preview/${badId}/${"b".repeat(48)}`,
-    revision: { ...revision, files: [{ path: "app/page.tsx", content: "export default function Page( { invalid syntax !!!" }] }, signal: new AbortController().signal }));
+    revision: { ...revision, files: [{ path: "app/page.tsx", content: "export default function Page( { invalid syntax !!!" }] }, signal: new AbortController().signal }), error => {
+      assert.ok(error instanceof RunBuildError);
+      assert.equal(error.stage, "compile");
+      assert.equal(error.reason, "command_failed");
+      assert.match(error.message, /^Build failed\. The frontend build command failed\./);
+      assert.doesNotMatch(error.message, /invalid syntax|\.tsx|stack|\/work/);
+      return true;
+    });
   assert.equal((await dockerCommand(["ps", "-aq", "--filter", `name=agentforge-preview-${badId}`])).trim(), "");
+  checkpoint("invalid-build-classified-and-cleaned");
   const cancelId = randomUUID();
   const abort = new AbortController();
   const cancelled = runner.build({ id: cancelId, previewPath: `/preview/${cancelId}/${"c".repeat(48)}`, revision, signal: abort.signal });
+  checkpoint("cancellation-build-starting");
   const outcome = cancelled.then(() => "ready", () => "cancelled");
   const timer = setTimeout(() => abort.abort(), 25_000);
   let buildStarted = false;
@@ -142,4 +162,5 @@ export default function Counter() { const [count,setCount] = useState(0); return
     assert.ok(buildStarted, "Cancellation must interrupt a real Next.js build.");
   } finally { clearTimeout(timer); abort.abort(); await outcome; }
   assert.equal((await dockerCommand(["ps", "-aq", "--filter", `name=agentforge-preview-${cancelId}`])).trim(), "");
+  checkpoint("cancellation-and-cleanup-verified");
 });
