@@ -29,6 +29,32 @@ Both control-plane services must run on the trusted host for this local-only con
 
 ## Routes
 
+### Saved requirements and confirmation (A2)
+
+Backend flow: `create project → assess → answer → review → confirm → generate`.
+The frontend still uses direct generation until A3. No new dependency/env variable is needed; deploy A1's internal assessment endpoint first.
+
+Paths below are relative to `/api/projects/:projectId`; all require owner JWT and reject query switches:
+
+| Method/path | Input | Result |
+| --- | --- | --- |
+| GET `/brief` | None | 200 `{brief}` or null; no model work. |
+| POST `/brief` | `{expectedVersion, answers?: [{question, answer}]}` + `Idempotency-Key` | 200 `{brief}` after assessment or terminal replay. Initial version is 0. |
+| POST `/brief/:briefId/confirm` | Empty | 200 `{brief}`; current completed/ready version only. |
+| POST `/brief/:briefId/abandon` | Empty | 200 `{brief}`; current pending version only. |
+| POST `/brief/:briefId/generations` | Empty + generation `Idempotency-Key` | Existing 201 ready / 202 build-pending `{generation}`, using stored approved brief text. |
+
+The public brief contains `id/version/sourcePrompt/answers/status/assessment/confirmedAt/errorCode/createdAt`; no keys/fingerprints/DB internals. Attempt status (`pending/completed/failed`) is separate from assessment status (`needs_clarification/ready/unsupported`). Confirmation and creation dates are ISO strings, confirmation nullable. AI usage remains null when unknown.
+
+- Submit **all** answers with the last observed version. Only recorded questions may be answered; earlier answers cannot disappear. Maximum six pairs, question 240/answer 1000 characters. Edited answers create an unconfirmed version. Existing public parser is 16 KiB; internal context additionally has a 20,000-byte bound, never truncation.
+- Unique version/key indexes initialize before HTTP startup. Pending work blocks new assessments. Same-key changed input is 409 `IDEMPOTENCY_MISMATCH`; stale version is `BRIEF_VERSION_CONFLICT`; pending replay is `BRIEF_IN_PROGRESS`. Terminal replay returns 200 with saved state, including failure, and never repeats AI.
+- One upstream HTTP attempt, no redirects/retries, 50-second deadline, 20,000-byte response limit. Sanitized upstream failure is 502 `ASSESSMENT_OUTCOME_UNKNOWN`; persistence uncertainty is 503 `OUTCOME_UNKNOWN`. Preserve key, read/replay first. A deliberate new key may spend again.
+- Crash recovery is explicit: GET never resumes model work. Abandonment prevents late resurrection, but cannot cancel/refund a provider call. No automatic background resumption.
+- `ready` is not consent. New generation checks the latest confirmed version at admission; later edits do not cancel already admitted work. Historical same-key generation replay retains its frozen prompt/result.
+- This additive generation action is **initial-only**, with no base field. Existing follow-ups still use `{prompt, baseRevisionId}` on the original route. That legacy route remains compatible and is **not globally brief-gated**. Old records require no backfill.
+
+See [API details](../docs/05_OPENAPI_SPEC.md#a2-project-owned-requirement-brief--2026-10-23) and [design Q&A](../docs/SYSTEM_DESIGN_QA.md#14-why-store-a-versioned-brief-and-require-confirmation).
+
 Public owner-JWT APIs: POST/GET `/api/projects`, GET project detail, GET revision list/detail, POST `/:projectId/generations` with `Idempotency-Key`, GET `/:projectId/generations/:generationId`. Initial body `{}`/`{prompt}`; follow-up `{prompt, baseRevisionId}`. Gated saved candidates return 202 pending; committed results/replays return 201. History/status reads return 200.
 
 Internal candidate GET: `/internal/projects/:projectId/generations/:generationId/candidate`, protected by **both** `Authorization` and `X-Execution-Check-Token`. No-store response `{candidate: {projectId, generationId, snapshotHash, files}}`. Ownership and all IDs are rechecked; unowned/mismatched/failed candidates return 404; missing service auth is 403. Internal service failures do not invalidate the browser's login. See [actual API contracts](../docs/05_OPENAPI_SPEC.md).
@@ -42,6 +68,9 @@ npm --workspace project-service run build
 # Choose an isolated local DB; never use normal application data.
 $env:AGENTFORGE_TEST_MONGODB_URI='mongodb://127.0.0.1:27017/agentforge_test_your_unique_run'
 npm --workspace project-service run test:integration
+# Brief suite also refuses a populated test database.
+$env:AGENTFORGE_TEST_MONGODB_URI='mongodb://127.0.0.1:27017/agentforge_test_brief_your_unique_run'
+npm --workspace project-service run test:brief
 # Cross-service fixtures consume Execution's compiled modules.
 npm --workspace execution-service run build
 npm --workspace project-service run test:build-gate
@@ -51,6 +80,8 @@ $env:PREVIEW_RUNNER_IMAGE='agentforge-preview-runner:css-check' # select an exis
 npm --workspace project-service run test:build-gate
 ```
 
-Fixtures use random loopback listeners and only delete records under project IDs they created in the explicitly selected `agentforge_test_*` database. The default gate tests use a fake build runner but real Project/Execution HTTP, JWT ownership and Mongo. The opt-in final case delegates to real Docker. Neither is paid-model or logged-in browser verification. No index change or destructive migration is needed.
+Fixtures use random loopback listeners and delete only their created project IDs in an explicitly selected `agentforge_test_*` database. Gate tests use a fake build runner by default; the opt-in case uses Docker. Neither proves paid-model/browser behavior. A2 adds two unique indexes on its new `projectbriefs` collection; existing collections need no migration.
+
+A2 evidence (2026-10-23): **34/34 unit, 18/18 brief HTTP/Mongo, 40/40 existing integration, 5/5 deterministic build-gate cases** passed; the opt-in real Docker case was deliberately skipped. Project typecheck/build and Execution build passed. Brief tests cover reconnect/persistence, ownership, races, consent/edits, abandonment/late response, bounded invalid upstream responses, lost acknowledgements and approved-brief generation/replay. AI is a local transport fixture; the brief suite has the build gate disabled. No browser dialogue/live model/preview verification is claimed. Initial Mongo attempt hit an unexposed host port; rerun used a temporary isolated Mongo container on loopback 27028, never the Compose application DB.
 
 Recorded 2026-10-23: 30 unit, 40 existing Mongo integration and 5 deterministic gate cases passed; separate opt-in gate suite passed 6/6 including actual Docker publication (105.7 seconds for the real-build case). Typecheck/build passed. The gate suite covers unpublished 202, both credentials/foreign owner, same-key joining/mismatch, proof-blocked direct publication, failed follow-up preservation, flag-off replay, saved-proof publication outage recovery, and competing checked candidates. Final scoped-fixture cleanup was independently confirmed empty in both dedicated test DBs; no labeled build container remained. Ignored logs: `output/playwright/build-gate-project-{unit-final,integration-final,docker}.log` and `build-gate-legacy-integration.log`.

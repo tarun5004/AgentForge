@@ -2,6 +2,26 @@
 
 The V1 target contract uses `/api/v1` and request IDs. These are future conventions, not guarantees of the current application. The implemented Project Service routes below use `/api/projects` and the existing `{ message }` error wrapper.
 
+## A2 Project-owned requirement brief — 2026-10-23
+
+Implemented backend addition; frontend dialogue remains A3. Prefix `/api/projects/:projectId`, owner JWT required, no query parameters. Invalid identity is 401, foreign/missing project or mismatched brief is 404; IDs are validated Mongo IDs. The legacy direct-generation route stays compatible and is **not globally brief-gated**.
+
+| Method/path | Input | Success |
+| --- | --- | --- |
+| GET `/brief` | None | 200 `{brief}` or `{brief: null}`. No model work. |
+| POST `/brief` | `Idempotency-Key`; strict `{expectedVersion: integer >= 0, answers?: [{question, answer}]}` | 200 `{brief}` after assessment or terminal-state replay. Start with version 0. |
+| POST `/brief/:briefId/confirm` | No body or `{}` | 200 `{brief}`; current completed/ready snapshot, timestamp set once. |
+| POST `/brief/:briefId/abandon` | No body or `{}` | 200 `{brief}`; pending snapshot becomes failed/`ASSESSMENT_ABANDONED`. |
+| POST `/brief/:briefId/generations` | Generation `Idempotency-Key`; no body or `{}` | Unchanged 201 committed / 202 build-pending `{generation}`, prompt from confirmed stored brief. |
+
+Public brief: `{id, version, sourcePrompt, answers, status, assessment, confirmedAt, errorCode, createdAt}`. Attempt status is `pending | completed | failed`; nullable assessment follows A1 below. Dates are ISO strings, confirmation nullable. No request key/fingerprint/database internals are returned.
+
+Answers are cumulative, maximum six pairs, trimmed question 1–240/answer 1–1000 characters. Only recorded questions/earlier answers are accepted, and earlier answers cannot disappear. Edits create an unconfirmed version. Source prompt is server-loaded (10–1000 characters). Parser bound 16 KiB; internal serialized-context bound 20,000 UTF-8 bytes. No browser prompt/owner/model/assessment/files/base override.
+
+Fingerprint binds project, saved prompt, expectedVersion and sorted normalized questions/answers. Terminal replay precedes stale-version checks. Errors: 400 `INVALID_BRIEF`/`INVALID_BRIEF_ANSWERS`; 409 `IDEMPOTENCY_MISMATCH`, `BRIEF_IN_PROGRESS`, `BRIEF_VERSION_CONFLICT`, `BRIEF_NOT_READY`, `BRIEF_NOT_CONFIRMED` or `BRIEF_NOT_PENDING`; 413 parser/context overflow; sanitized 502 `ASSESSMENT_OUTCOME_UNKNOWN`; 503 `OUTCOME_UNKNOWN` on uncertain persistence. Errors retain `{message, code?}`. Failed replay returns 200 **with failed state**, never a new AI call.
+
+GET/replay before a deliberate new key. Abandonment cannot cancel/refund upstream work; conditional completion blocks late resurrection. Confirmation is checked at generation admission; later edits do not cancel admitted work. Older confirmed briefs may replay existing generation keys, still subject to original prompt fingerprint matching. This action is initial-only; selected-base follow-ups remain on the old API. No background worker, historical-brief list, automatic repair/paid retry or global consent retrofit.
+
 ## A1 internal requirement assessment — 2026-10-23
 
 **Implemented on AI Service only.** POST `/internal/requirements`, header `x-internal-service-token` (same as internal generation). Not a browser/public route and not a saved-conversation endpoint. Existing generation contracts are unchanged. Details: [AI Service README](../ai-orchestrator-service/README.md#requirement-assessment--a1-2026-10-23).
@@ -21,7 +41,7 @@ Request is a strict object:
 
 200 wrapper: `{ assessment: { requestId, status, message, brief, questions, policyVersion, model, usage, latencyMs } }`. Status is `needs_clarification | ready | unsupported`; message 1–400, brief 10–1000 trimmed characters, questions array at most three 1–240-character strings. Only `needs_clarification` has a nonempty array; duplicate/already answered exact-normalized questions fail output validation. `ready` is ready for human review, not generation approval. Policy is `frontend-requirements-v1`; usage has `inputTokens/outputTokens/totalTokens` as numbers or `null` when unavailable, never invented zeros. No files or revision ID are returned.
 
-400 invalid request/JSON; 401 invalid internal token; 413 request/context too large with `CONTEXT_TOO_LARGE`; 502 sanitized AI/provider/output failure. Output failures are not input 400s. A1 has no persistence, idempotency, automatic repair or tools. New SDK call has 1500 output-token cap, 45-second timeout, zero SDK retries; these are not a hard billing guarantee. Public saved brief/confirmation APIs and the UI remain future compatible slices, not claimed by this route.
+400 invalid request/JSON; 401 invalid internal token; 413 request/context too large with `CONTEXT_TOO_LARGE`; 502 sanitized AI/provider/output failure. Output failures are not input 400s. A1 has no persistence, idempotency, automatic repair or tools. New SDK call has 1500 output-token cap, 45-second timeout, zero SDK retries; these are not a hard billing guarantee. A2's separate public saved-brief/confirmation contract is above; frontend dialogue remains A3, not claimed by this internal route.
 
 ## B2 backend contract — opt-in build-before-publication (2026-10-23)
 
