@@ -5,7 +5,7 @@ import { assertEmptyCounts, parseOptions, runnerImage, validateTestUri } from '.
 test('verification options are explicit, bounded and reject typo/duplicate scopes', () => {
   assert.deepEqual(parseOptions([]), { suite: 'all', failAfterStart: false, help: false, demo: false });
   assert.equal(parseOptions(['--demo']).demo, true);
-  for (const suite of ['all', 'loop', 'recovery', 'state', 'mocked', 'session', 'preview-real', 'build-gate']) assert.equal(parseOptions(['--suite', suite]).suite, suite);
+  for (const suite of ['all', 'loop', 'recovery', 'state', 'mocked', 'session', 'requirements', 'preview-real', 'build-gate']) assert.equal(parseOptions(['--suite', suite]).suite, suite);
   assert.equal(parseOptions(['--fail-after-start']).failAfterStart, true);
   assert.equal(parseOptions(['--help']).help, true);
   for (const args of [['--suite'], ['--suite', 'production'], ['--force'], ['--suite', 'loop', '--suite', 'state'], ['--help', '--help'],
@@ -31,9 +31,10 @@ test('database guard accepts only named local disposable targets', () => {
 });
 
 test('empty guard fails closed for unknown, negative and nonzero counts', () => {
-  const empty = { users: 0, projects: 0, revisions: 0, generations: 0 };
+  const empty = { users: 0, projects: 0, revisions: 0, generations: 0, projectbriefs: 0 };
   assert.doesNotThrow(() => assertEmptyCounts(empty));
-  for (const counts of [{}, { ...empty, users: 1 }, { ...empty, projects: -1 }, { ...empty, revisions: '0' }]) {
+  for (const counts of [{}, { ...empty, users: 1 }, { ...empty, projects: -1 }, { ...empty, revisions: '0' },
+    { ...empty, projectbriefs: 1 }, { ...empty, projectbriefs: undefined }]) {
     assert.throws(() => assertEmptyCounts(counts));
   }
 });

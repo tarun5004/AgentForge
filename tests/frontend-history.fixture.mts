@@ -13,7 +13,7 @@ if (target.protocol !== "mongodb:" || !["127.0.0.1", "localhost"].includes(targe
   !/^\/agentforge_test_[a-zA-Z0-9_]+$/.test(target.pathname) || target.username || target.password || target.search) throw new Error("Unsafe test database target.");
 await mongoose.connect(uri, { serverSelectionTimeoutMS: 5_000 });
 const db = mongoose.connection.db!;
-for (const name of ["users", "projects", "revisions", "generations"]) {
+for (const name of ["users", "projects", "revisions", "generations", "projectbriefs"]) {
   if (await db.collection(name).countDocuments({}) !== 0) throw new Error("Browser fixture requires an initially empty dedicated database.");
 }
 Object.assign(process.env, {
@@ -93,7 +93,7 @@ const aiServer = createServer((request, response) => {
     void shutdown();
     return;
   }
-  if (request.method !== "POST" || request.url !== "/internal/generations" || request.headers["x-internal-service-token"] !== "frontend-fixture-internal") {
+  if (request.method !== "POST" || !["/internal/generations", "/internal/requirements"].includes(request.url ?? "") || request.headers["x-internal-service-token"] !== "frontend-fixture-internal") {
     response.writeHead(404).end(); return;
   }
   let body = "";
@@ -101,6 +101,15 @@ const aiServer = createServer((request, response) => {
   request.on("end", async () => {
     try {
       const input = JSON.parse(body);
+      // Contract fixture only: real model question quality is intentionally not simulated or claimed.
+      if (request.url === "/internal/requirements") {
+        response.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ assessment: {
+          requestId: input.requestId, status: "ready", message: "Review this fixture brief before generating.",
+          brief: input.prompt, questions: [], policyVersion: "frontend-requirements-v1", model: "deterministic-fixture",
+          usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }, latencyMs: 0,
+        } }));
+        return;
+      }
       const baseFiles = input.baseRevision?.files ?? [];
       aiRequests.push({ prompt: input.prompt, baseVersion: input.baseRevision?.version ?? null,
         baseMatchesInitial: JSON.stringify([...baseFiles].sort((a, b) => a.path.localeCompare(b.path))) ===
@@ -162,7 +171,7 @@ let stopping = false;
 async function readFixtureStatus(response: import("node:http").ServerResponse) {
   try {
     const counts: Record<string, number> = {};
-    for (const name of ["users", "projects", "revisions", "generations"]) counts[name] = await db.collection(name).countDocuments({});
+    for (const name of ["users", "projects", "revisions", "generations", "projectbriefs"]) counts[name] = await db.collection(name).countDocuments({});
     response.setHeader("Content-Type", "application/json");
     response.end(JSON.stringify({ fixtureId, databaseName: target.pathname.slice(1), counts, aiRequests, heldGeneration: !!releaseGeneration,
       previewEnabled, buildGateEnabled, demoMode, checks: previewController?.checkEvidence() ?? null }));
@@ -188,10 +197,11 @@ async function shutdown() {
     const projectIds = projects.map((project) => project._id);
     await db.collection("revisions").deleteMany({ projectId: { $in: projectIds } });
     await db.collection("generations").deleteMany({ projectId: { $in: projectIds } });
+    await db.collection("projectbriefs").deleteMany({ projectId: { $in: projectIds } });
     await db.collection("projects").deleteMany({ _id: { $in: projectIds } });
     await db.collection("users").deleteMany({ _id: { $in: users.map((user) => user._id) } });
     const counts: Record<string, number> = {};
-    for (const name of ["users", "projects", "revisions", "generations"]) counts[name] = await db.collection(name).countDocuments({});
+    for (const name of ["users", "projects", "revisions", "generations", "projectbriefs"]) counts[name] = await db.collection(name).countDocuments({});
     console.info(JSON.stringify({ fixtureCleanup: counts }));
     // Never widen deletion filters to remove someone else's unexpected records.
     if (Object.values(counts).some((count) => count !== 0)) throw new Error("Fixture data remains after scoped cleanup.");

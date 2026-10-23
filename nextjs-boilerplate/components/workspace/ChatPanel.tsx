@@ -3,6 +3,7 @@
 import { ArrowUp, MessageSquarePlus, RefreshCw, Sparkles } from "lucide-react";
 import type { FormEvent, KeyboardEvent } from "react";
 import type { WorkspaceState } from "./useWorkspace";
+import { RequirementPanel } from "./RequirementPanel";
 
 // This panel renders shell-owned state so resizing never discards a draft or running request.
 export function ChatPanel({ workspace }: { workspace: WorkspaceState }) {
@@ -56,6 +57,7 @@ export function ChatPanel({ workspace }: { workspace: WorkspaceState }) {
           {workspace.loadError && <div role="alert" className="text-[#ffaaaa]"><p>{workspace.loadError}</p><button type="button" disabled={busy} onClick={workspace.refreshSelection} className="mt-2 underline">Retry loading</button></div>}
           {!workspace.selectedProjectId && !workspace.loadError && <p className="py-8 text-center text-[#99999e]">Build a frontend page or reopen a project above.</p>}
           {project && !revision && <p className="text-[#99999e]">Saved draft. No generated files yet.</p>}
+          {project && !revision && <RequirementPanel workspace={workspace} />}
           {revision && (
             <div className="space-y-2 rounded-lg border border-[#34432f] bg-[#182016] p-3 text-[#b6f09c]">
               <p>{revision.summary}</p>
@@ -91,7 +93,7 @@ export function ChatPanel({ workspace }: { workspace: WorkspaceState }) {
               </div>
             </div>
           )}
-          <div className="rounded-lg border border-[#3a3a3e] bg-[#1c1c1e] p-2 focus-within:border-[#68686e]">
+          {(!project || revision) && <div className="rounded-lg border border-[#3a3a3e] bg-[#1c1c1e] p-2 focus-within:border-[#68686e]">
             <label htmlFor="workspace-prompt" className="sr-only">Describe a frontend page or change</label>
             <textarea id="workspace-prompt" value={workspace.prompt} onChange={(event) => workspace.setPrompt(event.target.value)} onKeyDown={handlePromptKeyDown} aria-describedby="workspace-prompt-help" placeholder={revision ? "Describe a change to this revision..." : "Ask AgentForge to build..."} rows={3} maxLength={1000} minLength={10} disabled={!workspace.canSubmit} className="w-full resize-none bg-transparent px-1 text-xs outline-none placeholder:text-[#99999e] disabled:opacity-50" />
             <p id="workspace-prompt-help" className="px-1 text-[10px] text-[#99999e]">Enter to send · Shift+Enter for a new line · Minimum 10 characters</p>
@@ -99,7 +101,7 @@ export function ChatPanel({ workspace }: { workspace: WorkspaceState }) {
               <span className="px-1 text-[10px] text-[#99999e]">Economy · {workspace.prompt.length}/1000</span>
               <button type="submit" disabled={!workspace.canSubmit || workspace.prompt.trim().length < 10} aria-label="Send prompt" className="grid size-7 place-items-center rounded-md bg-[#dddddf] text-[#111112] disabled:opacity-30">{busy ? "..." : <ArrowUp size={15} />}</button>
             </div>
-          </div>
+          </div>}
         </form>
       </section>
     </aside>

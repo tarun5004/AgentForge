@@ -1,6 +1,6 @@
 param(
     [string]$BaseUrl = 'http://localhost:3001',
-    [ValidateSet('links', 'history', 'access', 'session', 'preview', 'pending')][string]$Suite = 'links'
+    [ValidateSet('links', 'history', 'access', 'session', 'preview', 'pending', 'requirements')][string]$Suite = 'links'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -119,6 +119,11 @@ try {
         Invoke-BrowserCommand @('snapshot')
         Invoke-BrowserCommand @('run-code', "--filename=$browserChecks")
         Write-Host 'PASS pending/ready/failure/outage/refresh UI checkpoints. Every API intercepted; no backend, database, build or provider proof claimed.'
+    } elseif ($Suite -eq 'requirements') {
+        Invoke-BrowserCommand @('goto', "$BaseUrl/workspace")
+        Invoke-BrowserCommand @('snapshot')
+        Invoke-BrowserCommand @('run-code', "--filename=$browserChecks")
+        Write-Host 'PASS clarification, answer/consent edits, same-key refresh recovery and saved files. APIs intercepted; no real provider or database claim.'
     } elseif ($Suite -eq 'session') {
         Invoke-BrowserCommand @('goto', "$BaseUrl/workspace")
         Invoke-BrowserCommand @('snapshot')

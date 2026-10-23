@@ -1,4 +1,5 @@
 import { requestWithSession, type ProjectAccess } from "./session-request.ts";
+import { isRequirementBrief, type BriefInput, type RequirementBrief } from "./requirement-brief.ts";
 
 export type GeneratedFile = { path: string; content: string };
 export type FileChange = { path: string; status: "A" | "M" | "D" };
@@ -232,4 +233,40 @@ export async function getGeneration(projectId: string, generationId: string, tok
   if (!isRecord(value) || value.id !== generationId || typeof value.status !== "string" || !["pending", "failed"].includes(value.status) || typeof value.hasSavedResult !== "boolean" ||
     !(value.status === "pending" ? value.errorCode === null : value.errorCode === null || typeof value.errorCode === "string")) throw new Error("Invalid generation status response.");
   return value as GenerationStatus;
+}
+
+// GET is deliberately read-only: restoring a workspace must never spend model tokens.
+export async function getRequirementBrief(projectId: string, access: ProjectAccess, signal?: AbortSignal): Promise<RequirementBrief | null> {
+  const body = await request(`${projectPath(projectId)}/brief`, access, { signal });
+  if (body.brief !== null && !isRequirementBrief(body.brief)) throw new Error("Invalid requirement brief response.");
+  return body.brief;
+}
+
+// Preserve the caller-owned key/body through session refresh and explicit transport retry.
+export async function assessRequirementBrief(projectId: string, access: ProjectAccess, key: string, input: BriefInput): Promise<RequirementBrief> {
+  const body = await request(`${projectPath(projectId)}/brief`, access, {
+    method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": key },
+    body: JSON.stringify(input), signal: AbortSignal.timeout(60_000),
+  });
+  if (!isRequirementBrief(body.brief) || body.brief.version !== input.expectedVersion + 1) throw new Error("Invalid assessment response. Preserve the request key and reload.");
+  return body.brief;
+}
+
+// Confirm/abandon never accept a browser-edited brief; the saved ID identifies the exact version.
+export async function updateRequirementBrief(projectId: string, briefId: string, action: "confirm" | "abandon", access: ProjectAccess): Promise<RequirementBrief> {
+  const body = await request(`${projectPath(projectId)}/brief${projectPath(briefId)}/${action}`, access, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: "{}", signal: AbortSignal.timeout(10_000),
+  });
+  if (!isRequirementBrief(body.brief) || body.brief.id !== briefId) throw new Error("Invalid brief action response. Reload saved requirements.");
+  return body.brief;
+}
+
+// Initial generation uses server-loaded approved text; no editable prompt travels in this action.
+export async function generateConfirmedBrief(projectId: string, briefId: string, access: ProjectAccess, key: string): Promise<Generation | PendingGenerationStatus> {
+  const body = await request(`${projectPath(projectId)}/brief${projectPath(briefId)}/generations`, access, {
+    method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": key }, body: "{}",
+    signal: AbortSignal.timeout(100_000),
+  });
+  if (!isGeneration(body.generation) && !isPendingGeneration(body.generation)) throw new Error("Invalid generation response. Keep the request key and check again.");
+  return body.generation;
 }

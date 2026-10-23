@@ -1,7 +1,7 @@
 import type { GenerationBody } from "./project-api";
 
 export type PendingGeneration = {
-  projectId: string; key: string; body: GenerationBody; generationId?: string;
+  projectId: string; key: string; body: GenerationBody; generationId?: string; briefId?: string;
 };
 
 // The user/project-scoped key prevents a different account from restoring this intent.
@@ -28,8 +28,9 @@ export function readPendingGeneration(userId: string, projectId: string): Pendin
       (value.body.prompt !== undefined && (typeof value.body.prompt !== "string" || value.body.prompt.trim().length < 10 || value.body.prompt.length > 1000)) ||
       (value.body.baseRevisionId !== undefined && (typeof value.body.baseRevisionId !== "string" || !/^[a-f\d]{24}$/i.test(value.body.baseRevisionId) || typeof value.body.prompt !== "string")) ||
       (value.generationId !== undefined && (typeof value.generationId !== "string" || !/^[a-f\d]{24}$/i.test(value.generationId)))) return null;
+    if (value.briefId !== undefined && (typeof value.briefId !== "string" || !/^[a-f\d]{24}$/i.test(value.briefId) || Object.keys(value.body).length > 0)) return null;
     // Project only expected fields so extra local-storage content cannot enter a request.
-    return { projectId, key: value.key, body: { ...(value.body.prompt !== undefined ? { prompt: value.body.prompt } : {}), ...(value.body.baseRevisionId ? { baseRevisionId: value.body.baseRevisionId } : {}) }, ...(value.generationId ? { generationId: value.generationId } : {}) };
+    return { projectId, key: value.key, body: { ...(value.body.prompt !== undefined ? { prompt: value.body.prompt } : {}), ...(value.body.baseRevisionId ? { baseRevisionId: value.body.baseRevisionId } : {}) }, ...(value.generationId ? { generationId: value.generationId } : {}), ...(value.briefId ? { briefId: value.briefId } : {}) };
   } catch { return null; }
 }
 

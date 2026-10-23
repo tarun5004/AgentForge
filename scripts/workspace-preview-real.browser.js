@@ -22,9 +22,9 @@ async (page) => {
           if (path.endsWith('/refresh')) state.refreshes++;
         } else if (path === '/api/projects' && request.method() === 'POST') {
           state.projectId = (await response.json()).project.id;
-        } else if (/^\/api\/projects\/[a-f\d]{24}\/generations$/.test(path) && request.method() === 'POST') {
+        } else if (/^\/api\/projects\/[a-f\d]{24}(?:\/brief\/[a-f\d]{24})?\/generations$/.test(path) && request.method() === 'POST') {
           state.generations.push((await response.json()).generation);
-          state.firstRequest ??= { key: request.headers()['idempotency-key'], body: request.postData() };
+          state.firstRequest ??= { path, key: request.headers()['idempotency-key'], body: request.postData() };
         } else if (path.startsWith('/api/runs')) {
           const { run } = await response.json();
           if (run) state.runs.set(run.id, run);
@@ -70,7 +70,7 @@ async (page) => {
         if (!state.refreshes || state.generations.length !== 2) throw new Error('Refresh regenerated or failed to restore the session.');
         if (![...state.runs.values()].some(run => run.state === 'failed' && run.errorCode === 'BUILD_FAILED')) throw new Error('Broken source did not produce a real build failure.');
         if (![...state.runs.values()].some(run => run.state === 'cancelled' && run.revisionId === first.revisionId)) throw new Error('Stop was not acknowledged.');
-        const replay = await fetch(`${base}/generations`, { method: 'POST', headers: { ...headers, 'Idempotency-Key': state.firstRequest.key },
+        const replay = await fetch(`http://127.0.0.1:4311${state.firstRequest.path}`, { method: 'POST', headers: { ...headers, 'Idempotency-Key': state.firstRequest.key },
           ...(state.firstRequest.body ? { body: state.firstRequest.body } : {}) });
         if (replay.status !== 201 || (await replay.json()).generation.revisionId !== first.revisionId) throw new Error('Same-key replay lost v1.');
       }
@@ -92,6 +92,8 @@ async (page) => {
     await prompt.fill('Build a portfolio website page');
     // Covers keyboard submission through the real authenticated Project API.
     await prompt.press('Enter');
+    await page.getByRole('button', { name: 'Confirm brief', exact: true }).click();
+    await page.getByRole('button', { name: 'Generate code', exact: true }).click();
     await page.getByText('Viewing v1', { exact: true }).waitFor();
     await page.getByRole('button', { name: 'Preview', exact: true }).click();
     const frame = dialog.frameLocator('iframe');
