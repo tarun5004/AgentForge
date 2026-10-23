@@ -1,4 +1,4 @@
-const suites = ['all', 'loop', 'recovery', 'state', 'mocked', 'session', 'preview-real'];
+const suites = ['all', 'loop', 'recovery', 'state', 'mocked', 'session', 'preview-real', 'build-gate'];
 
 // Refuse typos/extra flags instead of silently running a different verification scope.
 export function parseOptions(args) {
@@ -10,7 +10,7 @@ export function parseOptions(args) {
     seen.add(flag);
     if (flag === '--suite') {
       options.suite = args[++index];
-      if (!suites.includes(options.suite)) throw new Error('Unknown suite; use all, loop, recovery, state, mocked, session or preview-real.');
+      if (!suites.includes(options.suite)) throw new Error('Unknown suite; use all, loop, recovery, state, mocked, session, preview-real or build-gate.');
     } else if (flag === '--fail-after-start') options.failAfterStart = true;
     else if (flag === '--help') options.help = true;
     else throw new Error('Unknown verification option.');
@@ -35,4 +35,11 @@ export function assertEmptyCounts(counts) {
   if (['users', 'projects', 'revisions', 'generations'].some(name => counts[name] !== 0)) {
     throw new Error('Dedicated verification database is not empty; no records were deleted.');
   }
+}
+
+// Operator-selected existing images only; the verifier never pulls/builds images or accepts shell fragments.
+export function runnerImage(value) {
+  const image = value ?? 'agentforge-preview-runner:local';
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_./:@-]{0,200}$/.test(image)) throw new Error('Invalid trusted runner image name.');
+  return image;
 }

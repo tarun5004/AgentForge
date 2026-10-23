@@ -6,7 +6,7 @@ import { once } from 'node:events';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import mongoose from 'mongoose';
-import { assertEmptyCounts, parseOptions, validateTestUri } from './workspace-verification.config.mjs';
+import { assertEmptyCounts, parseOptions, runnerImage, validateTestUri } from './workspace-verification.config.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const children = new Set();
@@ -145,11 +145,12 @@ async function stopFixture() {
 
 // One fresh fixture per real suite prevents another suite's records from hiding duplicate writes.
 async function realSuite(suite, uri) {
-  const preview = suite === 'preview-real';
+  const preview = ['preview-real', 'build-gate'].includes(suite);
   await stopNext();
   await emptyDatabase();
   fixture = start(process.execPath, [resolve(root, 'node_modules/tsx/dist/cli.mjs'), 'tests/frontend-history.fixture.mts'],
-    { ...process.env, AGENTFORGE_TEST_MONGODB_URI: uri, AGENTFORGE_TEST_PREVIEW: preview ? '1' : '0', LOG_LEVEL: 'silent' });
+    { ...process.env, AGENTFORGE_TEST_MONGODB_URI: uri, AGENTFORGE_TEST_PREVIEW: preview ? '1' : '0',
+      AGENTFORGE_TEST_BUILD_GATE: suite === 'build-gate' ? '1' : '0', LOG_LEVEL: 'silent' });
   await ready(fixture, 'http://127.0.0.1:4312/__fixture', value => value.fixtureId === 'agentforge-real-revision-loop-v1');
   try {
     await startNext(preview);
@@ -162,24 +163,25 @@ async function realSuite(suite, uri) {
 async function main() {
   const options = parseOptions(process.argv.slice(2));
   if (options.help) {
-    console.info('Set an explicit local AGENTFORGE_TEST_MONGODB_URI, then run with --suite all|loop|recovery|state|mocked|session|preview-real. preview-real is opt-in and needs Linux Docker + agentforge-preview-runner:local. --fail-after-start verifies failure cleanup.');
+    console.info('Set an explicit local AGENTFORGE_TEST_MONGODB_URI, then use --suite all|loop|recovery|state|mocked|session|preview-real|build-gate. Docker suites are opt-in and need Linux Docker plus an existing trusted PREVIEW_RUNNER_IMAGE (default agentforge-preview-runner:local). --fail-after-start verifies failure cleanup.');
     return;
   }
   if (process.platform !== 'win32') throw new Error('This launcher currently requires Windows PowerShell.');
   const uri = process.env.AGENTFORGE_TEST_MONGODB_URI;
   const database = validateTestUri(uri);
   for (const port of [3102, 4310, 4311, 4312]) await assertFreePort(port);
-  const preview = options.suite === 'preview-real';
+  const preview = ['preview-real', 'build-gate'].includes(options.suite);
   if (preview) {
     for (const port of [5310, 5311]) await assertFreePort(port);
     // Inspect only; the launcher never builds/pulls images or deletes unknown containers.
-    for (const args of [['info', '--format', '{{.OSType}}'], ['image', 'inspect', 'agentforge-preview-runner:local', '--format', '{{.Id}}'],
+    for (const args of [['info', '--format', '{{.OSType}}'], ['image', 'inspect', runnerImage(process.env.PREVIEW_RUNNER_IMAGE), '--format', '{{.Id}}'],
       ['ps', '-aq', '--filter', 'label=agentforge.local-preview=true']]) {
       const result = spawnSync('docker', args, { windowsHide: true, timeout: 15_000, encoding: 'utf8' });
       if (result.status !== 0 || (args[0] === 'info' && result.stdout.trim() !== 'linux') ||
           (args[0] === 'ps' && result.stdout.trim())) throw new Error('Preview preflight failed: check Linux Docker, trusted runner image and orphan containers. Nothing was removed.');
     }
     report.boundaries = { auth: 'real', project: 'real', mongo: 'dedicated-test-db', ai: 'deterministic-transport-fixture', execution: 'real-docker', preview: 'real-browser-iframe' };
+    report.buildGate = options.suite === 'build-gate';
   }
   client = new mongoose.mongo.MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
   await client.connect();
@@ -192,7 +194,8 @@ async function main() {
   if (['all', 'mocked', 'session'].includes(options.suite) || options.failAfterStart) await startNext(preview);
   if (options.failAfterStart) {
     fixture = start(process.execPath, [resolve(root, 'node_modules/tsx/dist/cli.mjs'), 'tests/frontend-history.fixture.mts'],
-      { ...process.env, AGENTFORGE_TEST_MONGODB_URI: uri, AGENTFORGE_TEST_PREVIEW: preview ? '1' : '0', LOG_LEVEL: 'silent' });
+      { ...process.env, AGENTFORGE_TEST_MONGODB_URI: uri, AGENTFORGE_TEST_PREVIEW: preview ? '1' : '0',
+        AGENTFORGE_TEST_BUILD_GATE: options.suite === 'build-gate' ? '1' : '0', LOG_LEVEL: 'silent' });
     await ready(fixture, 'http://127.0.0.1:4312/__fixture', value => value.fixtureId === 'agentforge-real-revision-loop-v1');
     throw new Error('Deliberate failure after server startup.');
   }
@@ -202,7 +205,7 @@ async function main() {
       report.suites.push({ suite, passed: true });
     }
   }
-  for (const suite of options.suite === 'all' ? ['loop', 'recovery', 'state'] : ['loop', 'recovery', 'state', 'preview-real'].filter(name => name === options.suite)) {
+  for (const suite of options.suite === 'all' ? ['loop', 'recovery', 'state'] : ['loop', 'recovery', 'state', 'preview-real', 'build-gate'].filter(name => name === options.suite)) {
     await realSuite(suite, uri);
   }
 }

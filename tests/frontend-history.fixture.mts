@@ -20,11 +20,16 @@ Object.assign(process.env, {
   REFRESH_TOKEN_SECRET: "frontend-fixture-refresh-not-for-production",
   ACCESS_TOKEN_EXPIRY: "15m", REFRESH_TOKEN_EXPIRY: "1h",
   AI_ORCHESTRATOR_URL: "http://127.0.0.1:4312", INTERNAL_SERVICE_TOKEN: "frontend-fixture-internal",
+  // Isolate mode from developer env: old suites stay ungated; only the explicit gated suite enables it.
+  BUILD_GATE_ENABLED: process.env.AGENTFORGE_TEST_BUILD_GATE === "1" ? "true" : "false",
+  EXECUTION_CHECK_TOKEN: "frontend-fixture-execution-token-0001", EXECUTION_SERVICE_URL: "http://127.0.0.1:5310",
 });
 const { createApp: createAuthApp } = await import("../auth-service/src/app/app.ts");
 const { createApp: createProjectApp } = await import("../project-service/src/app/app.ts");
 await Promise.all(Object.values(mongoose.models).map((model) => model.init()));
 const previewEnabled = process.env.AGENTFORGE_TEST_PREVIEW === "1";
+const buildGateEnabled = process.env.AGENTFORGE_TEST_BUILD_GATE === "1";
+if (buildGateEnabled && !previewEnabled) throw new Error("Build-gate browser tests require the real preview controller.");
 const initialFiles = [
   { path: "app/page.tsx", content: "export default function Page() { return <main>Initial portfolio</main>; }" },
   { path: "app/globals.css", content: "body { color: white; }" },
@@ -39,10 +44,11 @@ export default function Page() {
   return <main><h1>Zero-cost portfolio preview</h1><button onClick={() => setCount(count + 1)}>Count {count}</button></main>;
 }`;
 }
-let stopPreview: (() => Promise<void>) | undefined;
+if (buildGateEnabled) initialFiles[1]!.content = "body { background: rgb(12, 34, 56); color: white; }";
+let previewController: Awaited<ReturnType<typeof import("./frontend-preview.fixture.mts").startPreviewFixture>> | undefined;
 if (previewEnabled) {
   const { startPreviewFixture } = await import("./frontend-preview.fixture.mts");
-  stopPreview = await startPreviewFixture();
+  previewController = await startPreviewFixture(buildGateEnabled);
 }
 const aiRequests: { prompt: string; baseVersion: number | null; baseMatchesInitial: boolean }[] = [];
 const fixtureEmail = "frontend-slice5-20261012@agentforge.test";
@@ -53,6 +59,15 @@ let releaseGeneration: (() => void) | undefined;
 
 // Real Auth/Project APIs and Mongo run unchanged; only the paid AI network boundary is replaced.
 const aiServer = createServer((request, response) => {
+  if (request.method === "POST" && ["/__fixture/hold-check", "/__fixture/release-check"].includes(request.url ?? "")) {
+    if (!buildGateEnabled || !previewController) { response.writeHead(409).end(); return; }
+    try {
+      if (request.url === "/__fixture/hold-check") previewController.holdNextCheck();
+      else previewController.releaseCheck();
+      response.end("ok");
+    } catch { response.writeHead(409).end(); }
+    return;
+  }
   // Deterministic test barriers replace timing guesses; they exist only in this fixture.
   if (request.method === "POST" && request.url === "/__fixture/hold-next") {
     if (holdNextGeneration || releaseGeneration) { response.writeHead(409).end(); return; }
@@ -130,7 +145,8 @@ async function readFixtureStatus(response: import("node:http").ServerResponse) {
     const counts: Record<string, number> = {};
     for (const name of ["users", "projects", "revisions", "generations"]) counts[name] = await db.collection(name).countDocuments({});
     response.setHeader("Content-Type", "application/json");
-    response.end(JSON.stringify({ fixtureId, databaseName: target.pathname.slice(1), counts, aiRequests, heldGeneration: !!releaseGeneration, previewEnabled }));
+    response.end(JSON.stringify({ fixtureId, databaseName: target.pathname.slice(1), counts, aiRequests, heldGeneration: !!releaseGeneration,
+      previewEnabled, buildGateEnabled, checks: previewController?.checkEvidence() ?? null }));
   } catch { response.writeHead(503).end("Fixture status unavailable."); }
 }
 // Remove only this fixture account and its owned records; never drop the database or other data.
@@ -140,7 +156,9 @@ async function shutdown() {
   // A failed browser must not leave server.close waiting on a held model request forever.
   releaseGeneration?.();
   process.exitCode = await finishFixtureCleanup(async () => {
-    await stopPreview?.();
+    await previewController?.stop();
+    const { drainCandidatePublications } = await import("../project-service/src/services/generation.build-gate.ts");
+    await drainCandidatePublications();
     await Promise.all([aiServer, authServer, projectServer].map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
     const users = await db.collection("users").find({ email: { $in: fixtureEmails } }, { projection: { _id: 1 } }).toArray();
     const ownerIds = users.map((user) => user._id.toString());
