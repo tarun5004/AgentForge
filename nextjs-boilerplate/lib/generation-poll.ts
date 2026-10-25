@@ -15,6 +15,7 @@ export function waitForPoll(signal: AbortSignal): Promise<void> {
 export async function pollGeneration(
   generationId: string, read: (signal: AbortSignal) => Promise<GenerationStatus>, signal: AbortSignal,
   pause = waitForPoll,
+  onProgress?: (result: GenerationStatus) => void,
 ): Promise<Exclude<GenerationStatus, { status: "pending" }>> {
   for (let attempt = 0; attempt < 180; attempt++) {
     signal.throwIfAborted();
@@ -30,6 +31,7 @@ export async function pollGeneration(
     }
     signal.throwIfAborted();
     if (result.id !== generationId) throw new Error("Generation status identity changed.");
+    onProgress?.(result);
     if (result.status !== "pending") return result;
   }
   throw new ProjectApiError("Attempt is still pending. Keep the same key and check again.", 503, "GENERATION_IN_PROGRESS", generationId);

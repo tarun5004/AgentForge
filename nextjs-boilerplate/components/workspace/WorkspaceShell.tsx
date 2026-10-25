@@ -25,8 +25,15 @@ export function WorkspaceShell({ selection }: { selection: WorkspaceSelection })
   const [isDesktop, setIsDesktop] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState("");
+  const [previewTarget, setPreviewTarget] = useState<string | null>(null);
+  const previewKey = `${workspace.project?.id}:${workspace.revision?.id}`;
   const generatedFiles = createWorkspaceFiles(workspace.revision?.files ?? [], workspace.revision?.fileChanges ?? null);
   const editorMessage = workspace.loadError || (workspace.loadBusy ? "Loading saved files..." : "No generated files. Submit a prompt or choose a saved revision.");
+
+  // Chat and toolbar open the same selected revision; navigation cannot reuse a different target.
+  function openPreview() {
+    if (workspace.project && workspace.revision && !workspace.busy && !workspace.loadBusy) setPreviewTarget(previewKey);
+  }
 
   // Signing out is disabled during generation so its request identity cannot be lost mid-submit.
   async function handleSignOut() {
@@ -92,7 +99,8 @@ export function WorkspaceShell({ selection }: { selection: WorkspaceSelection })
           </button>
           <PreviewLauncher key={`${user?.id}:${workspace.project?.id}:${workspace.revision?.id}`}
             projectId={workspace.project?.id ?? null} revisionId={workspace.revision?.id ?? null}
-            disabled={workspace.busy || workspace.loadBusy || isSigningOut} />
+            disabled={workspace.busy || workspace.loadBusy || isSigningOut}
+            open={previewTarget === previewKey} onOpen={openPreview} onClose={() => setPreviewTarget(null)} onActivity={workspace.recordPreview} />
         </div>
       </header>
 
@@ -110,12 +118,12 @@ export function WorkspaceShell({ selection }: { selection: WorkspaceSelection })
           <Group id="chat-and-workspace" orientation="horizontal" className="h-full">
             <Panel
               id="chat"
-              defaultSize={310}
-              minSize={240}
-              maxSize="40%"
+              defaultSize={400}
+              minSize={320}
+              maxSize="45%"
               groupResizeBehavior="preserve-pixel-size"
             >
-              <ChatPanel workspace={workspace} />
+              <ChatPanel workspace={workspace} onPreview={openPreview} />
             </Panel>
 
             <ResizeHandle direction="horizontal" />
@@ -128,7 +136,7 @@ export function WorkspaceShell({ selection }: { selection: WorkspaceSelection })
       ) : (
         // Small screens keep the original stacked layout without drag handles.
         <div className="grid min-h-[calc(100dvh-44px)] grid-cols-1">
-          <ChatPanel workspace={workspace} />
+          <ChatPanel workspace={workspace} onPreview={openPreview} />
           <CodeWorkspace key={workspace.revision?.id ?? "empty"} isResizable={false} files={generatedFiles} changes={workspace.revision?.fileChanges ?? null} message={editorMessage} />
         </div>
       )}

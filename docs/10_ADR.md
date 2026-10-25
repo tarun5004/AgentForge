@@ -73,3 +73,11 @@
 **Why:** Browser state/stateless model calls cannot restore consent or protect retries. One atomic reservation fits standalone MongoDB without a new queue, service, mutable latest pointer or a multi-document transaction around AI. Existing SDK and database tools suffice; no new dependency.
 
 **Consequence:** Pending ambiguity requires read/replay or explicit abandonment, not an automatic paid retry. A new deliberate key can spend again; cancellation/refunds are not promised. Current consent is checked at admission, not a cross-document transaction that cancels future edits. Historical generation replay remains possible; follow-ups stay on the selected-base legacy API. Frontend conversation and live-model quality remain separate A3/A4 work.
+
+## ADR-010: One evidence-driven conversation, without another agent platform
+
+**Decision (2026-10-25):** Present user messages, requirements, observed service activity, immutable results and Preview actions in one chat. Keep a small account/project-scoped browser journal for display history. Backend Project/Brief/Revision records remain authoritative for ownership, context, confirmation, files and publication. Reconstruct missing revision summaries, not missing tool events. Continue bounded GET polling rather than adding SSE, queues or an event store for this local showcase.
+
+**Why:** Replacing one notice loses the working story; adding fake progress would misrepresent execution. A bounded display journal and existing status/build evidence make the workflow understandable without changing its generation logic or introducing another service/dependency. The proposed cross-service tool-provenance addition was removed during audit: it was unnecessary scope for a sidebar presentation change. No live skill/tool event is shown without an API source.
+
+**Consequence:** Local chat is not cross-device synchronization, model memory, hidden reasoning, per-token streaming or a Codex-equivalent agent. Storage failures/trimming/interruption are visible; refresh never automatically starts AI. Requirements use saved cumulative answers and edits use the selected snapshot, not an ever-growing browser transcript. Only actual build proof earns a build-pass label. Restricted Markdown and the existing isolated Preview sandbox remain in place. No new model call is added by the UI.

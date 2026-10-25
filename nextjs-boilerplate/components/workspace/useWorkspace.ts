@@ -15,12 +15,24 @@ import {
 import { workspaceUrl, type WorkspaceSelection } from "@/lib/workspace-selection";
 import type { SessionAccess } from "@/lib/session-request";
 import { pollGeneration } from "@/lib/generation-poll";
+import { generationActivity } from "@/lib/conversation";
+import { useConversation } from "./useConversation";
 import {
   briefAnswerDrafts, isBriefAnswers, readPendingBrief, savePendingBrief, clearPendingBrief,
   type BriefAnswer, type PendingBrief, type RequirementBrief,
 } from "@/lib/requirement-brief";
 
 export type WorkspaceSnapshot = Pick<Revision, "id" | "version" | "parentRevisionId" | "sourcePrompt" | "summary" | "files" | "fileChanges" | "model" | "usage" | "validation" | "buildVerification">;
+
+// Saved proof controls the labels; opening a historical revision cannot invent build/tool success.
+function revisionDetails(snapshot: WorkspaceSnapshot): string[] {
+  return [
+    `Saved v${snapshot.version} · ${snapshot.files.length} files · ${snapshot.model ?? "Model unknown (legacy)"}${snapshot.usage ? ` · ${snapshot.usage.totalTokens} tokens` : " · Usage unknown"}`,
+    snapshot.parentRevisionId ? `Parent revision: ${snapshot.parentRevisionId}` : snapshot.validation ? "Initial revision" : "Parent unknown (legacy)",
+    snapshot.buildVerification ? "Static build passed for this snapshot." : "Static build not verified for this revision.",
+    ...(snapshot.fileChanges?.map((file) => `${file.status} ${file.path}`) ?? ["Change metadata unavailable (legacy)."]),
+  ];
+}
 
 // Preserve the committed POST snapshot if a later metadata reload fails; no dates are invented.
 function snapshotFromGeneration(result: Generation): WorkspaceSnapshot {
@@ -52,6 +64,9 @@ export function useWorkspace(
   invalidateSession: () => void,
 ) {
   const router = useRouter();
+  const chat = useConversation(userId);
+  const restoreChat = chat.restore;
+  const writeChat = chat.write;
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectCursor, setProjectCursor] = useState<string | null>(null);
   const [listBusy, setListBusy] = useState(true);
@@ -154,14 +169,21 @@ export function useWorkspace(
           ? await getRevision(savedProject.id, savedProject.latestRevision.id, session!, controller.signal) : null);
         let savedBrief: RequirementBrief | null = null;
         let briefReadError = "";
-        // Existing revisions keep their selected-base flow; only drafts need initial requirements.
-        if (!snapshot && !savedProject.latestRevision) {
+        // Requirements remain part of the conversation even after its first revision is published.
+        if (savedProject) {
           try { savedBrief = await getRequirementBrief(savedProject.id, session!, controller.signal); }
           catch (error) { if (!controller.signal.aborted) briefReadError = reportError(error); }
         }
         if (controller.signal.aborted || !mounted.current) return;
         setProject(savedProject); setRevision(snapshot); setRevisions(history.revisions); setRevisionCursor(history.nextCursor);
         setLoadedKey(selectionKey);
+        restoreChat(savedProject, history.revisions);
+        if (snapshot) writeChat(savedProject.id, { id: `revision:${snapshot.id}`, role: "assistant", kind: "result",
+          text: snapshot.summary, revisionId: snapshot.id, details: revisionDetails(snapshot), state: "done" });
+        if (savedBrief?.assessment) writeChat(savedProject.id, {
+          id: `requirements:${savedBrief.id}`, role: "assistant", kind: "requirements", text: savedBrief.assessment.message,
+          details: [savedBrief.assessment.brief, ...savedBrief.assessment.questions], state: "done", createdAt: savedBrief.createdAt,
+        });
         const restoredIntent = readPendingGeneration(userId!, savedProject.id);
         setPending(restoredIntent);
         setBrief(savedBrief); setBriefError(briefReadError);
@@ -181,7 +203,7 @@ export function useWorkspace(
     }
     void loadSelection();
     return () => controller.abort();
-  }, [session, userId, busy, selection.projectId, selection.revisionId, selection.error, selectionKey, reload, reportError]);
+  }, [session, userId, busy, selection.projectId, selection.revisionId, selection.error, selectionKey, reload, reportError, restoreChat, writeChat]);
 
   // Invalidate old GETs immediately, before route props arrive from Next navigation.
   function navigate(projectId: string | null, revisionId: string | null = null) {
@@ -220,6 +242,7 @@ export function useWorkspace(
         savedProject = await createProject(text, session);
         if (!mounted.current) return;
         setProject(savedProject); setRevision(null); setRevisions([]); setPrompt("");
+        chat.restore(savedProject, []);
         setLoadedKey(workspaceUrl(savedProject.id));
         router.replace(workspaceUrl(savedProject.id), { scroll: false });
         void loadProjectPage();
@@ -236,6 +259,11 @@ export function useWorkspace(
           savePendingBrief(userId, intent); setBriefIntent(intent);
         }
         setNotice("Assessing requirements. Code generation has not started.");
+        intent.body.answers.forEach((answer, index) => chat.write(savedProject!.id, {
+          id: `brief:${intent!.key}:answer:${index}`, role: "user", kind: "message",
+          text: `${answer.question}\n${answer.answer}`,
+        }));
+        chat.activity(savedProject.id, `brief:${intent.key}`, "Requirements assessment requested.", "working");
         result = await assessRequirementBrief(intent.projectId, session, intent.key, intent.body);
         if (result.status !== "pending") {
           clearPendingBrief(userId, savedProject.id); setBriefIntent(null);
@@ -248,6 +276,17 @@ export function useWorkspace(
         }
       }
       if (!mounted.current) return;
+      if (result?.assessment) chat.write(savedProject.id, {
+        id: `requirements:${result.id}`, role: "assistant", kind: "requirements",
+        text: result.assessment.message, details: [result.assessment.brief, ...result.assessment.questions], state: "done",
+      });
+      if (intent) chat.activity(savedProject.id, `brief:${intent.key}`, result?.status === "completed"
+        ? "Requirements assessment completed." : "Assessment not confirmed. Reload before continuing.",
+      result?.status === "completed" ? "done" : "unknown");
+      if (action === "confirm" && result) chat.activity(savedProject.id, `confirmation:${result.id}`,
+        "Brief confirmed by you. Code generation has not started.", "done");
+      if (action === "abandon" && result) chat.activity(savedProject.id, `abandon-brief:${result.id}`,
+        "Assessment abandoned explicitly. This does not refund a provider call.", "done");
       setBrief(result); setAnswerDrafts(briefAnswerDrafts(result));
       answerSnapshot.current = `${savedProject.id}:${result?.id ?? "empty"}`;
       setNotice(result?.confirmedAt ? "Brief confirmed. Choose Generate code when ready." : "Requirements saved. Review the next action below.");
@@ -259,6 +298,7 @@ export function useWorkspace(
         clearPendingBrief(userId, intent.projectId); setBriefIntent(null);
       }
       const message = reportError(error);
+      if (savedProject) chat.activity(savedProject.id, `brief:${intent?.key ?? "control"}`, message, "unknown");
       setBriefError(message); setSubmitError(message);
       if (!savedProject) void loadProjectPage();
     } finally {
@@ -277,7 +317,9 @@ export function useWorkspace(
     try {
       const page = await listRevisions(project.id, session, revisionCursor, controller.signal);
       if (controller.signal.aborted || !mounted.current) return;
-      setRevisions((current) => [...current, ...page.revisions.filter((item) => !current.some((saved) => saved.id === item.id))]);
+      const history = [...revisions, ...page.revisions.filter((item) => !revisions.some((saved) => saved.id === item.id))];
+      setRevisions(history);
+      chat.restore(project, history);
       setRevisionCursor(page.nextCursor);
     } catch (error) {
       if (!controller.signal.aborted && mounted.current) setLoadError(reportError(error));
@@ -287,7 +329,7 @@ export function useWorkspace(
   }
 
   // A committed response is usable even if its follow-up history refresh is unavailable.
-  function acceptGeneration(result: Generation, savedProject: Project) {
+  function acceptGeneration(result: Generation, savedProject: Project, attemptKey?: string) {
     if (!mounted.current) return;
     // The POST proves this version exists even if refreshing latest metadata fails afterward.
     setProject({ ...savedProject, status: "ready", latestRevision: { id: result.revisionId, version: result.revisionVersion } });
@@ -295,6 +337,12 @@ export function useWorkspace(
     setLoadedKey(workspaceUrl(savedProject.id, result.revisionId));
     setPrompt(""); setSubmitError(""); setPending(null);
     setNotice(`Revision v${result.revisionVersion} committed. ${result.files.length} files saved.`);
+    if (attemptKey) chat.activity(savedProject.id, `generation:${attemptKey}`,
+      `Revision v${result.revisionVersion} is ready.`, "done", generationActivity(result));
+    chat.write(savedProject.id, { id: `revision:${result.revisionId}`, role: "assistant", kind: "result",
+      text: result.summary, state: "done", revisionId: result.revisionId,
+      details: revisionDetails(snapshotFromGeneration(result)),
+    });
     router.replace(workspaceUrl(savedProject.id, result.revisionId), { scroll: false });
     void loadProjectPage();
   }
@@ -329,11 +377,23 @@ export function useWorkspace(
         savePendingGeneration(userId, intent); setPending(intent);
       }
       if (!savedProject || savedProject.id !== intent.projectId) throw new Error("Reload this project before retrying.");
+      chat.write(savedProject.id, { id: `generation:${intent.key}:request`, role: "user", kind: "message",
+        text: intent.body.prompt ?? "Generate code from the confirmed brief.",
+        details: intent.body.baseRevisionId ? [`Selected base: ${intent.body.baseRevisionId}`] : undefined,
+      });
+      chat.activity(savedProject.id, `generation:${intent.key}`, "Generation requested. Waiting for validated model output.", "working");
       setNotice(intent.body.baseRevisionId ? "Generating changes against the frozen selected revision..." : "Project saved. Generating its first revision...");
       let result: GenerationStatus = intent.briefId
         ? await generateConfirmedBrief(intent.projectId, intent.briefId, session, intent.key)
         : await generateProject(intent.projectId, session, intent.key, intent.body);
       if (!mounted.current) return;
+      const activityId = `generation:${intent.key}`;
+      const activityProjectId = intent.projectId;
+      // Polling reports persisted evidence; it never guesses when a tool or build has finished.
+      const recordProgress = (status: GenerationStatus) => chat.activity(activityProjectId, activityId,
+        status.status === "pending" ? "Waiting for verification/publication; saved files stay unchanged." : "Generation status received.",
+        status.status === "pending" ? "working" : status.status === "failed" ? "error" : "done", generationActivity(status));
+      recordProgress(result);
       if (result.status === "pending") {
         intent = { ...intent, generationId: result.id };
         savePendingGeneration(userId, intent); setPending(intent);
@@ -344,16 +404,17 @@ export function useWorkspace(
         const projectId = intent.projectId;
         const generationId = result.id;
         result = await pollGeneration(generationId, () => getGeneration(projectId, generationId, session,
-          AbortSignal.any([signal, AbortSignal.timeout(10_000)])), signal);
+          AbortSignal.any([signal, AbortSignal.timeout(10_000)])), signal, undefined, recordProgress);
       }
       if (result.status === "failed") throw new ProjectApiError("Generation or build verification failed. Saved files remain unchanged.", 502, "GENERATION_FAILED", result.id);
       clearPendingGeneration(userId, intent.projectId);
-      acceptGeneration(result, savedProject);
+      acceptGeneration(result, savedProject, intent.key);
     } catch (error) {
       if (!mounted.current) return;
       if (intent) {
         if (error instanceof ProjectApiError && error.generationId) intent = { ...intent, generationId: error.generationId };
         const terminal = isTerminalGenerationError(error);
+        chat.activity(intent.projectId, `generation:${intent.key}`, errorMessage(error), terminal ? "error" : "unknown");
         if (terminal) { clearPendingGeneration(userId, intent.projectId); setPending(null); }
         else { savePendingGeneration(userId, intent); setPending(intent); setNotice("Completion is not confirmed. Check status or retry the same attempt."); }
         setSubmitError(`${reportError(error)} ${terminal ? "Saved files are unchanged; a new submission uses a new key." : "Outcome not confirmed. Check status or retry this same attempt."}`);
@@ -376,11 +437,15 @@ export function useWorkspace(
       if (!mounted.current) return;
       if (result.status === "ready") {
         if (userId) clearPendingGeneration(userId, pending.projectId);
-        acceptGeneration(result, project);
+        acceptGeneration(result, project, pending.key);
       } else if (result.status === "failed") {
         if (userId) clearPendingGeneration(userId, pending.projectId);
         setPending(null); setSubmitError(`Attempt failed: ${result.errorCode ?? "GENERATION_FAILED"}. Saved files remain available.`);
-      } else setNotice(result.hasSavedResult ? "Output is saved; verification or publication is not confirmed. Check status or retry the same attempt." : "Attempt is pending; completion is not yet confirmed.");
+        chat.activity(project.id, `generation:${pending.key}`, "Attempt failed. Saved files remain available.", "error", generationActivity(result));
+      } else {
+        setNotice(result.hasSavedResult ? "Output is saved; verification or publication is not confirmed. Check status or retry the same attempt." : "Attempt is pending; completion is not yet confirmed.");
+        chat.activity(project.id, `generation:${pending.key}`, "Status checked; completion is not confirmed.", "unknown", generationActivity(result));
+      }
     } catch (error) { if (mounted.current) setSubmitError(reportError(error)); }
     finally { submissionLock.current = false; if (mounted.current) setBusy(false); }
   }
@@ -389,12 +454,20 @@ export function useWorkspace(
   function abandonPending() {
     if (!pending || !userId || busy || !window.confirm("This does not cancel server work. A new attempt may spend tokens again. Abandon this request key?")) return;
     clearPendingGeneration(userId, pending.projectId); setPending(null);
+    chat.activity(pending.projectId, `generation:${pending.key}`, "Attempt abandoned locally. Server work was not cancelled.", "unknown");
     setPrompt(pending.body.prompt ?? project?.initialPrompt ?? "");
     setNotice("Old attempt abandoned locally. Review the latest revision before submitting again.");
     setReload((value) => value + 1);
   }
 
   return {
+    conversation: visible && chat.view.userId === userId && chat.view.projectId === project?.id ? chat.view.conversation : null,
+    recordPreview: chat.activity,
+    // Clearing UI history is separate from deleting saved work or abandoning a paid request.
+    clearLocalChat: () => {
+      if (!project || busy || !window.confirm("Clear this browser's chat messages? Saved backend revisions and pending request keys will be kept.")) return;
+      chat.clear(project, revisions); setReload((value) => value + 1);
+    },
     projects, projectCursor, listBusy, listError, project: visible ? project : null,
     revision: visible ? revision : null, revisions: visible ? revisions : [], revisionCursor,
     loadBusy, loadError: selection.error || loadError, prompt, setPrompt, notice, submitError,

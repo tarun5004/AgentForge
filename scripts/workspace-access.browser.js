@@ -58,7 +58,7 @@ async (page) => {
         await route.fulfill({ json: { project: path.endsWith(legacyId) ? legacy : draft } });
       } else if (path === `/api/projects/${legacyId}/revisions` || path === `/api/projects/${draftId}/revisions`) {
         await route.fulfill({ json: { revisions: path.includes(legacyId) ? [summary] : [], nextCursor: null } });
-      } else if (path === `/api/projects/${draftId}/brief`) {
+      } else if (path === `/api/projects/${draftId}/brief` || path === `/api/projects/${legacyId}/brief`) {
         await route.fulfill({ json: { brief: null } });
       } else if (path === `/api/projects/${legacyId}/revisions/${legacyRevisionId}`) {
         state.legacyReads += 1;
@@ -84,9 +84,11 @@ async (page) => {
 
   if (projectId === legacyId && revisionId === null) {
     await page.getByText('// LEGACY_SNAPSHOT_ONLY', { exact: true }).waitFor();
-    await page.getByText('1 files · Model unknown (legacy) · Usage unknown', { exact: true }).waitFor();
+    await page.getByRole('log', { name: 'Conversation' }).getByText('Changed files and verification', { exact: true }).click();
+    await page.getByText('Saved v1 · 1 files · Model unknown (legacy) · Usage unknown', { exact: true }).waitFor();
     await page.getByText('Parent unknown (legacy)', { exact: true }).waitFor();
     await page.getByText('Validation unknown (legacy)', { exact: true }).waitFor();
+    await page.locator('summary[aria-label="Revision history"]').click();
     await page.getByText('Producing prompt unknown (legacy)', { exact: true }).waitFor();
     await page.getByText('Change metadata unavailable.', { exact: true }).waitFor();
     if (await page.getByRole('button', { name: 'page.tsx', exact: true }).count() !== 1) {
@@ -95,6 +97,7 @@ async (page) => {
     checkpoint = 'legacy';
   } else if (projectId === draftId && revisionId === null) {
     await page.getByText('Saved draft. No generated files yet.', { exact: true }).waitFor();
+    await page.locator('summary[aria-label="Revision history"]').click();
     await page.getByText('No saved revisions.', { exact: true }).waitFor();
     checkpoint = 'draft';
   } else if (projectId === unavailableId || (projectId === legacyId && revisionId === unavailableRevisionId)) {

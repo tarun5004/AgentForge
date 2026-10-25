@@ -46,6 +46,7 @@ async (page) => {
         return;
       }
       // Block every write and unknown path; no request reaches a real backend/provider.
+      if (path.endsWith('/brief') && request.method() === 'GET') return route.fulfill({ json: { brief: null } });
       if (request.method() !== 'GET' || !path.startsWith('/api/projects')) {
         state.unexpected += 1; await route.abort(); return;
       }
@@ -81,6 +82,7 @@ async (page) => {
   const state = await page.evaluate(() => window.workspaceHistorySmokeState());
   const history = page.getByRole('region', { name: 'Revision history' });
   if (state.step === 0) {
+    await page.locator('summary[aria-label="Saved conversations"]').click();
     await page.getByRole('button', { name: 'History demo v3', exact: true }).waitFor();
     await page.getByRole('button', { name: 'Load more projects', exact: true }).waitFor();
     if (await page.getByRole('button', { name: 'Draft demo Draft', exact: true }).count()) {
@@ -93,6 +95,7 @@ async (page) => {
       throw new Error('Project pages must append without duplicates and hide the exhausted cursor.');
     }
   } else if (state.step === 2) {
+    await page.locator('summary[aria-label="Revision history"]').click();
     await history.getByText('Saved change v2', { exact: true }).waitFor();
     await page.getByText('export default function Page() { return <h1>Version three fixture</h1>; }', { exact: true }).waitFor();
     await page.getByRole('button', { name: 'Load older revisions', exact: true }).waitFor();

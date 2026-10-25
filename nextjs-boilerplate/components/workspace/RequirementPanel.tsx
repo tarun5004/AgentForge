@@ -12,8 +12,8 @@ export function RequirementPanel({ workspace }: { workspace: WorkspaceState }) {
 
   return (
     <section aria-label="Project requirements" className="space-y-3 rounded-lg border border-[#38383c] bg-[#1c1c1e] p-3">
-      <h3 className="font-medium text-[#ededee]">Requirements {brief ? `· v${brief.version}` : ""}</h3>
-      <p className="whitespace-pre-wrap text-[#b8b8bd]">{workspace.project?.initialPrompt}</p>
+      <h3 className="font-medium text-[#ededee]">Next action {brief ? `· brief v${brief.version}` : ""}</h3>
+      <p className="text-[10px] text-[#99999e]">Saved draft. No generated files yet.</p>
       <button type="button" disabled={disabled} onClick={() => void workspace.actOnBrief("reload")} className="text-[#b6f09c] underline disabled:opacity-40">Reload requirements</button>
       {briefError && <p role="alert" className="text-[#ffaaaa]">{briefError} Read/replay before starting another attempt.</p>}
       {briefIntent && (
@@ -28,12 +28,7 @@ export function RequirementPanel({ workspace }: { workspace: WorkspaceState }) {
       </div>}
       {brief?.status === "failed" && <p role="alert" className="text-[#e8ce87]">Assessment ended: {brief.errorCode}. A deliberate new assessment may spend again.</p>}
       {brief?.assessment && <>
-        <p className="whitespace-pre-wrap">{brief.assessment.message}</p>
-        <div className="space-y-2 rounded border border-[#34432f] bg-[#182016] p-2">
-          <h4 className="font-medium text-[#b6f09c]">Draft brief — review before generating</h4>
-          <p className="whitespace-pre-wrap">{brief.assessment.brief}</p>
-          <p className="text-[10px] text-[#99999e]">{brief.assessment.model} · {brief.assessment.usage.totalTokens === null ? "Usage unknown" : `${brief.assessment.usage.totalTokens} tokens`}</p>
-        </div>
+        <p className="text-[10px] text-[#99999e]">{brief.assessment.model} · {brief.assessment.usage.totalTokens === null ? "Usage unknown" : `${brief.assessment.usage.totalTokens} tokens`}</p>
         {brief.assessment.status === "unsupported" && <p className="text-[#e8ce87]">This request is outside the frontend-only scope. Start a new conversation with a supported request.</p>}
       </>}
       {answerDrafts.length > 0 && <form onSubmit={(event) => { event.preventDefault(); if (canAssess) void workspace.actOnBrief("assess"); }} className="space-y-3">

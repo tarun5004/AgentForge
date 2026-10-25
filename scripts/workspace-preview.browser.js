@@ -22,6 +22,7 @@ async (page) => {
       const path = new URL(request.url()).pathname;
       if (path === '/api/auth/refresh') return route.fulfill({ json: { user: { id: '400000000000000000000001', name: 'Preview tester', email: 'preview@example.test' }, accessToken: 'fixture-token' } });
       if (request.method() === 'GET') {
+        if (path.endsWith('/brief')) return route.fulfill({ json: { brief: null } });
         if (path === '/api/projects') return route.fulfill({ json: { projects: [project], nextCursor: null } });
         if (path === `/api/projects/${projectId}`) return route.fulfill({ json: { project } });
         if (path === `/api/projects/${projectId}/revisions`) return route.fulfill({ json: { revisions: [summary], nextCursor: null } });

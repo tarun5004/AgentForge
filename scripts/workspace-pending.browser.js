@@ -23,6 +23,7 @@ async (page) => {
       const request = route.request();
       const path = new URL(request.url()).pathname;
       if (path === '/api/auth/refresh') return route.fulfill({ json: { accessToken: 'pending-fixture-token', user: { id: '400000000000000000000001', name: 'Pending fixture', email: 'pending@example.test' } } });
+      if (path.endsWith('/brief') && request.method() === 'GET') return route.fulfill({ json: { brief: null } });
       if (path === '/api/projects') return route.fulfill({ json: { projects: [project()], nextCursor: null } });
       if (path === `/api/projects/${id}`) return route.fulfill({ json: { project: project() } });
       if (path === `/api/projects/${id}/revisions`) return route.fulfill({ json: { revisions: Array.from({ length: state.head }, (_, index) => revision(state.head - index)), nextCursor: null } });

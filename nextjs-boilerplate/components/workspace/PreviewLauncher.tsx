@@ -8,22 +8,25 @@ import { RunApiError, startRun, updateRun, type PreviewRun } from "@/lib/run-api
 
 type Target = { projectId: string; revisionId: string };
 type Action = "start" | "read" | "stop" | "activity";
+type ActivityWriter = (projectId: string, id: string, text: string, state: "working" | "done" | "error" | "unknown", steps?: string[]) => void;
 
 // Keyed by user/project/revision in the shell, so navigation cannot reuse an old preview target.
-export function PreviewLauncher({ projectId, revisionId, disabled }: { projectId: string | null; revisionId: string | null; disabled: boolean }) {
-  const [open, setOpen] = useState(false);
+export function PreviewLauncher({ projectId, revisionId, disabled, open, onOpen, onClose, onActivity }: {
+  projectId: string | null; revisionId: string | null; disabled: boolean; open: boolean;
+  onOpen: () => void; onClose: () => void; onActivity: ActivityWriter;
+}) {
   return <>
-    <button type="button" disabled={disabled || !projectId || !revisionId} onClick={() => setOpen(true)}
+    <button type="button" disabled={disabled || !projectId || !revisionId} onClick={onOpen}
       title="Build and preview the selected saved revision"
       className="flex items-center gap-1.5 rounded-md bg-[#dddddf] px-3 py-1.5 text-[10px] font-medium text-[#111112] disabled:cursor-not-allowed disabled:opacity-50">
       <Play size={11} fill="currentColor" /> Preview
     </button>
-    {open && projectId && revisionId && <PreviewDialog projectId={projectId} revisionId={revisionId} onClose={() => setOpen(false)} />}
+    {open && projectId && revisionId && <PreviewDialog projectId={projectId} revisionId={revisionId} onClose={onClose} onActivity={onActivity} />}
   </>;
 }
 
 // Native modal focus/inert behavior keeps the selected project frozen while a build is running.
-function PreviewDialog({ projectId, revisionId, onClose }: Target & { onClose: () => void }) {
+function PreviewDialog({ projectId, revisionId, onClose, onActivity }: Target & { onClose: () => void; onActivity: ActivityWriter }) {
   const { projectSession, invalidateSession } = useAuth();
   const router = useRouter();
   const dialog = useRef<HTMLDialogElement>(null);
@@ -40,6 +43,7 @@ function PreviewDialog({ projectId, revisionId, onClose }: Target & { onClose: (
     activeRequest.current = controller;
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(180_000)]);
     try {
+      if (action === "start") onActivity(projectId, `preview:${revisionId}:request`, "Local preview requested.", "working");
       let next = action === "start" || !currentRun.current
         ? await startRun(projectId, revisionId, projectSession, signal)
         : await updateRun(currentRun.current.id, action, projectSession, signal);
@@ -48,6 +52,9 @@ function PreviewDialog({ projectId, revisionId, onClose }: Target & { onClose: (
         if (next.projectId !== projectId || next.revisionId !== revisionId) throw new Error("Preview selection changed.");
         currentRun.current = next;
         setRun(next);
+        onActivity(projectId, `preview:${next.id}`, next.message,
+          ["building", "cancelling"].includes(next.state) ? "working" : next.state === "failed" ? "error" : "done");
+        onActivity(projectId, `preview:${revisionId}:request`, "Preview request accepted by Execution Service.", "done");
         if (next.state !== "building" && next.state !== "cancelling") break;
         // One small bounded poll, not an interactive terminal or an automatic AI retry.
         await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -59,11 +66,15 @@ function PreviewDialog({ projectId, revisionId, onClose }: Target & { onClose: (
       if (failure instanceof RunApiError && failure.status === 401) {
         invalidateSession();
         router.replace("/login");
-      } else setError(failure instanceof Error ? failure.message : "Preview failed. Try again.");
+      } else {
+        const message = failure instanceof Error ? failure.message : "Preview failed. Try again.";
+        setError(message);
+        onActivity(projectId, `preview:${revisionId}:request`, message, "unknown");
+      }
     } finally {
       if (!controller.signal.aborted) setOperation(null);
     }
-  }, [projectId, revisionId, projectSession, invalidateSession, router]);
+  }, [projectId, revisionId, projectSession, invalidateSession, router, onActivity]);
 
   // User actions reset UI synchronously; mounting already starts with the correct loading state.
   function handleAction(action: Action) {
@@ -75,8 +86,9 @@ function PreviewDialog({ projectId, revisionId, onClose }: Target & { onClose: (
   useEffect(() => {
     const element = dialog.current;
     element?.showModal();
-    void perform("start");
-    return () => { activeRequest.current?.abort(); element?.close(); };
+    // Strict Mode probes mount/cleanup first. Cancel that scheduled start before it can POST twice.
+    const start = setTimeout(() => { void perform("start"); }, 0);
+    return () => { clearTimeout(start); activeRequest.current?.abort(); element?.close(); };
   }, [perform]);
 
   const busy = operation !== null;
@@ -98,7 +110,9 @@ function PreviewDialog({ projectId, revisionId, onClose }: Target & { onClose: (
         {run?.state === "ready" && <button type="button" disabled={busy} onClick={() => handleAction("activity")} className="underline disabled:opacity-50">Keep preview alive</button>}
       </div>
       {run?.state === "ready" && run.previewUrl && operation !== "stop"
-        ? <iframe title="Generated frontend preview" src={run.previewUrl} sandbox="allow-scripts" referrerPolicy="no-referrer" className="min-h-0 w-full flex-1 border-0 bg-white" />
+        ? <iframe title="Generated frontend preview" src={run.previewUrl} sandbox="allow-scripts" referrerPolicy="no-referrer"
+          onLoad={() => onActivity(projectId, `preview:${run.id}:frame`, "Preview frame loaded in the browser.", "done")}
+          className="min-h-0 w-full flex-1 border-0 bg-white" />
         : <div className="grid flex-1 place-items-center p-6 text-sm text-[#99999e]">{run?.state === "failed" ? "No preview was published." : "Preview will appear after a successful build."}</div>}
     </div>
   </dialog>;
