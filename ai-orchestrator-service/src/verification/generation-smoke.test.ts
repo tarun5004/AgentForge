@@ -96,6 +96,19 @@ test("success validates the manifest and returns a content-free usage report", a
   assert.doesNotMatch(JSON.stringify(report), /SMOKE_CODE_MARKER|fixture-token/);
 });
 
+// Direct Google responses use a native model ID; the same smoke contract must accept them.
+test("smoke validation accepts direct Google metadata without requiring Gateway slugs", async () => {
+  const fake = transport(request => {
+    const response = result(request);
+    response.generation.provider = "google";
+    response.generation.model = "gemini-3.8-flash";
+    return Response.json(response);
+  });
+  const report = await runGenerationSmoke(approved, "fixture-token", fake.fetcher);
+  assert.equal(report.model, "gemini-3.8-flash");
+  assert.equal(fake.calls(), 2);
+});
+
 // Lost responses and provider failures must never trigger an automatic additional paid attempt.
 test("HTTP errors and transport uncertainty are sanitized and never retried", async () => {
   const rejected = transport(() => new Response("private diagnostic and token", { status: 502 }));

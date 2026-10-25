@@ -6,8 +6,8 @@ type SmokeOptions = { url: string; execute: boolean; allowPaid: boolean };
 const RESPONSE_LIMIT = 1_048_576;
 const tokenCount = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const smokeResponseSchema = z.strictObject({ generation: generatedManifestSchema.extend({
-  requestId: z.string(), provider: z.literal("vercel-ai-gateway"),
-  model: z.string().max(200).regex(/^[a-z0-9-]+\/[a-zA-Z0-9._:-]+$/),
+  requestId: z.string(), provider: z.enum(["vercel-ai-gateway", "google"]),
+  model: z.string().max(200).regex(/^(?:[a-z0-9-]+\/[a-zA-Z0-9._:-]+|gemini-[a-zA-Z0-9._:-]+)$/),
   validation: z.strictObject({ policyVersion: z.literal(MANIFEST_POLICY_VERSION), status: z.literal("manifest_validated") }),
   usage: z.strictObject({ inputTokens: tokenCount, outputTokens: tokenCount, totalTokens: tokenCount }),
   latencyMs: z.number().finite().nonnegative(),

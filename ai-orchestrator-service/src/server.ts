@@ -8,6 +8,7 @@ const server = createApp().listen(env.PORT, () => {
       service: "ai-orchestrator-service",
       message: "server_started",
       port: env.PORT,
+      provider: env.AI_PROVIDER,
       model: env.AI_MODEL,
     })}\n`,
   );

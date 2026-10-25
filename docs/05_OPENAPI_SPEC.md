@@ -2,6 +2,14 @@
 
 The V1 target contract uses `/api/v1` and request IDs. These are future conventions, not guarantees of the current application. The implemented Project Service routes below use `/api/projects` and the existing `{ message }` error wrapper.
 
+## AI provider selection — 2026-10-25
+
+AI Orchestrator accepts server-side `AI_PROVIDER=gateway` (default) or `google` (direct Google API). Both `/internal/requirements` and `/internal/generations` use that selection. Browser/internal request bodies cannot select a provider or submit its credentials. Existing authentication, request/response wrappers and file validation are unchanged.
+
+Generation metadata uses `provider: "vercel-ai-gateway"` with a `provider/model` model ID in Gateway mode; direct Google returns `provider: "google"` with a native `gemini-*` model ID. Project Service already accepts bounded strings for those metadata fields, so no Project/frontend schema migration is required. Requirement responses retain their existing model/usage fields.
+
+Quota/auth/provider failures remain sanitized 502 responses, not login 401s. There is no automatic retry or fallback to a different paid connection. Gateway budgets/logs do not apply to direct Google traffic. See [AI connection setup and verification limits](../ai-orchestrator-service/README.md#direct-google-setup--2026-10-25).
+
 ## A2 Project-owned requirement brief — 2026-10-23
 
 Implemented backend addition; frontend dialogue remains A3. Prefix `/api/projects/:projectId`, owner JWT required, no query parameters. Invalid identity is 401, foreign/missing project or mismatched brief is 404; IDs are validated Mongo IDs. The legacy direct-generation route stays compatible and is **not globally brief-gated**.

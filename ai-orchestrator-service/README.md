@@ -1,6 +1,6 @@
 # AI Orchestrator Service
 
-This service receives authenticated internal generation requests from Project Service, calls the configured model through Vercel AI Gateway, and validates a constrained Next.js frontend manifest. Project Service owns saved revisions; this service does not write Project data or execute generated code.
+This service receives authenticated internal generation requests from Project Service, calls the configured model through Vercel AI Gateway or directly through Google, and validates a constrained Next.js frontend manifest. Project Service owns saved revisions; this service does not write Project data or execute generated code.
 
 ## Existing service setup
 
@@ -8,10 +8,12 @@ Use Node 22+ and the repository's root npm workspaces/lockfile. Copy this servic
 
 | Variable | Purpose |
 | --- | --- |
-| `PORT` | Legacy server default is 6000, which Node Fetch blocks. Use 6001 for host HTTP clients; Compose already overrides it to 6001. |
+| `PORT` | Defaults to 6001 for both host development and Compose. Port 6000 is rejected at startup because Node Fetch blocks it. |
 | `INTERNAL_SERVICE_TOKEN` | Must match Project Service. Server-side only. |
-| `AI_GATEWAY_API_KEY` or `VERCEL_OIDC_TOKEN` | Existing Gateway authentication; never a browser variable. |
-| `AI_MODEL` | Server-owned model selection; default `google/gemini-2.5-flash`. Confirm the exact ID, free-credit eligibility and pricing before a live request. |
+| `AI_PROVIDER` | `gateway` (backward-compatible default) or `google` (direct Google AI Studio connection). |
+| `AI_GATEWAY_API_KEY` or `VERCEL_OIDC_TOKEN` | Required only for Gateway mode; never a browser variable. |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | Required only for direct Google mode. Store in ignored service `.env`, never in the frontend. |
+| `AI_MODEL` | Gateway uses `provider/model` IDs, default `google/gemini-2.5-flash`; direct Google uses `gemini-*` IDs, default `gemini-3.5-flash-lite`. Confirm access and pricing before a live request. |
 
 From the repository root:
 
@@ -19,7 +21,7 @@ From the repository root:
 npm --workspace ai-orchestrator-service run dev
 ```
 
-For a host-only server, set `PORT=6001` and the matching Project `AI_ORCHESTRATOR_URL` locally before testing; [the Docker guide](../docs/LOCAL_DOCKER.md) explains the existing blocked-port finding. Changing `AI_MODEL` does not change ports or credentials; the legacy port default remains unchanged. The smoke helper defaults to 6001 and explicitly rejects 6000.
+For a host-only server, use `PORT=6001` and Project `AI_ORCHESTRATOR_URL=http://localhost:6001` in existing local `.env` files, then restart both services. The examples now use those values too. Changing `AI_MODEL` does not change ports or credentials. Health checks do not call a model; the smoke helper requires explicit execution approval.
 
 ### Free-credit model selection — 2026-10-23
 
@@ -30,6 +32,36 @@ Free-credit eligibility is **not zero-priced/unlimited inference**: calls deduct
 **Executed verification:** 39 service tests, typecheck/build and two fresh-process default/override checks passed. Four actual Gateway calls completed the isolated browser flow: essential questions → supplied answers → saved brief → explicit confirmation → generated v1 → Docker build/interactive iframe → selected-base follow-up v2 → build/Preview → refresh. Reported/account-observed cost **$0.0110388**, below the approved $2 total budget; no automatic retries or repair calls. Normal Compose's **AI service only** was recreated, and its configured model plus health 200 were confirmed; other services/data were not restarted/rebuilt. This does not certify the normal stack's older images as the newly tested source. [Detailed evidence, billing, cleanup and limits](LIVE_VERIFICATION.md).
 
 Routes: free health `GET /_status/healthz`; authenticated `POST /internal/generations` using `x-internal-service-token`. Request fields are `requestId`, `projectId`, `prompt`, `template: nextjs`, `mode: economy`, plus optional server-loaded `baseRevision`. The response is `{ generation }`, including upserts/deletions, model/usage/latency and `manifest_validated` policy metadata. See [the implemented contract](../docs/05_OPENAPI_SPEC.md#implemented-slice-3--internal-context-and-file-change-boundary-2026-10-12).
+
+## Direct Google setup — 2026-10-25
+
+For a Google AI Studio key, set these in **this service's ignored `.env`** (preserve the existing internal token):
+
+```dotenv
+AI_PROVIDER=google
+AI_MODEL=gemini-3.5-flash-lite
+GOOGLE_GENERATIVE_AI_API_KEY=replace_with_your_private_key
+```
+
+- `createAIModel` is shared by requirement assessment and file generation. `@ai-sdk/google` supplies the official API translation, while the existing SDK tool loop, output schemas, file validation and HTTP contracts stay intact. There is no custom provider framework or extra service.
+- Versions **`ai@7.0.153` and `@ai-sdk/google@4.0.105` are pinned together** so both use the same provider interface. A live Google request exposed HTTP 400 when the older adapter combined forced function calling with JSON response mode. The newer adapter handles the tool phase separately and restores structured JSON for the final response; a regression fixture rejects the invalid combination. Updating the compatible pair avoids a custom HTTP/schema workaround or unsafe type casts.
+- Google calls go directly to `generativelanguage.googleapis.com`. Gateway keys, balances, budgets and Logs do **not** cover this connection. Response `provider` becomes `google`; `model` uses the native ID. Gateway mode retains its existing response values and OIDC/key authentication.
+- No provider fallback or automatic SDK retry is enabled. Quota/auth failures remain failures, never silent paid Gateway calls. Changing `AI_PROVIDER` does not enforce free billing: keep the Google project on **Free** tier and check account/model quotas yourself. Do not add billing just to test.
+- [Google's model documentation](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite) lists function calling and structured output; [current pricing](https://ai.google.dev/gemini-api/docs/pricing) lists a free tier. Account availability and limits can differ. Free-tier data may improve Google products: use synthetic test content, not private files or secrets. Flash-Lite is the direct default because the bounded live test completed generation/build with it; newer Flash models hit provider capacity errors. This is not automatic fallback or a guarantee of future availability.
+- Replace/rotate any key exposed in chat/screenshots. Keys are backend-only and must never be printed, committed or put in a `NEXT_PUBLIC_*` variable.
+
+Restart a host process after changing `.env`. For Compose, the new dependency requires an image rebuild, not just an environment reload:
+
+```powershell
+docker compose build ai-orchestrator-service
+docker compose up -d --no-deps --force-recreate ai-orchestrator-service
+```
+
+Review the unmerged clarification fix mentioned below before rebuilding the normal container. This branch does not silently include it. To return to Gateway, set `AI_PROVIDER=gateway`, `AI_MODEL=google/gemini-2.5-flash`, and keep a valid Gateway credential, then recreate/restart again.
+
+Verification: 57 AI tests, service typecheck/build and six Project generation-contract tests pass. Intercepted HTTP tests exercise the **actual Google adapter** for JSON requirements, forced skill selection, thought-signature forwarding, validated file output, summed usage and quota failure without retry/fallback. A later authorized **live Google browser test passed** with `gemini-3.5-flash-lite`: requirements, real skill calls, generated v1, restricted Docker builds, interactive iframe, refresh, targeted v2 and another interactive preview. The successful loop used five provider calls and 9,135 reported tokens. It did not use model-response fixtures. See [live evidence and earlier failures](LIVE_VERIFICATION.md#direct-google-live-loop--2026-10-25). Normal Compose images were not rebuilt or replaced; verification used source-based isolated services and a dedicated test DB. Existing dependency security advisories remain; no unrelated bulk upgrade or audit fix was applied.
+
+Git delivery: `feature/ai-orchestrator-direct-gemini` is stacked on local skills commit `c2a0add`. Skills are committed separately; direct-Google edits remain for review. No push, PR or merge is part of this setup task.
 
 ## Frontend skill tool — 2026-10-25
 
@@ -75,7 +107,7 @@ Branch `feature/ai-orchestrator-frontend-skill-tool` starts from merged main `58
 
 ## Requirement assessment — A1 (2026-10-23)
 
-`POST /internal/requirements` uses the **same internal service token**, existing Gateway credentials and configured model. The normal service implementation calls the model; it does not use a canned questionnaire. No new package or environment variable is required. A2/A3 connect it to owned Project briefs and the browser's separate review/confirmation/generation controls.
+`POST /internal/requirements` uses the **same internal service token** and the selected provider/model described above. The normal service implementation calls the model; it does not use a canned questionnaire. A2/A3 connect it to owned Project briefs and the browser's separate review/confirmation/generation controls.
 
 ```json
 {

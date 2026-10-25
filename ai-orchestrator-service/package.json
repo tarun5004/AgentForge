@@ -7,14 +7,15 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch --clear-screen=false src/server.ts",
-    "test": "tsx --test src/features/generations/generation.schema.test.ts src/features/generations/generation.prompt.test.ts src/features/generations/generation.service.test.ts src/features/requirements/requirement.test.ts src/verification/generation-smoke.test.ts",
+    "test": "tsx --test src/config/env.test.ts src/config/ai-model.test.ts src/features/generations/generation.schema.test.ts src/features/generations/generation.prompt.test.ts src/features/generations/generation.service.test.ts src/features/requirements/requirement.test.ts src/verification/generation-smoke.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "smoke:generation": "tsx src/verification/generation-smoke.cli.ts"
   },
   "dependencies": {
-    "ai": "^7.0.105",
+    "@ai-sdk/google": "4.0.105",
+    "ai": "7.0.153",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "morgan": "^1.12.1",

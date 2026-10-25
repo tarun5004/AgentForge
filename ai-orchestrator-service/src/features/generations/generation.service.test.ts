@@ -8,6 +8,9 @@ import { generationRequestSchema } from "./generation.schema.js";
 
 // No model credentials or outbound fetch are available in these orchestration tests.
 process.env.AI_GATEWAY_API_KEY = "skill-test-not-a-provider-key";
+process.env.AI_PROVIDER = "gateway";
+process.env.AI_MODEL = "google/gemini-2.5-flash";
+process.env.GOOGLE_GENERATIVE_AI_API_KEY = "";
 process.env.VERCEL_OIDC_TOKEN = "";
 process.env.INTERNAL_SERVICE_TOKEN = "skill-test-internal";
 const originalFetch = globalThis.fetch;

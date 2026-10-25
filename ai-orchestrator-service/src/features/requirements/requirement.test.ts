@@ -10,6 +10,9 @@ import { requirementRequestSchema, validateRequirementAssessment } from "./requi
 
 // Fake credentials precede config imports; reject all non-loopback fetches as an extra no-spend boundary.
 process.env.AI_GATEWAY_API_KEY = "requirements-test-not-a-real-key";
+process.env.AI_PROVIDER = "gateway";
+process.env.AI_MODEL = "google/gemini-2.5-flash";
+process.env.GOOGLE_GENERATIVE_AI_API_KEY = "";
 process.env.INTERNAL_SERVICE_TOKEN = "requirements-test-internal";
 process.env.PORT = "6001";
 const realFetch = globalThis.fetch;
