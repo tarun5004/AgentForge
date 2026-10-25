@@ -31,6 +31,48 @@ Free-credit eligibility is **not zero-priced/unlimited inference**: calls deduct
 
 Routes: free health `GET /_status/healthz`; authenticated `POST /internal/generations` using `x-internal-service-token`. Request fields are `requestId`, `projectId`, `prompt`, `template: nextjs`, `mode: economy`, plus optional server-loaded `baseRevision`. The response is `{ generation }`, including upserts/deletions, model/usage/latency and `manifest_validated` policy metadata. See [the implemented contract](../docs/05_OPENAPI_SPEC.md#implemented-slice-3--internal-context-and-file-change-boundary-2026-10-12).
 
+## Frontend skill tool — 2026-10-25
+
+**Scope:** one reviewed frontend-design skill and one read-only `loadSkill` tool, inside the existing AI Service. No new package, service, endpoint, database field, provider adapter or approval screen. Project still owns requests/revisions and Execution still owns builds. Existing user confirmation/Generate controls are unchanged; there is no per-tool approval interaction.
+
+### Actual flow
+
+1. Before any model call, load and verify the bounded local skill file. Missing/changed text fails closed. Windows CRLF is normalized to LF before SHA-256 verification.
+2. The SDK `ToolLoopAgent` forces `loadSkill({ skillId: "frontend-design" })` as its first model step. The tool returns the reviewed instructions plus version/hash/source metadata; it executes no shell/code and changes no files.
+3. The second model step receives that tool result and generates the existing structured file manifest. Tools are disabled. Selected base files are added only here, not sent again just to load the skill.
+4. Existing manifest/path/deletion checks still apply. The public response shape is unchanged, and usage sums **both** model steps rather than hiding the first call's usage.
+
+Limits: two SDK model steps maximum, first-step output 256 tokens, final-step output 8,000 tokens, total SDK timeout 80 seconds (inside Project's existing 90-second HTTP boundary), zero SDK retries and one successful skill read per generation. Unknown skill IDs, paths, URLs, duplicate calls, skipped skill reads and extra tool rounds fail rather than expand permissions. There is no fallback/repair loop. Gateway may have its own routing behavior; this is not a hard dollar budget or a guarantee of one underlying provider attempt per step. The legacy numeric response still falls back to zero for unavailable usage; do not interpret that fallback as measured zero spend.
+
+**Cost tradeoff:** genuine model tool calling adds a small model step compared with direct generation. Keeping the skill under 4 KiB and omitting base files from the first step bounds avoidable context, but lower total cost or better real-model quality has not been demonstrated. Model configuration must support tools plus structured output. This is a bounded coding workflow, not a reproduction of another coding agent's hidden reasoning.
+
+### Source and trust boundary
+
+- Reviewed upstream: [Anthropic frontend-design](https://github.com/anthropics/skills/blob/dbd4588f9e1033efb41dad4bef2f7947c8993d44/skills/frontend-design/SKILL.md), pinned revision `dbd4588f9e1033efb41dad4bef2f7947c8993d44`.
+- Local [SKILL.md](skills/frontend-design/SKILL.md) is a **modified compact adaptation**, not the complete upstream skill. It preserves task-specific design, typography, restraint, accessibility and useful copy guidance, while keeping small components/follow-ups small. External assets/fonts/packages, extra confirmation conversations and speculative execution claims are excluded.
+- [NOTICE.md](skills/frontend-design/NOTICE.md) records provenance/modifications/original hash; [LICENSE.txt](skills/frontend-design/LICENSE.txt) includes the Apache-2.0 terms. Runtime fetches nothing from GitHub and never auto-installs scripts or tools from skill text.
+- One allowlisted skill covers the current frontend-only task scope. This is **not** arbitrary GitHub search/import or a multi-skill marketplace. Add another skill only through a reviewed local code/content change. Skill instructions cannot override frontend safety, ownership or execution rules.
+- Actual tool execution emits a structured `skill_loaded` event containing only skill ID/version/hash. It does not log the user prompt, base files, credentials or internal reasoning. This is server-side activity evidence, not yet a new frontend tool-activity panel.
+
+### Verification and branch delivery
+
+**Passed:** 50 AI tests (39 baseline + 11 new), typecheck/build; six existing Project generation-contract tests; and the compiled loader resolving the 2,137-byte local adaptation from `dist`. SDK mocks demonstrate the actual tool-call/result loop, usage aggregation, selected-base placement, unknown-resource denial, tamper rejection, duplicate/extra-step denial, no retries on either step and manifest safety. They do not demonstrate live model design quality or a browser-to-Preview E2E.
+
+One initial assertion expected the application's skipped-skill error; the SDK correctly rejected the missing required tool even earlier with `AI_ToolChoiceViolationError`. The assertion was corrected to that specific SDK failure; final tests passed. No production guard was removed to make the test pass.
+
+Docker image verification was attempted with a separate `agentforge-ai:skill-tool-test` tag, but failed **before building** because the Docker Desktop Linux-engine pipe was unavailable. No container was started/replaced, no normal image tag/volume was changed, and no paid model call or application database write was made. Container packaging and revised live-model behavior remain unverified. When Docker is running, the free suite can be exercised in an isolated image:
+
+```powershell
+docker build -f ai-orchestrator-service/Dockerfile -t agentforge-ai:skill-tool-test .
+docker run --rm --network none agentforge-ai:skill-tool-test npm test
+```
+
+The image's existing `COPY ai-orchestrator-service` includes `skills/`; the root ignore file excludes credentials/build outputs. Do not copy only `dist` for another deployment without also including these reviewed assets.
+
+Branch `feature/ai-orchestrator-frontend-skill-tool` starts from merged main `5845c55`. It is independent of the clarification fix `75d75af`; this branch intentionally does not silently include that commit or alter requirement assessment. Review/include both compatible slices before updating the normal AI container, otherwise rebuilding from this older base would omit that fix. Prior stashed audit documents are untouched. Local commit delivery was approved on 2026-10-25; push, PR and merge are separate actions, not included in that approval.
+
+**Interview explanation:** a skill is reviewed guidance; the tool is the controlled reader; the harness is the SDK loop enforcing order, limits and validation. These help a model follow a task-specific process, but do not guarantee stronger-model equivalence or replace evaluation.
+
 ## Requirement assessment — A1 (2026-10-23)
 
 `POST /internal/requirements` uses the **same internal service token**, existing Gateway credentials and configured model. The normal service implementation calls the model; it does not use a canned questionnaire. No new package or environment variable is required. A2/A3 connect it to owned Project briefs and the browser's separate review/confirmation/generation controls.
@@ -47,7 +89,7 @@ Routes: free health `GET /_status/healthz`; authenticated `POST /internal/genera
 Returns `{ assessment }` with `status: needs_clarification | ready | unsupported`, a short `message`, draft `brief`, up to three `questions`, `requestId`, `policyVersion`, model, token usage and latency. Unavailable usage fields are `null`, not a false zero-token claim. Questions should cover essential missing facts rather than repeat supplied answers. `ready` means ready for **human review**, never automatic permission to generate. Unsupported backend functionality is outside the existing frontend-only scope. The endpoint returns no files and executes no code.
 
 - Input is strict: prompt 10–1000 characters; valid project ID; at most six question/answer pairs, question 240 and answer 1000 characters; serialized UTF-8 context at most 20,000 bytes. Unknown identity/model/file/chat fields and duplicate normalized answered questions are rejected.
-- New SDK call: at most 1500 output tokens, 45-second total timeout and **zero SDK retries**; no tools, automatic repair or application fallback. Existing generation keeps its original behavior. One HTTP call does not guarantee a hard dollar limit or a single internal Gateway provider attempt. Another POST can spend again; A1 has no idempotency store. A timeout does not prove provider-side cancellation.
+- Requirement SDK call: at most 1500 output tokens, 45-second total timeout and **zero SDK retries**; no requirement tools, automatic repair or application fallback. Generation separately uses the bounded two-step skill workflow above. One HTTP call does not guarantee a hard dollar limit or a single internal Gateway provider attempt. Another POST can spend again; A1 has no idempotency store. A timeout does not prove provider-side cancellation.
 - Input/JSON errors: 400; internal authentication: 401; excessive context/body: 413; provider/output errors: sanitized 502. Model-output validation errors never masquerade as invalid user input. Logging does not print answers, briefs, raw provider errors or credentials.
 - The internal caller must verify JWT/project ownership and load trusted saved answers. A `projectId` in this body is correlation data, not authorization. Prompt instructions and exact duplicate checks cannot guarantee zero hallucination, prevent all injection or detect paraphrased repeated questions.
 - Next slices: Project-owned persisted brief/answer/confirmation state, then conversational UI. Handle the bounded-answer limit visibly (edit/restart the brief rather than force a false ready result). A real provider behavior/quality smoke needs explicit spending approval; no paid request was made for A1.
