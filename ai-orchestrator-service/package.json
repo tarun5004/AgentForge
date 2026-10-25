@@ -7,7 +7,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch --clear-screen=false src/server.ts",
-    "test": "tsx --test src/features/generations/generation.schema.test.ts src/features/generations/generation.prompt.test.ts src/features/requirements/requirement.test.ts src/verification/generation-smoke.test.ts",
+    "test": "tsx --test src/features/generations/generation.schema.test.ts src/features/generations/generation.prompt.test.ts src/features/generations/generation.service.test.ts src/features/requirements/requirement.test.ts src/verification/generation-smoke.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
