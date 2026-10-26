@@ -6,6 +6,9 @@ Generation guidance explicitly covers interactive `'use client'` entry points, s
 strict TypeScript and typed inline styles (plain CSS is preferred). The SDK contract test verifies these
 rules reach the actual model call. This improves guidance; it is not proof that every model output
 compiles. Only Execution's real build can supply that evidence; no automatic paid repair is enabled.
+Small requests now prefer 1-3 files and reuse the trusted root layout. A captured live candidate imported
+Next's `Metadata` type from React and failed strict compilation. Guidance names the correct module and
+avoids generating optional root-layout boilerplate unless requested; it does not bypass the build gate.
 
 ## Conversation, local retrieval and evaluations — 2026-10-25
 

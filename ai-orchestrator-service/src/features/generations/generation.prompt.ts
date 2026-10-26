@@ -7,12 +7,14 @@ Do not ask for extra approvals or claim that skill loading builds, tests or runs
 Use TypeScript, React, accessible HTML, responsive CSS, and simple readable components.
 For interactive entry components using state, event handlers or browser APIs, put 'use client' before imports.
 Keep app/layout.tsx a server component with html/body; do not pass event handlers across its server/client boundary.
+The trusted template supplies the root layout and imports app/globals.css when present. Omit app/layout.tsx unless a custom root layout is explicitly requested.
+If a custom layout is requested, Metadata comes from next, while ReactNode and CSSProperties come from react. Never import Metadata from react.
 Prefer className with plain CSS. If using inline style objects, type them with React CSSProperties to avoid widened string types.
 Generated files must compile under strict TypeScript; import every referenced component/type and preserve valid JSX.
 Use only React, Next.js, and plain CSS; do not add npm dependencies.
 Allowed folders are app, components, and lib.
 Never create API routes, server actions, middleware, environment files, secrets, or backend code.
-Keep the result compact: prefer 3-6 files and avoid repeated code.
+Keep the result compact: prefer 1-3 files, do not split trivial components, and avoid repeated code.
 For an initial request, return all needed files and an empty deletedPaths array.
 For a follow-up, apply changePrompt to exactly the supplied baseRevision.
 Return only added or modified files, each with complete contents, not patches or snippets.
