@@ -1,5 +1,29 @@
 # AgentForge V1 — Security Threat Model
 
+## Current local implementation and dependency refresh
+
+The numbered V1 sections below are **architecture targets**, not a claim that JWKS, Kubernetes,
+public quotas or a CI image scanner run today. Current access tokens use the shared HS256 secret;
+Preview is a restricted, loopback-only Docker static build. Do not expose this student workspace as
+a public multi-tenant execution service.
+
+The 2026-10-26 runtime dependency refresh updates existing allowed lockfile versions, without new
+dependencies or a framework migration: body-parser 2.4.0, proxy-addr 2.0.8, ip-address 10.7.5,
+Zod 4.6.7, and body-parser's qs 6.16.1. The separate frontend slice pins Next 16.4.3 and resolves
+Sharp 0.35.5/source-map-js 1.2.2. Rebuild installed application and trusted runner images; changing
+the lockfile does not patch a previously built image.
+
+`npm audit --omit=dev` reported zero known advisories immediately after these resolutions. This is
+a time-specific package audit, not proof of vulnerability-free application code or a clean OS image.
+Compressed HTTP parsing is used in all Express services, so the body-parser patch is relevant.
+No risky IPv4-mapped `trust proxy` subnet configuration was found, and ip-address is an optional
+MongoDB/SOCKS dependency rather than our own IP allowlist; advisories are not automatically exploits.
+
+Upstream references: [body-parser](https://github.com/advisories/GHSA-27r3-jxmh-p828),
+[proxy-addr](https://github.com/jshttp/proxy-addr/security/advisories/GHSA-jqcg-44mw-7w3h),
+[Zod](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5),
+[ip-address](https://github.com/advisories/GHSA-rxp7-6hxx-x8q5).
+
 ## 1. Assets to protect
 
 - User credentials, sessions, and personal project content.
