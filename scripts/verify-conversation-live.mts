@@ -84,7 +84,27 @@ export function guardLiveProvider(fetcher: typeof fetch, model: string, calls: P
       throw new Error("Live provider request failed; no automatic retry is permitted.");
     }
   };
-  return guarded;
+  // Keep the closed guard installed during teardown: an in-flight tool loop must not bypass the budget.
+  return Object.assign(guarded, { stop: () => { halted = true; } });
+}
+
+// Retain an actionable CLI error without copying page code, tokens, passwords or response bodies.
+export function safeBrowserError(output: string) {
+  const line = output.split(/\r?\n/).find(value => /^(?:Error|TimeoutError|TypeError|ReferenceError|SyntaxError):/.test(value.trim()));
+  if (!line) return "Browser command failed; no safe error line was returned.";
+  return line.trim().slice(0, 300)
+    .replace(/Bearer\s+\S+/gi, "Bearer [REDACTED]")
+    .replace(/(?:AIza|AQ\.)[A-Za-z0-9_-]+/g, "[REDACTED]")
+    .replace(/(?:password|api[_-]?key|token)\s*[=:]\s*\S+/gi, "credential=[REDACTED]");
+}
+
+// Only the result block is parsed; the CLI also prints source code containing unrelated JSON text.
+export function browserOutcome(output: string) {
+  const result = output.match(/### Result\s*\r?\n([\s\S]*?)(?=\r?\n### |$)/)?.[1]?.trim();
+  if (!result) throw new Error("Browser command returned no outcome.");
+  const value = JSON.parse(result) as { passed?: boolean; checkpoint?: string; failure?: string };
+  if (typeof value.passed !== "boolean") throw new Error("Browser command returned an invalid outcome.");
+  return value;
 }
 
 // Refuse occupied ports instead of replacing a student's existing app.
@@ -116,7 +136,7 @@ async function command(binary: string, args: string[], timeout = 30_000) {
   const timer = setTimeout(() => child.kill(), timeout);
   try {
     const [code] = await once(child, "exit");
-    if (code !== 0 || output.includes("### Error")) throw new Error("Verification command failed; inspect ignored browser artifacts.");
+    if (code !== 0 || output.includes("### Error")) throw new Error(safeBrowserError(output));
     return output;
   } finally { clearTimeout(timer); }
 }
@@ -163,6 +183,7 @@ export async function runLiveVerification() {
   const session = `conversation-live-${process.pid}`;
   const artifact = resolve(root, "output/playwright");
   const rawFetch = globalThis.fetch;
+  const guardedFetch = guardLiveProvider(rawFetch, saved.AI_MODEL, calls);
   await mkdir(artifact, { recursive: true });
   const reportPath = resolve(artifact, `conversation-live-${Date.now()}.json`);
   let admitted = false;
@@ -180,7 +201,7 @@ export async function runLiveVerification() {
       AI_PROVIDER: "google", AI_MODEL: saved.AI_MODEL, GOOGLE_GENERATIVE_AI_API_KEY: saved.GOOGLE_GENERATIVE_AI_API_KEY,
       AI_GATEWAY_API_KEY: "", VERCEL_OIDC_TOKEN: "", RAG_RETRIEVAL_MODE: "lexical",
     });
-    globalThis.fetch = guardLiveProvider(rawFetch, saved.AI_MODEL, calls);
+    globalThis.fetch = guardedFetch;
     const { createApp: authApp } = await import("../auth-service/src/app/app.ts");
     const { createApp: projectApp } = await import("../project-service/src/app/app.ts");
     const { createApp: aiApp } = await import("../ai-orchestrator-service/src/app.ts");
@@ -199,11 +220,17 @@ export async function runLiveVerification() {
     if (!["chrome", "msedge", "firefox", "webkit"].includes(channel)) throw new Error("Unsupported browser channel.");
     await command(process.execPath, [browserCli, `-s=${session}`, "open", `--browser=${channel}`]);
     await command(process.execPath, [browserCli, `-s=${session}`, "resize", "1440", "1000"]);
-    await command(process.execPath, [browserCli, `-s=${session}`, "run-code", "--filename=scripts/conversation-live.browser.js"], 600_000);
+    const outcome = browserOutcome(await command(process.execPath, [browserCli, `-s=${session}`, "run-code", "--filename=scripts/conversation-live.browser.js"], 600_000));
+    report.browserOutcome = outcome;
+    if (!outcome.passed) throw new Error("Browser scenario failed at its recorded checkpoint; no automatic retry.");
     report.passed = true;
     report.browser = "Greeting and planning created no projects; generated v1/v2 built, previewed, interacted, stopped and survived refresh.";
+  } catch (error) {
+    report.failure = error instanceof Error ? safeBrowserError(`Error: ${error.message}`) : "Verification failed.";
+    throw error;
   } finally {
-    globalThis.fetch = rawFetch;
+    guardedFetch.stop();
+    // This standalone process retains the closed guard until exit, including late asynchronous model steps.
     const cleanup: string[] = [];
     if (browserCli) try { await command(process.execPath, [browserCli, `-s=${session}`, "close"]); } catch { cleanup.push("browser"); }
     if (next?.pid && next.exitCode === null) {
