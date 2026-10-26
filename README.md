@@ -1,12 +1,15 @@
 # AgentForge
 
-AgentForge is a learning-focused, microservice-based AI frontend generation platform. The long-term product lets a user describe a website, review generated files, inspect terminal output, and launch an isolated preview from one developer workspace.
+AgentForge is a local AI frontend coding workspace. Chat or plan with one configured model, explicitly request a website/change, inspect saved files, and open a restricted Docker-built Preview.
 
 **Delivery target:** a free-first localhost portfolio demo, source/design explanation, screen recording and an optional static showcase page. The full platform is not intended for public users or paid cloud deployment. Production architecture will be documented separately from what actually runs. Fixture/recorded AI output must be labelled; it is not proof of live model generation. See [current scope and cost boundaries](docs/AI_ENGINEERING_ROADMAP.md#current-product-boundary--local-portfolio-free-first-2026-10-23).
 
+See the [current delivery, actual test evidence and remaining limits](docs/LOCAL_WORKSPACE_DELIVERY.md)
+before using older milestone notes as a status report.
+
 The repository currently contains a working Cursor-inspired frontend, authentication, project persistence, and the first synchronous AI code-generation flow. Background queues and Kubernetes previews are intentionally not presented as complete yet.
 
-Current delivery planning is tracked in the [live AI portfolio delivery contract](docs/AI_PORTFOLIO_DELIVERY_PLAN.md): requirement clarification, confirmed brief, actual model generation and local Preview, followed by useful retrieval/tools/evaluation features. The fixture demo remains testing support, not the final product experience. Start with the [System Design Q&A](docs/SYSTEM_DESIGN_QA.md) for service boundaries, Docker/static preview, immutable publication and retry trade-offs. Optional host-local build-before-publication is implemented, but remains off in normal Compose unless deliberately configured. The separate `build-gate` browser suite verifies that path with deterministic AI transport; it does not spend provider credits or activate a public deployment.
+Start with the [real local setup](docs/LOCAL_DOCKER.md) and [current delivery contract](docs/AI_PORTFOLIO_DELIVERY_PLAN.md). Greetings/planning do not create projects. An explicit build/edit decision uses the existing validated generation and immutable revision pipeline; the old saved-brief APIs remain compatible, not a mandatory questionnaire. The [System Design Q&A](docs/SYSTEM_DESIGN_QA.md) explains ownership, Docker/static Preview and retry trade-offs. Optional build-before-publication remains off in normal Compose unless deliberately configured.
 
 For a clearly labelled **zero-provider-cost manual demo**, use [`npm run demo:local`](docs/LOCAL_DEMO.md) with an explicit empty disposable MongoDB and an existing trusted runner image. It enables the real build gate/Preview in isolated local services; AI responses are fixed fixtures. Enter stops it and cleans tracked demo data. Use a private browser window so localhost cookies do not replace your normal session.
 
@@ -23,11 +26,11 @@ The Next.js workspace currently provides:
 - session restoration, protected workspace access, and logout
 - Cursor-inspired dark developer interface
 - paginated saved projects, revision history, and a controlled prompt composer
-- authenticated prompt submission that creates a persisted draft project
+- authenticated conversation; only a build request creates a persisted project
 - AI generation progress, success, failure, file-count, model, and token feedback
 - committed AI-generated files appear in the editor and restore from the backend after refresh
 - selectable code tabs with line numbers
-- Terminal and Problems panels
+- expandable observed activity/run reports, without fabricated terminal output
 - truthful added/modified/deleted changes; unchanged files have no fabricated badge
 - targeted follow-up prompts against the visible selected revision, including historical bases
 - same-key retry/status recovery for unconfirmed attempts, without silently creating another project
@@ -36,7 +39,7 @@ The Next.js workspace currently provides:
 - explicit local-demo labels wherever backend behavior is not connected
 - opt-in local static Preview for a selected saved revision, with build status, Stop and safe retry states
 
-Optional sample assets remain in `workspace-data.ts`, but the editor never falls back to them. No selection, saved drafts, loading and failed loads have explicit states. Terminal output remains an unconnected sample; Preview separately requests a real restricted local build of saved files.
+Unused sample data, sample Terminal/Problems and duplicate Changes panels were removed. The composer stays visible after replies and failures. No selection, loading and failed loads have explicit states. Preview requests a real restricted local build of saved files; the chat does not claim it ran a build unless saved execution evidence exists.
 
 The authentication forms validate input and call the Auth Service through the same-origin proxy. The short-lived access token stays only in React memory, while the refresh token stays in an HttpOnly cookie. Reloading the page restores the session through `/api/auth/refresh`, and unauthenticated workspace visits return to `/login`.
 
@@ -67,17 +70,9 @@ Real Auth/Project/Mongo browser checks used a deterministic AI transport fixture
 
 ## Workspace layout
 
-```text
-┌──────────────────────────────────────────────────────────────┐
-│ Project header                         Branch   Preview       │
-├───────────────┬──────────────────────────────┬───────────────┤
-│ Chat/history  │ Code editor                  │ Changed files │
-│               ├──────────────────────────────┤ Agent plan    │
-│ Prompt input  │ Terminal / Problems          │               │
-└───────────────┴──────────────────────────────┴───────────────┘
-```
-
-Desktop separators can resize the chat width, changes width, and terminal height. Minimum and maximum sizes keep every panel usable.
+Desktop: chat/activity/history and the persistent composer on the left; saved-file editor on the right.
+Preview opens in a dialog. The separator resizes the chat/editor split. Small screens stack both panels;
+history/changes use the sidebar rather than extra permanent panels.
 
 ## Repository structure
 
@@ -109,22 +104,22 @@ nextjs-boilerplate/
         ├── ChatPanel.tsx
         ├── CodeWorkspace.tsx
         ├── EditorPanel.tsx
-        ├── TerminalPanel.tsx
-        ├── ChangesPanel.tsx
+        ├── ConversationTimeline.tsx
+        ├── PreviewLauncher.tsx
         ├── ResizeHandle.tsx
-        └── workspace-data.ts
+        └── useWorkspace.ts
 ```
 
 ## Technology choices
 
 - **Next.js + React + TypeScript:** frontend and component state
 - **Tailwind CSS:** compact responsive styling
-- **react-markdown + remark-gfm:** retained Markdown helper; saved revision history currently renders plain text
+- **react-markdown + remark-gfm:** restricted assistant Markdown without raw HTML or external embeds
 - **react-resizable-panels:** constrained, keyboard-accessible IDE panel resizing
 - **Lucide React:** consistent lightweight icons
 - **Express + TypeScript:** backend services
 - **MongoDB:** authentication and project persistence
-- **Vercel AI SDK + AI Gateway:** structured model output through one provider-neutral API
+- **Vercel AI SDK + direct Google or AI Gateway:** structured model output through one application model boundary
 - **Redis + BullMQ:** planned background generation/execution jobs
 - **Kubernetes:** planned isolated build and preview workloads
 
@@ -142,17 +137,18 @@ Monaco Editor is intentionally deferred. Version Zero uses a readable code viewe
 ### Install
 
 ```bash
-npm install
+npm ci
 ```
 
-Copy only the environment templates for the services you want to run. On PowerShell:
+Create missing environment files only; never overwrite an existing key/configuration. On PowerShell:
 
 ```powershell
-Copy-Item auth-service/.env.example auth-service/.env
-Copy-Item project-service/.env.example project-service/.env
-Copy-Item ai-orchestrator-service/.env.example ai-orchestrator-service/.env
-Copy-Item execution-service/.env.example execution-service/.env
-Copy-Item nextjs-boilerplate/.env.example nextjs-boilerplate/.env.local
+foreach ($service in @('auth-service','project-service','ai-orchestrator-service','execution-service')) {
+  if (!(Test-Path "$service/.env")) { Copy-Item "$service/.env.example" "$service/.env" }
+}
+if (!(Test-Path 'nextjs-boilerplate/.env.local')) {
+  Copy-Item 'nextjs-boilerplate/.env.example' 'nextjs-boilerplate/.env.local'
+}
 ```
 
 Never commit real `.env` files or API keys.

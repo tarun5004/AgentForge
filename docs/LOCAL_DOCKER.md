@@ -2,8 +2,9 @@
 
 This is a local learning/demo stack, not a production deployment or generated-code sandbox.
 It runs Next.js, Auth, Project, AI Orchestrator, Execution and a separate MongoDB container.
-Redis, BullMQ and Kubernetes are not needed for the implemented flow. Execution currently serves
-status endpoints only; it does not run generated code.
+Redis, BullMQ and Kubernetes are not needed for the implemented flow. The Compose Execution container
+serves status endpoints only. Real Preview uses the separate opt-in host controller below; this keeps
+the host Docker control socket out of application containers.
 
 ## First setup
 
@@ -11,8 +12,10 @@ status endpoints only; it does not run generated code.
 2. In each backend folder, create `.env` from `.env.example` **only if it is missing**. Keep existing files.
 3. Replace example secrets locally. Auth and Project need the same `ACCESS_TOKEN_SECRET`;
    Project and AI need the same `INTERNAL_SERVICE_TOKEN`. Auth also needs its refresh secret/expiry values.
-4. AI Orchestrator needs valid Gateway authentication and an accessible `AI_MODEL` for real generation.
-   Never put a direct Groq/Gemini key into `AI_GATEWAY_API_KEY`. Health checks do not validate a provider key.
+4. AI Orchestrator supports either direct Google (`AI_PROVIDER=google`, `GOOGLE_GENERATIVE_AI_API_KEY`,
+   native `AI_MODEL`) or Gateway (`AI_PROVIDER=gateway`, `AI_GATEWAY_API_KEY`, provider/model ID).
+   Never put a direct Gemini key into `AI_GATEWAY_API_KEY`. Health checks do not validate model access.
+   Keep `RAG_RETRIEVAL_MODE=lexical` for the default no-embedding-call path.
 
 The backend `.env` files are read by Compose at runtime, not copied into images. The root `.dockerignore`
 excludes all nested `.env*`, host dependencies and build output. Runtime env values are still visible to
@@ -104,6 +107,43 @@ docker compose up -d --force-recreate ai-orchestrator-service
 
 A plain `restart` does not reload Compose's env_file configuration. Recreate Next too when intentionally
 restarting its upstream services if old keep-alive proxy connections produce a transient reset.
+
+## Real local Preview: one additional host terminal
+
+This is the normal product path, not the fixed-output `demo:local` fixture. Starting services makes no
+model call; sending a chat message uses the configured provider. Keep account/provider spend limits set.
+
+First build the trusted runner from the repository root (once, and again after dependency updates):
+
+```powershell
+npm ci
+docker build -f execution-service/preview/Dockerfile -t agentforge-preview-runner:local .
+npm --workspace execution-service run build
+```
+
+Keep Project's `BUILD_GATE_ENABLED=false` for this simplest manual-Preview setup. In a separate terminal:
+
+```powershell
+$env:NODE_ENV='development'
+$env:LOCAL_PREVIEW_ENABLED='true'
+$env:PORT='5002'
+$env:PREVIEW_PORT='5101'
+$env:PROJECT_SERVICE_URL='http://127.0.0.1:3001'
+$env:PREVIEW_FRONTEND_ORIGIN='http://localhost:3001'
+$env:PREVIEW_RUNNER_IMAGE='agentforge-preview-runner:local'
+npm --workspace execution-service start
+```
+
+Keep this terminal open. Visit **http://localhost:3001/workspace**, register/login, chat or plan first,
+then explicitly request a portfolio and click **Preview** after a saved revision appears. The Docker
+frontend already targets `http://host.docker.internal:5002`. The host controller reads owned revisions
+through the frontend proxy at port 3001; the browser receives only the expiring static artifact URL.
+This hostname path is Docker Desktop-specific; native Linux needs its own host routing configuration.
+
+Manual Preview still builds real code, but is **not** a pre-publication generation-quality gate.
+The optional candidate gate needs separate Project/controller/check-token wiring; see the Execution
+README. Never expose the controller publicly or mount Docker's socket into the frontend/AI containers.
+Supported output is static React/Next.js and plain CSS, not API routes, SSR, arbitrary packages or a shell.
 
 ## Repeatable checks without provider credits
 

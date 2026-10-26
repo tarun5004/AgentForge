@@ -1,5 +1,65 @@
 # AgentForge — applied AI portfolio delivery contract
 
+## Stabilization priority — 2026-10-25
+
+This user-requested revision takes priority over adding portfolio features below. The goal is a small,
+working local conversational coding workspace, not another framework or a full VS Code/Codex clone.
+Existing dated implementation notes remain historical evidence, not current live verification.
+
+### Target behavior
+
+- One persistent composer and transcript. Typing never disappears after creating a draft or receiving an error.
+- The same configured model handles conversation, planning, essential clarification and frontend generation.
+  A greeting or planning question must not create a Project, call the generation endpoint, or start Preview.
+- Keep short recent conversation context plus the explicitly selected saved revision when relevant. Explain
+  context bounds; never silently claim unlimited memory or send service credentials to the model.
+- Match the supplied VS Code sidebar reference: compact header, plain assistant prose, expandable observed
+  activity, bottom changes summary and rounded composer. Keep code/Preview accessible without fake controls.
+- Explicit build/edit requests may use the existing generation API. The old Brief/confirmation APIs and saved
+  records remain compatible; replacing their visible questionnaire does not authorize deleting historical data.
+- Conversational responses do not authorize arbitrary commands, package installs, provider changes or execution.
+  Preview remains the existing restricted frontend build, not a host shell.
+
+### Small delivery slices
+
+| Slice | Scope and smallest change | Evidence required before calling it done |
+| --- | --- | --- |
+| S1: reconnect | AI/Project defaults and examples use port 6001; reject Fetch-blocked 6000 at startup; update local overrides. | Config regression tests, Node health, authenticated invalid input rejected before any model call. |
+| S2: simplify UI | Remove unconnected sample terminal and unused demo data; then persistent composer, one error surface, compact history/activity. Keep real editor, revisions and Preview. | Frontend tests/lint/build plus desktop/mobile screenshots and failure/input-preservation browser checks. |
+| S3: conversation contract | One bounded authenticated conversation API through Project to AI, reusing the existing owner JWT/internal token and model selector. Return reply/clarify/build intent plus user-visible text. No extra classifier model, service, queue or vector database. | Mock-provider and HTTP tests: greetings, planning-only, explicit build, follow-up context, invalid input, unauthorized/foreign IDs, timeout; no silent retry/fallback. |
+| S4: connect chat to generation | Feed natural-language answers into the same transcript. Create a Project only when code generation is requested. Use the existing immutable publication, saved-base editing and retry key. Retire the form from the new chat path only after equivalent behavior works. | Real API/Mongo tests and browser tests showing no writes for a greeting/plan; v1, failure preservation, selected-base v2, refresh, Preview. |
+| S5: prove and trim | Inspect remaining imports/callers; delete only confirmed unused code. One explicitly budget-approved live run after deterministic checks pass. | Clearly separate mock UI, real database, real Docker and real provider evidence; record every unrun/failed check. |
+
+S1-S4 are now implemented and delivered in service-scoped PRs #28-#33. The persistent composer,
+conversation endpoint and natural-language routing replace the visible questionnaire for new chat.
+S5 is verified for this conversational-core scope: the real provider generated v1 and a targeted v2,
+both passed actual candidate/Preview builds and browser counter/refresh checks. Full evidence, failed
+attempts, cost assumptions and remaining advanced backlog are in [the delivery report](LOCAL_WORKSPACE_DELIVERY.md).
+PR #34 and focused follow-ups add opt-in bounded live verification, not an automatic spending loop.
+The user explicitly authorized focused commits, pushes and merges for this delivery. No data migration
+or new application dependency was needed for conversation, retrieval or evaluation.
+
+### Current advanced-concept boundary
+
+- Implemented: typed model output, direct Google/Gateway model boundary, bounded selected-file context,
+  a real read-only frontend skill tool, reviewed local retrieval, optional semantic embeddings, an 18-case
+  routing evaluation set, observable usage/latency/source reports, immutable history and restricted Preview.
+- Default retrieval is TF-IDF/cosine, not neural embeddings. The optional semantic mode uses Google
+  embeddings and an in-memory index of six reviewed public guidance snippets, not a persistent vector DB.
+- Still a separate learning backlog: streaming, Python/SQLite reports, private-project ingestion,
+  read-only MCP, held-out multi-model comparisons, durable queue/restart recovery and optional AI repair.
+  They are not required to claim the local conversational core works, and are not marked complete.
+- No full Cursor clone, arbitrary terminal, public multi-tenant sandbox or Kubernetes deployment claim.
+
+The dated A-F roadmap below is retained as the broader learning plan. Its old mandatory brief-confirmation
+UI is superseded by this explicit-intent conversation flow; preserved legacy APIs/data are not deleted.
+
+Why keep the existing services? The demonstrated failure was a blocked HTTP port plus UI state/routing,
+not evidence that a rewrite is necessary. Ownership checks, bounded input, immutable revisions, safe file
+validation and duplicate-request protection solve actual failure cases and are not cleanup targets.
+
+---
+
 **Reviewed:** 2026-10-23. **Baseline:** clean `main` at `ab783d1` before this slice.
 
 **Delivery update (2026-10-23):** A1 merged through [PR #24](https://github.com/tarun5004/AgentForge/pull/24); A2 commit `daff40b` merged through [PR #25](https://github.com/tarun5004/AgentForge/pull/25), main `bc02ecc`. A3 is on separate `feature/frontend-requirement-dialogue`; verification/delivery status is below. A4 paid-provider smoke is not complete. A2 evidence: 34 unit, 18 new brief HTTP/Mongo, 40 legacy integration and 5 deterministic gate tests passed; real Docker gate case skipped, Project typecheck/build and Execution build passed. No paid calls or application-database writes. [Contracts/setup/limits](../project-service/README.md#saved-requirements-and-confirmation-a2).

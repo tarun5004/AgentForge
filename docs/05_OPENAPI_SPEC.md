@@ -2,6 +2,40 @@
 
 The V1 target contract uses `/api/v1` and request IDs. These are future conventions, not guarantees of the current application. The implemented Project Service routes below use `/api/projects` and the existing `{ message }` error wrapper.
 
+## Implemented conversational workspace
+
+`POST /api/conversations` requires the existing owner access JWT. Strict request:
+
+```json
+{
+  "messages": [{ "role": "user", "content": "Hi, help me plan a portfolio; do not build yet." }]
+}
+```
+
+Optional `projectId` and `baseRevisionId` fields are owned 24-hex Mongo IDs.
+Messages are user/assistant only, 1-16 entries, 1-4000 characters each, last role user, and at most
+16,000 serialized UTF-8 bytes. Transport parser is bounded to 100 KiB. A base requires a project;
+Project verifies ownership and loads its exact saved files server-side. Browser files, owner/model
+overrides, credentials, system messages and query parameters are rejected.
+
+Success: `200 {response: {requestId, action, message, prompt, sources, retrieval, model, usage, latencyMs}}`.
+Action is `reply | clarify | build`. Only build has a 10-1000-character prompt; otherwise prompt is null.
+Sources contain exact supplied guidance IDs/titles, not independently verified model citations.
+Retrieval reports `lexical | semantic`, embedding model or null, and reported embedding input tokens
+or null. Generation usage is separately reported; unavailable values remain null.
+
+This endpoint does not write a Project/Revision or start execution. The frontend invokes the existing
+generation API only after a current explicit build/edit decision; a greeting or plan is not consent.
+New chat uses natural messages instead of the old visible questionnaire. Brief routes/records below
+remain compatible. Same-browser display history is bounded locally, not server-synchronized chat.
+
+Internal `POST /internal/conversations` requires `x-internal-service-token` and uses the same bounded
+messages plus server-generated request ID and optional loaded `{baseRevision: {id, files}}`. One model
+decision, 2000 output-token cap, 45-second total abort budget, zero SDK retries, no repair/fallback.
+Project checks response correlation, bounds and action/prompt consistency. Input/auth/ownership errors
+remain 400/401/404/413; sanitized provider/invalid-output failure is 502 `AI_UNAVAILABLE`, not logout401.
+An uncertain chat response is never automatically POSTed again; deliberate resubmission may spend again.
+
 ## AI provider selection — 2026-10-25
 
 AI Orchestrator accepts server-side `AI_PROVIDER=gateway` (default) or `google` (direct Google API). Both `/internal/requirements` and `/internal/generations` use that selection. Browser/internal request bodies cannot select a provider or submit its credentials. Existing authentication, request/response wrappers and file validation are unchanged.
