@@ -2,6 +2,7 @@ import { createServer, type Server } from "node:http";
 import { once } from "node:events";
 import { createApp } from "../execution-service/src/app/app.ts";
 import { createDockerRunner } from "../execution-service/src/features/runs/docker.runner.ts";
+import { dockerCommand } from "../execution-service/src/features/runs/docker.command.ts";
 import { createProjectClient } from "../execution-service/src/features/runs/project.client.ts";
 import { createPreviewServer } from "../execution-service/src/features/runs/preview.server.ts";
 import { createRunService, type RunService } from "../execution-service/src/features/runs/run.service.ts";
@@ -20,8 +21,8 @@ async function close(server: Server) {
 }
 
 // Compose production Execution modules without replacing authorization, Docker or artifact serving.
-export async function startPreviewFixture(buildGate = false) {
-  const runner = await createDockerRunner(process.env.PREVIEW_RUNNER_IMAGE ?? "agentforge-preview-runner:local");
+export async function startPreviewFixture(buildGate = false, command = dockerCommand) {
+  const runner = await createDockerRunner(process.env.PREVIEW_RUNNER_IMAGE ?? "agentforge-preview-runner:local", command);
   let holdNext = false;
   let release: (() => void) | undefined;
   const evidence = { started: 0, completed: 0 };
