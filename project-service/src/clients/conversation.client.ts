@@ -14,7 +14,7 @@ export type ConversationRequest = Pick<ConversationInput, "messages"> & {
   requestId: string; baseRevision?: { id: string; files: { path: string; content: string }[] };
 };
 const tokenCount = z.number().int().nonnegative().nullable();
-const responseSchema = z.strictObject({ response: z.strictObject({
+export const conversationResponseSchema = z.strictObject({ response: z.strictObject({
   requestId: z.string().min(1).max(100), action: z.enum(["reply", "clarify", "build"]),
   message: z.string().trim().min(1).max(4000), prompt: z.string().trim().min(10).max(1000).nullable(),
   sources: z.array(z.strictObject({ id: z.string().min(1).max(100), title: z.string().min(1).max(200) })).max(8),
@@ -61,7 +61,7 @@ export async function requestConversation(request: ConversationRequest) {
         chunks.push(chunk.value);
       }
     } finally { await reader.cancel().catch(() => undefined); }
-    const result = responseSchema.parse(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+    const result = conversationResponseSchema.parse(JSON.parse(Buffer.concat(chunks).toString("utf8")));
     if (result.response.requestId !== request.requestId ||
         (result.response.action === "build") !== (result.response.prompt !== null)) throw new Error("Invalid AI decision.");
     return result;
