@@ -2,6 +2,38 @@
 
 This service receives authenticated internal generation requests from Project Service, calls the configured model through Vercel AI Gateway or directly through Google, and validates a constrained Next.js frontend manifest. Project Service owns saved revisions; this service does not write Project data or execute generated code.
 
+## Conversation, local retrieval and evaluations — 2026-10-25
+
+`POST /internal/conversations` uses the existing `x-internal-service-token`. Project Service, not the browser, calls it. Existing generation/requirements routes remain compatible.
+
+```json
+{
+  "requestId": "turn-1",
+  "messages": [{ "role": "user", "content": "Hi! How should we plan my portfolio?" }]
+}
+```
+
+- Strict request: 1–16 user/assistant messages, final message from user, each 1–4,000 characters, serialized message context at most 16,000 UTF-8 bytes. Optional `baseRevision: {id, files}` comes from Project's owned persisted snapshot; it shares generation's safe-path/file/120,000-character limits and the whole request has a 240,000-byte cap. No arbitrary system roles, provider settings, secrets or shell tools are accepted.
+- One configured model returns `{response: {requestId, action, message, prompt, sources, retrieval, model, usage, latencyMs}}`. `action` is `reply`, `clarify` or `build`; `prompt` is null except for a build (10–1,000 characters). Greetings and planning should reply without generation. An explicit build/edit request creates a compact self-contained change prompt. At most one combined essential question is requested; delegated placeholders must be labelled, not invented personal facts. These are model instructions, not a guarantee of perfect intent classification.
+- There is one conversation model call, output at most 2,000 tokens, no retry/fallback and a 45-second overall abort budget including retrieval. This call does not write files or execute code. Project owns publication; Execution owns build/Preview. Missing usage is null, not a fabricated zero. Error responses do not expose provider payloads or credentials.
+- `frontend-knowledge.ts` holds six reviewed, repository-owned guidance passages: portfolio honesty, accessibility, responsive layout, React interaction, minimal edits and runtime limits. Retrieval injects at most two ranked passages into the model context. `sources: [{id,title}]` lists the exact passages supplied, not a claim that every passage was cited or followed. The file-generation workflow also receives relevant **lexical** guidance without changing its existing response contract or adding embedding calls.
+- Default `RAG_RETRIEVAL_MODE=lexical` builds sparse TF-IDF vectors and ranks cosine similarity entirely locally: no embedding API bill and no neural-semantic claim. It cannot match every paraphrase or search the web. This small local corpus is not a general project-code search engine.
+- Optional `RAG_RETRIEVAL_MODE=semantic` requires `RAG_EMBEDDING_MODEL` (a current Google embedding ID you verify for your account) and `GOOGLE_GENERATIVE_AI_API_KEY`, even if the chat model uses Gateway. The existing official Google SDK and `embedMany`/`embed` create a small in-memory vector index. Six reviewed documents are embedded once per process/model/key; each conversation query is embedded once, with retries disabled and the shared timeout. Only the recent user query, not base file contents, is sent to the embedding provider. Restart rebuilds the index. This is a local vector index, **not** a separately deployed vector database. Semantic failures stop the request, never silently fall back or switch paid providers. This mode can incur embedding costs and is OFF by default.
+- `retrieval: {method, embeddingModel, inputTokens}` exposes actual retrieval mode and separately reported embedding tokens. Chat `usage` excludes embeddings; no dollar estimate is invented. Concurrent initial requests share the same corpus-index promise; the request that starts it accounts for its reported corpus tokens.
+
+Small file map: `conversation.schema.ts` validates; `conversation.service.ts` makes the one bounded decision call; `conversation.controller.ts` handles HTTP; `frontend-knowledge.ts` is the reviewed corpus/lexical search; `retrieval.ts` is opt-in embeddings/cosine search; `conversation.evaluation.ts` contains 18 reviewed behavior cases and simple graders. No new dependency or agent framework was added.
+
+```powershell
+# Free SDK/HTTP fixtures: tests include 18 mocked evaluation-pipeline cases, not model-quality proof.
+npm --workspace ai-orchestrator-service test
+# List reviewed cases; no credentials, model calls or running server required.
+npm --workspace ai-orchestrator-service run eval:conversation
+# Explicit live opt-in: default limit 3, maximum 18; may consume provider quota/credits.
+npm --workspace ai-orchestrator-service run eval:conversation -- --live --limit=2 --case=greeting,portfolio-plan
+```
+
+The live evaluation command reports actual/expected action, model, tokens, retrieval and latency. It stops on the first provider/output failure without retry and returns nonzero for failed graders. Passing these intent/contract checks does not prove visual design, build success, jailbreak immunity or actual Preview behavior; verify those separately. No live request is made by the normal test suite.
+
 ## Existing service setup
 
 Use Node 22+ and the repository's root npm workspaces/lockfile. Copy this service's `.env.example` to a local ignored `.env` and configure:

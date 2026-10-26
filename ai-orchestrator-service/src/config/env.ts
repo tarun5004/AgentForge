@@ -1,5 +1,6 @@
 import dotenv from "dotenv";
 import { readAISettings } from "./ai-settings.js";
+import { readRetrievalSettings } from "../features/conversations/retrieval.js";
 
 dotenv.config();
 
@@ -15,6 +16,8 @@ function getRequiredEnv(name: string): string {
 }
 
 const aiSettings = readAISettings(process.env);
+// Invalid semantic configuration fails before accepting user requests or spending on a model.
+readRetrievalSettings(process.env);
 
 const port = Number.parseInt(process.env.PORT ?? "6001", 10);
 

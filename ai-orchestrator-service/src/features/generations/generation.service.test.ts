@@ -73,6 +73,7 @@ test("SDK calls loadSkill, receives real local instructions, then produces the u
   const context = JSON.stringify(model.doGenerateCalls[1]!.prompt);
   assert.ok(context.includes(FRONTEND_SKILL_HASH));
   assert.ok(context.includes("small name component stays small"));
+  assert.ok(context.includes("Reviewed local references"));
   assert.deepEqual(result.files, manifest.files);
   assert.deepEqual(result.usage, { inputTokens: 20, outputTokens: 40, totalTokens: 60 });
   assert.deepEqual(Object.keys(result).sort(), ["requestId", "provider", "model", "summary", "files", "deletedPaths", "validation", "usage", "latencyMs"].sort());

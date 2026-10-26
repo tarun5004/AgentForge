@@ -7,18 +7,20 @@ export const notFoundHandler: RequestHandler = (_req, res) => {
 
 export const errorHandler: ErrorRequestHandler = (error, req, res, _next) => {
   const requirements = req.path === "/internal/requirements";
+  const conversation = req.path === "/internal/conversations";
+  const kind = conversation ? "Conversation" : requirements ? "Requirement" : "Generation";
   // Preserve the parser's size error; it is not a provider failure.
   if (error?.type === "entity.too.large" && error.status === 413) {
-    res.status(413).json({ message: requirements ? "Requirement request is too large." : "Generation request is too large.", code: "CONTEXT_TOO_LARGE" });
+    res.status(413).json({ message: `${kind} request is too large.`, code: "CONTEXT_TOO_LARGE" });
     return;
   }
   if (error instanceof ZodError) {
     if (error.issues.some((issue) => issue.code === "custom" && issue.params?.code === "CONTEXT_TOO_LARGE")) {
-      res.status(413).json({ message: requirements ? "Requirement context is too large." : "Generation context is too large.", code: "CONTEXT_TOO_LARGE" });
+      res.status(413).json({ message: `${kind} context is too large.`, code: "CONTEXT_TOO_LARGE" });
       return;
     }
     res.status(400).json({
-      message: requirements ? "Invalid requirement request." : "Invalid generation request.",
+      message: conversation ? "Invalid conversation request." : requirements ? "Invalid requirement request." : "Invalid generation request.",
       issues: error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message })),
     });
     return;
@@ -33,11 +35,11 @@ export const errorHandler: ErrorRequestHandler = (error, req, res, _next) => {
     `${JSON.stringify({
       level: "error",
       service: "ai-orchestrator-service",
-      message: requirements ? "requirement_assessment_failed" : "generation_request_failed",
+      message: conversation ? "conversation_request_failed" : requirements ? "requirement_assessment_failed" : "generation_request_failed",
       requestId: req.header("x-request-id"),
       errorName: error instanceof Error ? error.name : "UnknownError",
     })}\n`,
   );
 
-  res.status(502).json({ message: requirements ? "AI requirement assessment failed. Please try again." : "AI generation failed. Please try again." });
+  res.status(502).json({ message: conversation ? "AI conversation failed. Please try again." : requirements ? "AI requirement assessment failed. Please try again." : "AI generation failed. Please try again." });
 };
