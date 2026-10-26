@@ -32,7 +32,7 @@ export function validateLiveDatabase(value: string | undefined) {
   return target.pathname.slice(1);
 }
 
-type ProviderCall = { index: number; outputCap: number; reservedUsd?: number; status?: number; usage?: unknown; failed?: boolean };
+type ProviderCall = { index: number; outputCap: number; reservedUsd?: number; status?: number; usage?: unknown; failed?: boolean; networkError?: { name: string; code: string | null; aborted: boolean } };
 
 // Pricing is deliberately explicit: a different model needs a fresh price review, not a guessed estimate.
 export function liveModelPricing(model: string) {
@@ -79,8 +79,16 @@ export function guardLiveProvider(fetcher: typeof fetch, model: string, calls: P
       call.usage = result.usageMetadata ?? null;
       if (!response.ok) { halted = true; call.failed = true; }
       return response;
-    } catch {
+    } catch (error) {
       halted = true; call.failed = true;
+      // Names/codes identify DNS, connection and abort failures without logging URLs, keys or bodies.
+      const failure = error as { name?: unknown; cause?: { code?: unknown } };
+      const code = failure?.cause?.code;
+      call.networkError = {
+        name: typeof failure?.name === "string" && /^[A-Za-z_]{1,60}$/.test(failure.name) ? failure.name : "UnknownError",
+        code: typeof code === "string" && /^[A-Z0-9_]{1,60}$/.test(code) ? code : null,
+        aborted: init?.signal?.aborted ?? false,
+      };
       throw new Error("Live provider request failed; no automatic retry is permitted.");
     }
   };

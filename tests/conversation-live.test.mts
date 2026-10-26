@@ -104,6 +104,17 @@ test("closing admission blocks late tool-loop calls while allowing local cleanup
   assert.equal(requests, 1);
 });
 
+// Record only allowlisted network diagnostics, never a provider's raw message or request URL.
+test("network failures retain safe connection codes without credential text", async () => {
+  const calls: { index: number; outputCap: number; networkError?: unknown }[] = [];
+  const guarded = guardLiveProvider((async () => {
+    throw new TypeError("private provider URL and key must not be logged", { cause: { code: "UND_ERR_CONNECT_TIMEOUT" } });
+  }) as typeof fetch, model, calls);
+  await assert.rejects(guarded(origin, input(1)));
+  assert.deepEqual(calls[0].networkError, { name: "TypeError", code: "UND_ERR_CONNECT_TIMEOUT", aborted: false });
+  assert.doesNotMatch(JSON.stringify(calls), /private provider|key must/);
+});
+
 test("safe browser outcomes retain checkpoints and do not copy CLI source or credentials", () => {
   assert.deepEqual(browserOutcome('### Result\n{"passed":false,"checkpoint":"planning","failure":"Timeout"}\n### Ran Playwright code\nsecret source'), {
     passed: false, checkpoint: "planning", failure: "Timeout",
