@@ -3,6 +3,7 @@ $nodeCommand = (Get-Command node.exe).Source
 $npxEntry = Join-Path $PSScriptRoot 'native-browser-command.fixture.mjs'
 $sessionName = 'native-command-unit-fixture'
 $checks = 0
+$argumentChecks = 0
 
 # Extract the actual runner function without executing its startup/browser/database workflow.
 foreach ($testCase in @(
@@ -27,6 +28,18 @@ foreach ($testCase in @(
             if (-not $caught) { throw 'Native/browser failure was incorrectly accepted.' }
             $checks += 1
         }
+        # Exercise actual inline selector snippets: embedded quotes/spaces previously split argv.
+        $selectorSnippets = $ast.FindAll({ param($node)
+            $node -is [System.Management.Automation.Language.StringConstantExpressionAst] -and
+            $node.Value.StartsWith('async page =>') -and $node.Value.Contains('page.locator(')
+        }, $true)
+        foreach ($snippet in $selectorSnippets) {
+            $env:AGENTFORGE_EXPECTED_BROWSER_CODE = $snippet.Value
+            try { & $testCase.Name @('run-code', $snippet.Value) }
+            finally { Remove-Item Env:AGENTFORGE_EXPECTED_BROWSER_CODE -ErrorAction SilentlyContinue }
+            $argumentChecks += 1
+        }
     }
 }
 Write-Host "PASS $checks/12 native-command regression checks; npx/direct paths, harmless stderr and true failures."
+Write-Host "PASS $argumentChecks exact native selector-argument checks; actual runner snippets remain one unchanged argument."

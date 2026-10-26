@@ -124,10 +124,11 @@ function Invoke-StateFlow {
     Use-RealControl 'button' 'page.tsx A'
     Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
     Invoke-RealBrowser @('run-code', "async page => { await page.evaluate(() => window.workspaceStateAction('arm-read')); }")
-    Invoke-RealBrowser @('run-code', 'async page => { await page.locator(''summary[aria-label="Saved conversations"]'').click(); }')
+    # Avoid embedded double quotes: Windows PowerShell 5 strips them in native CLI arguments.
+    Invoke-RealBrowser @('run-code', 'async page => { await page.locator(''header summary'').click(); }')
     Use-RealControl 'button' 'Build a portfolio website page v2'
     Invoke-RealBrowser @('run-code', "async page => { await page.evaluate(() => window.workspaceStateAction('wait-read')); }")
-    Invoke-RealBrowser @('run-code', 'async page => { await page.locator(''summary[aria-label="Saved conversations"]'').click(); }')
+    Invoke-RealBrowser @('run-code', 'async page => { await page.locator(''header summary'').click(); }')
     Use-RealControl 'button' 'Build a contact website page v1'
     Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v1', { exact: true }).waitFor(); }")
     Use-RealControl 'button' 'page.tsx A'
@@ -214,7 +215,7 @@ try {
     Use-RealControl 'button' 'page.tsx M'
     Invoke-RealBrowser @('run-code', '--filename=scripts/workspace-real.browser.js')
     Write-Host 'PASS hard refresh restored v2.'
-    Invoke-RealBrowser @('run-code', 'async page => { await page.locator(''summary[aria-label="Revision history"]'').click(); }')
+    Invoke-RealBrowser @('run-code', 'async page => { await page.locator(''summary'').filter({ hasText: ''View changes'' }).click(); }')
     Use-RealControl 'button' 'v1 Build a simple portfolio page for my CV Initial saved portfolio snapshot'
     Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v1', { exact: true }).waitFor(); }")
     Use-RealControl 'button' 'page.tsx A'
