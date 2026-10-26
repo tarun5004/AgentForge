@@ -77,6 +77,8 @@ test("SDK calls loadSkill, receives real local instructions, then produces the u
   assert.ok(context.includes("put 'use client' before imports"));
   assert.ok(context.includes("app/layout.tsx a server component"));
   assert.ok(context.includes("React CSSProperties"));
+  assert.ok(context.includes("Omit app/layout.tsx unless a custom root layout is explicitly requested"));
+  assert.ok(context.includes("Never import Metadata from react"));
   assert.deepEqual(result.files, manifest.files);
   assert.deepEqual(result.usage, { inputTokens: 20, outputTokens: 40, totalTokens: 60 });
   assert.deepEqual(Object.keys(result).sort(), ["requestId", "provider", "model", "summary", "files", "deletedPaths", "validation", "usage", "latencyMs"].sort());
