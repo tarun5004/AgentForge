@@ -84,9 +84,6 @@ export function WorkspaceShell({ selection }: { selection: WorkspaceSelection })
           <span className="hidden items-center gap-1.5 text-[10px] text-[#77777c] md:flex">
             <GitBranch size={12} /> {workspace.revision ? `v${workspace.revision.version}` : "Draft"}
           </span>
-          <span className="rounded border border-[#353539] bg-[#222224] px-2 py-1 text-[10px] text-[#929298]">
-            Saved history
-          </span>
           <button
             type="button"
             onClick={handleSignOut}
@@ -129,7 +126,7 @@ export function WorkspaceShell({ selection }: { selection: WorkspaceSelection })
             <ResizeHandle direction="horizontal" />
 
             <Panel id="workspace" minSize={720}>
-              <CodeWorkspace key={workspace.revision?.id ?? "empty"} isResizable files={generatedFiles} changes={workspace.revision?.fileChanges ?? null} message={editorMessage} />
+              <CodeWorkspace key={workspace.revision?.id ?? "empty"} files={generatedFiles} message={editorMessage} />
             </Panel>
           </Group>
         </div>
@@ -137,7 +134,7 @@ export function WorkspaceShell({ selection }: { selection: WorkspaceSelection })
         // Small screens keep the original stacked layout without drag handles.
         <div className="grid min-h-[calc(100dvh-44px)] grid-cols-1">
           <ChatPanel workspace={workspace} onPreview={openPreview} />
-          <CodeWorkspace key={workspace.revision?.id ?? "empty"} isResizable={false} files={generatedFiles} changes={workspace.revision?.fileChanges ?? null} message={editorMessage} />
+          <CodeWorkspace key={workspace.revision?.id ?? "empty"} files={generatedFiles} message={editorMessage} />
         </div>
       )}
     </main>

@@ -2,6 +2,21 @@
 
 This Next.js application provides AgentForge's authentication screens and local AI development workspace.
 
+## Conversational workspace
+
+- One permanent composer accepts short greetings, planning questions and frontend build/edit requests. Enter sends; Shift+Enter inserts a line. A failed reply or build keeps the original text available. Navigation/account changes cannot apply a late response to a different project.
+- `POST /api/conversations` returns one validated `reply`, `clarify`, or `build` decision from the configured model. Greetings/plans do not create projects. Only a build decision creates/updates files through the existing idempotent generation API; there is no automatic retry after an ambiguous chat failure.
+- Recent user/assistant messages are sent as bounded context (at most 16 messages / 16 KB). A visible activity detail records when older displayed history was excluded. Source files come from the server-owned selected revision, never editable browser payloads.
+- Each assistant reply has an expandable **Run report**: model, reported tokens (unknown remains unknown), latency, decision, retrieval method and exact guidance source IDs. This is observed metadata, not private reasoning or a claim that code compiled.
+- Desktop layout keeps the compact gray reference-style chat/sidebar, editor and Preview. Changes/history are in one drawer. The old questionnaire, duplicate Changes panel, sample terminal and fake demo data were removed; legacy backend Brief endpoints/data remain supported.
+- Display history stays account-scoped in this browser, including an unsaved draft conversation. The first generated project adopts that transcript. Saved source files/revisions remain authoritative in MongoDB. No new frontend dependency.
+
+Start from the repository root with `npm run dev:web` and the Auth/Project/AI services running. AI uses port 6001. Local Preview additionally requires the trusted host Execution setup below; starting Compose's status-only Execution container is not enough.
+
+Small file map: `ChatPanel` renders the composer/history; `ConversationTimeline` renders safe Markdown/activity/results; `useWorkspace` coordinates saved files and requests; `useConversation` owns display storage; `lib/conversation-api` validates chat replies and bounds the request context. None of these modules stores provider secrets.
+
+The dated sections below record earlier slices; the conversational workflow above replaces the old visible assessment/confirmation form, not its historical records.
+
 ## Unified agent chat — 2026-10-25
 
 Stabilization cleanup: the unconnected sample Terminal/Problems panel and unused sample files/messages/tasks have been removed. The workspace displays only persisted files, actual change metadata, and real Preview status. This cleanup does not add general conversation or change the existing requirements API; those remain separate work.

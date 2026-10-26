@@ -28,6 +28,31 @@ export function useConversation(userId: string | null) {
     commit(project.id, restoreRevisionMessages(project, revisions, cached));
   }, [userId, commit]);
 
+  // Unsaved chat stays account-scoped without creating a backend project for every greeting.
+  const restoreDraft = useCallback(() => {
+    const cached = current.current.userId === userId && current.current.projectId === "draft" ? current.current.conversation
+      : userId ? readConversation(userId, "draft") : EMPTY;
+    commit("draft", cached);
+  }, [userId, commit]);
+
+  // Move the real transcript with the first generated project instead of replacing it with a form.
+  const adoptProject = useCallback((project: Project) => {
+    const draft = current.current.userId === userId && current.current.projectId === "draft" ? current.current.conversation : EMPTY;
+    commit(project.id, restoreRevisionMessages(project, [], draft));
+    if (userId) clearConversation(userId, "draft");
+  }, [userId, commit]);
+
+  // Read the ref so the next request includes the last completed reply, not a stale React render.
+  function entries(projectId: string) {
+    return current.current.userId === userId && current.current.projectId === projectId ? current.current.conversation.entries : [];
+  }
+
+  // Starting over only clears this browser's unsaved conversation, never saved projects.
+  function resetDraft() {
+    if (userId) clearConversation(userId, "draft");
+    commit("draft", EMPTY);
+  }
+
   // The id belongs to one logical request, so repeated status reads update rather than duplicate it.
   const write = useCallback((projectId: string, entry: Omit<ChatEntry, "createdAt"> & { createdAt?: string }) => {
     const conversation = current.current.userId === userId && current.current.projectId === projectId ? current.current.conversation
@@ -51,5 +76,5 @@ export function useConversation(userId: string | null) {
     commit(project.id, restoreRevisionMessages(project, revisions, EMPTY));
   }, [userId, commit]);
 
-  return { view, restore, write, activity, clear };
+  return { view, restore, restoreDraft, adoptProject, entries, resetDraft, write, activity, clear };
 }

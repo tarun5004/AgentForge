@@ -12,6 +12,7 @@ const nextConfig: NextConfig = {
   experimental: { proxyTimeout: 95_000 },
   async rewrites() {
     return [
+      { source: "/api/conversations", destination: `${projectServiceUrl}/api/conversations` },
       { source: "/api/runs/:path*", destination: `${executionServiceUrl}/api/runs/:path*` },
       {
         source: "/api/auth/:path*",

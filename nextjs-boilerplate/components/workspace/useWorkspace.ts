@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   createProject, generateProject, getGeneration, getProject, getRevision,
   listProjects, listRevisions, ProjectApiError,
-  getRequirementBrief, assessRequirementBrief, updateRequirementBrief, generateConfirmedBrief,
+  getRequirementBrief, generateConfirmedBrief,
   type Generation, type GenerationStatus, type Project, type Revision, type RevisionSummary,
 } from "@/lib/project-api";
 import {
@@ -17,10 +17,8 @@ import type { SessionAccess } from "@/lib/session-request";
 import { pollGeneration } from "@/lib/generation-poll";
 import { generationActivity } from "@/lib/conversation";
 import { useConversation } from "./useConversation";
-import {
-  briefAnswerDrafts, isBriefAnswers, readPendingBrief, savePendingBrief, clearPendingBrief,
-  type BriefAnswer, type PendingBrief, type RequirementBrief,
-} from "@/lib/requirement-brief";
+import type { RequirementBrief } from "@/lib/requirement-brief";
+import { sendConversation, conversationContext, conversationReport } from "@/lib/conversation-api";
 
 export type WorkspaceSnapshot = Pick<Revision, "id" | "version" | "parentRevisionId" | "sourcePrompt" | "summary" | "files" | "fileChanges" | "model" | "usage" | "validation" | "buildVerification">;
 
@@ -67,6 +65,7 @@ export function useWorkspace(
   const chat = useConversation(userId);
   const restoreChat = chat.restore;
   const writeChat = chat.write;
+  const restoreDraft = chat.restoreDraft;
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectCursor, setProjectCursor] = useState<string | null>(null);
   const [listBusy, setListBusy] = useState(true);
@@ -79,23 +78,21 @@ export function useWorkspace(
   const [loadBusy, setLoadBusy] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [notice, setNotice] = useState("Describe a frontend page, or reopen a saved project.");
+  const [notice, setNotice] = useState("Ask a question, plan a website, or describe what to build.");
   const [submitError, setSubmitError] = useState("");
   const [pending, setPending] = useState<PendingGeneration | null>(null);
-  const [brief, setBrief] = useState<RequirementBrief | null>(null);
-  const [answerDrafts, setAnswerDrafts] = useState<BriefAnswer[]>([]);
-  const [briefIntent, setBriefIntent] = useState<PendingBrief | null>(null);
-  const [briefError, setBriefError] = useState("");
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
   const selectionAbort = useRef<AbortController | null>(null);
   const listAbort = useRef<AbortController | null>(null);
   const submissionLock = useRef(false);
   const mounted = useRef(true);
+  const account = useRef(userId);
   const pollAbort = useRef<AbortController | null>(null);
-  const answerSnapshot = useRef("");
   const selectionKey = workspaceUrl(selection.projectId, selection.revisionId);
   const visible = loadedKey === selectionKey;
+
+  useEffect(() => { account.current = userId; }, [userId]);
 
   // Redirecting alone leaves a stale user cached; clear it before leaving protected UI.
   const reportError = useCallback((error: unknown): string => {
@@ -156,8 +153,7 @@ export function useWorkspace(
         if (!selection.projectId) {
           setProject(null); setRevision(null); setRevisions([]); setRevisionCursor(null);
           setLoadedKey(selectionKey); setPending(null);
-          setBrief(null); setAnswerDrafts([]); setBriefIntent(null); setBriefError("");
-          answerSnapshot.current = "";
+          restoreDraft();
           return;
         }
         const [savedProject, history, selected] = await Promise.all([
@@ -168,11 +164,11 @@ export function useWorkspace(
         const snapshot = selected ?? (savedProject.latestRevision
           ? await getRevision(savedProject.id, savedProject.latestRevision.id, session!, controller.signal) : null);
         let savedBrief: RequirementBrief | null = null;
-        let briefReadError = "";
+
         // Requirements remain part of the conversation even after its first revision is published.
         if (savedProject) {
           try { savedBrief = await getRequirementBrief(savedProject.id, session!, controller.signal); }
-          catch (error) { if (!controller.signal.aborted) briefReadError = reportError(error); }
+          catch (error) { if (!controller.signal.aborted && error instanceof ProjectApiError && error.status === 401) throw error; }
         }
         if (controller.signal.aborted || !mounted.current) return;
         setProject(savedProject); setRevision(snapshot); setRevisions(history.revisions); setRevisionCursor(history.nextCursor);
@@ -186,14 +182,6 @@ export function useWorkspace(
         });
         const restoredIntent = readPendingGeneration(userId!, savedProject.id);
         setPending(restoredIntent);
-        setBrief(savedBrief); setBriefError(briefReadError);
-        const snapshotKey = `${savedProject.id}:${savedBrief?.id ?? "empty"}`;
-        if (answerSnapshot.current !== snapshotKey) {
-          setAnswerDrafts(briefAnswerDrafts(savedBrief));
-          answerSnapshot.current = snapshotKey;
-        }
-        // Disabled sessionStorage must not erase a key still held in this mounted shell.
-        setBriefIntent((current) => current?.projectId === savedProject.id ? current : readPendingBrief(userId!, savedProject.id));
         if (restoredIntent) setNotice("Saved attempt restored. Check status or retry the same attempt; no new request key is needed.");
       } catch (error) {
         if (!controller.signal.aborted && mounted.current) setLoadError(reportError(error));
@@ -203,109 +191,58 @@ export function useWorkspace(
     }
     void loadSelection();
     return () => controller.abort();
-  }, [session, userId, busy, selection.projectId, selection.revisionId, selection.error, selectionKey, reload, reportError, restoreChat, writeChat]);
+  }, [session, userId, busy, selection.projectId, selection.revisionId, selection.error, selectionKey, reload, reportError, restoreChat, restoreDraft, writeChat]);
 
   // Invalidate old GETs immediately, before route props arrive from Next navigation.
   function navigate(projectId: string | null, revisionId: string | null = null) {
     if (submissionLock.current) return;
     selectionAbort.current?.abort();
     setLoadedKey(""); setLoadError(""); setSubmitError(""); setPending(null); setPrompt("");
-    setBrief(null); setAnswerDrafts([]); setBriefIntent(null); setBriefError("");
-    answerSnapshot.current = "";
-    setNotice(projectId ? "Loading saved project..." : "Your next prompt creates a new project.");
+    if (!projectId) chat.resetDraft();
+    setNotice(projectId ? "Loading saved project..." : "Ask a question or describe what to build.");
     router.replace(workspaceUrl(projectId, revisionId), { scroll: false });
     // Same-URL selection is a genuine reload, not a no-op navigation.
     setReload((value) => value + 1);
   }
 
-  // Keep answer edits above responsive panels so resizing does not reset the user's facts.
-  function editBriefAnswer(index: number, answer: string) {
-    if (busy || briefIntent || pending) return;
-    setAnswerDrafts((current) => current.map((item, position) => position === index ? { ...item, answer } : item));
-  }
-
-  // All mutations share the generation lock: selection/sign-out cannot change operation identity.
-  async function actOnBrief(action: "assess" | "confirm" | "abandon" | "reload", retry = false) {
-    if (!session || !userId || submissionLock.current || !visible || loadBusy || selection.error || loadError || pending) return;
-    if (action === "abandon" && !window.confirm("Abandon this pending assessment? This cannot cancel/refund a provider call. A new attempt may spend again.")) return;
-    if (action === "confirm" && (briefIntent || !brief || brief.assessment?.status !== "ready" || JSON.stringify(answerDrafts) !== JSON.stringify(brief.answers))) return;
-    if (action === "assess" && !retry && (briefError || briefIntent || brief?.status === "pending" || !isBriefAnswers(answerDrafts))) return;
-    if (retry && !briefIntent) return;
+  // One model decides how to help; only a build response enters the existing generation workflow.
+  async function sendMessage() {
     const text = prompt.trim();
-    if (!project && (action !== "assess" || text.length < 10 || text.length > 1000)) return;
-    submissionLock.current = true; setBusy(true); setBriefError(""); setSubmitError("");
+    if (!session || !userId || !text || text.length > 1000 || submissionLock.current || !visible || loadBusy || loadError || pending) return;
+    const threadId = project?.id ?? "draft";
+    const requestId = crypto.randomUUID();
+    const requestUrl = window.location.pathname + window.location.search;
+    // Browser Back/Forward is still available while request buttons are locked.
+    const stillSelected = () => mounted.current && account.current === userId && window.location.pathname + window.location.search === requestUrl;
+    const context = conversationContext(chat.entries(threadId), text);
+    submissionLock.current = true; setBusy(true); setSubmitError("");
     selectionAbort.current?.abort();
-    let savedProject = project;
-    let intent = retry ? briefIntent : null;
+    chat.write(threadId, { id: `chat:${requestId}:user`, role: "user", kind: "message", text });
+    chat.activity(threadId, `chat:${requestId}`, "Waiting for the AI response.", "working",
+      context.trimmed ? ["Only the recent conversation fits in this request; older displayed messages were not sent."] : []);
+    let buildPrompt: string | undefined;
     try {
-      if (!savedProject) {
-        savedProject = await createProject(text, session);
-        if (!mounted.current) return;
-        setProject(savedProject); setRevision(null); setRevisions([]); setPrompt("");
-        chat.restore(savedProject, []);
-        setLoadedKey(workspaceUrl(savedProject.id));
-        router.replace(workspaceUrl(savedProject.id), { scroll: false });
-        void loadProjectPage();
-      }
-      let result: RequirementBrief | null;
-      if (action === "reload") {
-        result = await getRequirementBrief(savedProject.id, session, AbortSignal.timeout(10_000));
-      } else if (action === "assess") {
-        if (!intent) {
-          intent = { projectId: savedProject.id, key: crypto.randomUUID(), body: {
-            expectedVersion: brief?.version ?? 0,
-            answers: answerDrafts.map((item) => ({ question: item.question, answer: item.answer.trim() })),
-          } };
-          savePendingBrief(userId, intent); setBriefIntent(intent);
-        }
-        setNotice("Assessing requirements. Code generation has not started.");
-        intent.body.answers.forEach((answer, index) => chat.write(savedProject!.id, {
-          id: `brief:${intent!.key}:answer:${index}`, role: "user", kind: "message",
-          text: `${answer.question}\n${answer.answer}`,
-        }));
-        chat.activity(savedProject.id, `brief:${intent.key}`, "Requirements assessment requested.", "working");
-        result = await assessRequirementBrief(intent.projectId, session, intent.key, intent.body);
-        if (result.status !== "pending") {
-          clearPendingBrief(userId, savedProject.id); setBriefIntent(null);
-        }
-      } else {
-        if (!brief) throw new Error("Reload the saved brief first.");
-        result = await updateRequirementBrief(savedProject.id, brief.id, action, session);
-        if (action === "abandon") {
-          clearPendingBrief(userId, savedProject.id); setBriefIntent(null);
-        }
-      }
-      if (!mounted.current) return;
-      if (result?.assessment) chat.write(savedProject.id, {
-        id: `requirements:${result.id}`, role: "assistant", kind: "requirements",
-        text: result.assessment.message, details: [result.assessment.brief, ...result.assessment.questions], state: "done",
-      });
-      if (intent) chat.activity(savedProject.id, `brief:${intent.key}`, result?.status === "completed"
-        ? "Requirements assessment completed." : "Assessment not confirmed. Reload before continuing.",
-      result?.status === "completed" ? "done" : "unknown");
-      if (action === "confirm" && result) chat.activity(savedProject.id, `confirmation:${result.id}`,
-        "Brief confirmed by you. Code generation has not started.", "done");
-      if (action === "abandon" && result) chat.activity(savedProject.id, `abandon-brief:${result.id}`,
-        "Assessment abandoned explicitly. This does not refund a provider call.", "done");
-      setBrief(result); setAnswerDrafts(briefAnswerDrafts(result));
-      answerSnapshot.current = `${savedProject.id}:${result?.id ?? "empty"}`;
-      setNotice(result?.confirmedAt ? "Brief confirmed. Choose Generate code when ready." : "Requirements saved. Review the next action below.");
+      const response = await sendConversation({
+        messages: context.messages, ...(project ? { projectId: project.id } : {}),
+        ...(revision ? { baseRevisionId: revision.id } : {}),
+      }, session);
+      if (!stillSelected()) return;
+      chat.activity(threadId, `chat:${requestId}`, "AI response received.", "done", conversationReport(response));
+      chat.write(threadId, { id: `chat:${requestId}:assistant`, role: "assistant", kind: "message",
+        text: response.message, details: conversationReport(response), state: "done" });
+      setNotice("");
+      if (response.action === "build") buildPrompt = response.prompt!;
+      else setPrompt("");
     } catch (error) {
-      if (!mounted.current) return;
-      // Only confirmed admission rejections discard local identity. 502/503/transport remain replayable.
-      if (intent && error instanceof ProjectApiError && ([400, 404, 413].includes(error.status) ||
-          ["BRIEF_VERSION_CONFLICT", "IDEMPOTENCY_MISMATCH", "INVALID_BRIEF_ANSWERS"].includes(error.code ?? ""))) {
-        clearPendingBrief(userId, intent.projectId); setBriefIntent(null);
-      }
+      if (!stillSelected()) return;
       const message = reportError(error);
-      if (savedProject) chat.activity(savedProject.id, `brief:${intent?.key ?? "control"}`, message, "unknown");
-      setBriefError(message); setSubmitError(message);
-      if (!savedProject) void loadProjectPage();
+      chat.activity(threadId, `chat:${requestId}`, message, "error");
+      setNotice("Your message is kept below. Send again deliberately when ready; nothing is retried automatically.");
     } finally {
       submissionLock.current = false;
-      // The selection loader preserves draft answers while their saved snapshot is unchanged.
       if (mounted.current) setBusy(false);
     }
+    if (buildPrompt && stillSelected()) await submit(false, buildPrompt);
   }
 
   // Keep pagination tied to its original project even if selection changes mid-request.
@@ -348,15 +285,16 @@ export function useWorkspace(
   }
 
   // Freeze project/base/key for the whole attempt; no UI change may mutate an in-flight request.
-  async function submit(retry = false, fromBrief = false) {
+  async function submit(retry = false, generationPrompt?: string) {
     if (!session || !userId || submissionLock.current || (!retry && (loadBusy || selection.error))) return;
-    if (!retry && !fromBrief && !revision) { await actOnBrief("assess"); return; }
-    const text = prompt.trim();
+    if (!retry && generationPrompt === undefined) { await sendMessage(); return; }
+    const text = (generationPrompt ?? prompt).trim();
     if (!retry && (pending || !visible || loadError)) return;
-    if (!retry && !fromBrief && (text.length < 10 || text.length > 1000)) return;
-    if (fromBrief && (!project || !brief?.confirmedAt || briefIntent || briefError || brief.status !== "completed" ||
-      brief.assessment?.status !== "ready" || JSON.stringify(answerDrafts) !== JSON.stringify(brief.answers))) return;
+    if (!retry && (text.length < 10 || text.length > 1000)) return;
     if (retry && !pending) return;
+    const allowedUrls = new Set([window.location.pathname + window.location.search]);
+    // Admit only the project URL transition made deliberately by this operation.
+    const stillSelected = () => mounted.current && account.current === userId && allowedUrls.has(window.location.pathname + window.location.search);
     submissionLock.current = true; setBusy(true); setSubmitError("");
     let savedProject = project;
     let intent = retry ? pending : null;
@@ -364,20 +302,21 @@ export function useWorkspace(
       if (!intent) {
         if (!savedProject) {
           savedProject = await createProject(text, session);
-          if (!mounted.current) return;
+          if (!stillSelected()) return;
           setProject(savedProject); setRevision(null); setRevisions([]);
+          chat.adoptProject(savedProject);
           setLoadedKey(workspaceUrl(savedProject.id));
+          allowedUrls.add(workspaceUrl(savedProject.id));
           router.replace(workspaceUrl(savedProject.id), { scroll: false });
           void loadProjectPage();
         }
         intent = { projectId: savedProject.id, key: crypto.randomUUID(),
-          body: fromBrief ? {} : { prompt: text, ...(revision ? { baseRevisionId: revision.id } : {}) },
-          ...(fromBrief && brief ? { briefId: brief.id } : {}),
+          body: { prompt: text, ...(revision ? { baseRevisionId: revision.id } : {}) },
         };
         savePendingGeneration(userId, intent); setPending(intent);
       }
       if (!savedProject || savedProject.id !== intent.projectId) throw new Error("Reload this project before retrying.");
-      chat.write(savedProject.id, { id: `generation:${intent.key}:request`, role: "user", kind: "message",
+      if (retry) chat.write(savedProject.id, { id: `generation:${intent.key}:request`, role: "user", kind: "message",
         text: intent.body.prompt ?? "Generate code from the confirmed brief.",
         details: intent.body.baseRevisionId ? [`Selected base: ${intent.body.baseRevisionId}`] : undefined,
       });
@@ -386,7 +325,7 @@ export function useWorkspace(
       let result: GenerationStatus = intent.briefId
         ? await generateConfirmedBrief(intent.projectId, intent.briefId, session, intent.key)
         : await generateProject(intent.projectId, session, intent.key, intent.body);
-      if (!mounted.current) return;
+      if (!stillSelected()) return;
       const activityId = `generation:${intent.key}`;
       const activityProjectId = intent.projectId;
       // Polling reports persisted evidence; it never guesses when a tool or build has finished.
@@ -407,15 +346,16 @@ export function useWorkspace(
           AbortSignal.any([signal, AbortSignal.timeout(10_000)])), signal, undefined, recordProgress);
       }
       if (result.status === "failed") throw new ProjectApiError("Generation or build verification failed. Saved files remain unchanged.", 502, "GENERATION_FAILED", result.id);
+      if (!stillSelected()) return;
       clearPendingGeneration(userId, intent.projectId);
       acceptGeneration(result, savedProject, intent.key);
     } catch (error) {
-      if (!mounted.current) return;
+      if (!stillSelected()) return;
       if (intent) {
         if (error instanceof ProjectApiError && error.generationId) intent = { ...intent, generationId: error.generationId };
         const terminal = isTerminalGenerationError(error);
         chat.activity(intent.projectId, `generation:${intent.key}`, errorMessage(error), terminal ? "error" : "unknown");
-        if (terminal) { clearPendingGeneration(userId, intent.projectId); setPending(null); }
+        if (terminal) { clearPendingGeneration(userId, intent.projectId); setPending(null); setNotice("Saved files are unchanged. You can revise the message and send again."); }
         else { savePendingGeneration(userId, intent); setPending(intent); setNotice("Completion is not confirmed. Check status or retry the same attempt."); }
         setSubmitError(`${reportError(error)} ${terminal ? "Saved files are unchanged; a new submission uses a new key." : "Outcome not confirmed. Check status or retry this same attempt."}`);
       } else {
@@ -431,10 +371,11 @@ export function useWorkspace(
   // Explicit status checks do not retry AI; ready evidence loads the committed snapshot.
   async function checkPending() {
     if (!pending?.generationId || !session || !project || busy) return;
+    const requestUrl = window.location.pathname + window.location.search;
     submissionLock.current = true; setBusy(true); setSubmitError("");
     try {
       const result = await getGeneration(pending.projectId, pending.generationId, session);
-      if (!mounted.current) return;
+      if (!mounted.current || account.current !== userId || window.location.pathname + window.location.search !== requestUrl) return;
       if (result.status === "ready") {
         if (userId) clearPendingGeneration(userId, pending.projectId);
         acceptGeneration(result, project, pending.key);
@@ -461,21 +402,19 @@ export function useWorkspace(
   }
 
   return {
-    conversation: visible && chat.view.userId === userId && chat.view.projectId === project?.id ? chat.view.conversation : null,
+    conversation: visible && chat.view.userId === userId && chat.view.projectId === (project?.id ?? "draft") ? chat.view.conversation : null,
     recordPreview: chat.activity,
     // Clearing UI history is separate from deleting saved work or abandoning a paid request.
     clearLocalChat: () => {
-      if (!project || busy || !window.confirm("Clear this browser's chat messages? Saved backend revisions and pending request keys will be kept.")) return;
-      chat.clear(project, revisions); setReload((value) => value + 1);
+      if (busy || !window.confirm("Clear this browser's chat messages? Saved backend revisions and pending request keys will be kept.")) return;
+      if (project) chat.clear(project, revisions); else chat.resetDraft();
+      setReload((value) => value + 1);
     },
     projects, projectCursor, listBusy, listError, project: visible ? project : null,
     revision: visible ? revision : null, revisions: visible ? revisions : [], revisionCursor,
     loadBusy, loadError: selection.error || loadError, prompt, setPrompt, notice, submitError,
     pending: visible ? pending : null, busy,
-    brief: visible ? brief : null, answerDrafts, briefIntent: visible ? briefIntent : null, briefError: visible ? briefError : "",
-    briefDirty: !!brief && JSON.stringify(answerDrafts) !== JSON.stringify(brief.answers),
-    actOnBrief, editBriefAnswer, generateBrief: () => submit(false, true),
-    canSubmit: !busy && !loadBusy && !loadError && !selection.error && !pending && !briefIntent && visible,
+    canSubmit: !busy && !loadBusy && !loadError && !selection.error && !pending && visible,
     selectedProjectId: selection.projectId,
     navigate, submit, checkPending, abandonPending, loadMoreRevisions,
     loadMoreProjects: () => loadProjectPage(projectCursor), refreshProjects: () => loadProjectPage(),

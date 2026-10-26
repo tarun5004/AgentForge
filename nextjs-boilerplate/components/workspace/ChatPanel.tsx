@@ -8,6 +8,8 @@ import { ConversationTimeline } from "./ConversationTimeline";
 // Render shell-owned state: changing screen size must not reset a conversation or request.
 export function ChatPanel({ workspace, onPreview }: { workspace: WorkspaceState; onPreview: () => void }) {
   const { project, revision, busy, pending } = workspace;
+  const errorInTranscript = workspace.conversation?.entries.some((entry) => entry.kind === "activity" &&
+    ["error", "unknown"].includes(entry.state ?? "") && workspace.submitError.startsWith(entry.text));
 
   // Both the button and keyboard use one validated operation and one idempotency key.
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -19,7 +21,7 @@ export function ChatPanel({ workspace, onPreview }: { workspace: WorkspaceState;
   function handlePromptKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
     event.preventDefault();
-    if (event.repeat || !workspace.canSubmit || workspace.prompt.trim().length < 10) return;
+    if (event.repeat || !workspace.canSubmit || !workspace.prompt.trim()) return;
     event.currentTarget.form?.requestSubmit();
   }
 
@@ -60,12 +62,13 @@ export function ChatPanel({ workspace, onPreview }: { workspace: WorkspaceState;
 
     <ConversationTimeline workspace={workspace} onPreview={onPreview} />
 
-    {project && <details className="mx-3 max-h-[22%] shrink-0 overflow-y-auto rounded-t-xl border border-b-0 border-[#494949] px-3 py-2 text-xs">
+    {revision && <details className="mx-3 max-h-[25%] shrink-0 overflow-y-auto rounded-t-xl border border-b-0 border-[#494949] px-3 py-2 text-xs">
       <summary aria-label="Revision history" className="flex cursor-pointer list-none items-center justify-between text-[#bdbdbd]"><span>{revision?.fileChanges?.length ?? 0} files changed</span><span>View changes</span></summary>
+      <ul className="my-2 space-y-1">{revision.fileChanges?.map((file) => <li key={file.path} className="break-all text-[#bdbdbd]">{file.status} {file.path}</li>)}</ul>
       <button type="button" disabled={busy || workspace.loadBusy} onClick={workspace.clearLocalChat} className="mt-2 text-[10px] text-[#99999e] underline disabled:opacity-40">Clear local chat messages</button>
       <section aria-label="Revision history" className="mt-2 space-y-2">
         {workspace.revisions.length === 0 && !workspace.loadBusy && <p className="text-[#99999e]">No saved revisions.</p>}
-        {workspace.revisions.map((item) => <button type="button" key={item.id} onClick={() => workspace.navigate(project.id, item.id)} disabled={busy || workspace.loadBusy}
+        {workspace.revisions.map((item) => <button type="button" key={item.id} onClick={() => workspace.navigate(project!.id, item.id)} disabled={busy || workspace.loadBusy}
           aria-pressed={revision?.id === item.id} className={`w-full rounded border p-2 text-left disabled:opacity-40 ${revision?.id === item.id ? "border-[#58734c] bg-[#20281d]" : "border-[#303034] hover:bg-[#222224]"}`}>
           <span className="text-[#b6f09c]">v{item.version}</span><p className="mt-1 text-[#d6d6d8]">{item.sourcePrompt ?? "Producing prompt unknown (legacy)"}</p>
           <p className="mt-1 text-[10px] text-[#99999e]">{item.summary}</p>
@@ -75,8 +78,8 @@ export function ChatPanel({ workspace, onPreview }: { workspace: WorkspaceState;
     </details>}
 
     <form onSubmit={handleSubmit} className="shrink-0 px-3 pb-3 pt-1">
-      {workspace.submitError && <p role="alert" className="mb-2 text-xs text-[#ffaaaa]">{workspace.submitError}</p>}
-      <p role="status" className="mb-2 text-[10px] text-[#99999e]">{busy || pending ? workspace.notice : revision ? `Next prompt creates a new revision from v${revision.version}.` : workspace.notice}</p>
+      {workspace.submitError && !errorInTranscript && <p role="alert" className="mb-2 text-xs text-[#ffaaaa]">{workspace.submitError}</p>}
+      <p role="status" className="mb-2 text-[10px] text-[#99999e]">{busy || pending ? workspace.notice : revision ? `Chat, plan, or request an edit to v${revision.version}.` : workspace.notice}</p>
       {project?.latestRevision && revision && revision.id !== project.latestRevision.id && <p className="mb-2 text-[10px] text-[#e8ce87]">Historical base selected: v{revision.version}. Latest is v{project.latestRevision.version}.</p>}
       {pending && !busy && <div className="mb-3 space-y-2 rounded border border-[#655738] p-2 text-[11px] text-[#e8ce87]">
         <p>Unconfirmed attempt retained: {pending.body.prompt ?? "Initial generation"}</p>
@@ -86,17 +89,17 @@ export function ChatPanel({ workspace, onPreview }: { workspace: WorkspaceState;
           <button type="button" onClick={workspace.abandonPending} className="underline">Abandon attempt</button>
         </div>
       </div>}
-      {(!project || revision) && <div className="rounded-2xl border border-[#505050] bg-[#333333] px-3 pb-2 pt-3 focus-within:border-[#888888]">
-        <label htmlFor="workspace-prompt" className="sr-only">Describe a frontend page or change</label>
+      <div className="rounded-2xl border border-[#505050] bg-[#333333] px-3 pb-2 pt-3 focus-within:border-[#888888]">
+        <label htmlFor="workspace-prompt" className="sr-only">Message AgentForge</label>
         <textarea id="workspace-prompt" value={workspace.prompt} onChange={(event) => workspace.setPrompt(event.target.value)} onKeyDown={handlePromptKeyDown} aria-describedby="workspace-prompt-help"
-          placeholder={revision ? "Ask for follow-up changes" : "Describe a frontend request..."} rows={3} maxLength={1000} minLength={10} disabled={!workspace.canSubmit}
+          placeholder="Ask a question or describe what to build…" rows={3} maxLength={1000} minLength={1} disabled={busy}
           className="w-full resize-none bg-transparent px-1 text-[13px] outline-none placeholder:text-[#99999e] disabled:opacity-50" />
-        <p id="workspace-prompt-help" className="px-1 text-[10px] text-[#99999e]">Enter to send · Shift+Enter for a new line · Minimum 10 characters</p>
+        <p id="workspace-prompt-help" className="px-1 text-[10px] text-[#99999e]">Enter to send · Shift+Enter for a new line</p>
         <div className="mt-2 flex items-center justify-between">
-          <span className="px-1 text-[10px] text-[#b0b0b0]">Frontend only · {workspace.prompt.length}/1000</span>
-          <button type="submit" disabled={!workspace.canSubmit || workspace.prompt.trim().length < 10} aria-label="Send prompt" className="grid size-7 place-items-center rounded-md bg-[#dddddf] text-[#111112] disabled:opacity-30">{busy ? "..." : <ArrowUp size={15} />}</button>
+          <span className="px-1 text-[10px] text-[#b0b0b0]">{busy ? "Working…" : "Local workspace"} · {workspace.prompt.length}/1000</span>
+          <button type="submit" disabled={!workspace.canSubmit || !workspace.prompt.trim()} aria-label="Send message" className="grid size-7 place-items-center rounded-md bg-[#dddddf] text-[#111112] disabled:opacity-30">{busy ? "..." : <ArrowUp size={15} />}</button>
         </div>
-      </div>}
+      </div>
     </form>
   </aside>;
 }
