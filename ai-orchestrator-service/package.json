@@ -7,7 +7,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch --clear-screen=false src/server.ts",
-    "test": "tsx --test src/config/env.test.ts src/config/ai-model.test.ts src/features/generations/generation.schema.test.ts src/features/generations/generation.prompt.test.ts src/features/generations/generation.service.test.ts src/features/requirements/requirement.test.ts src/features/conversations/conversation.test.ts src/verification/generation-smoke.test.ts",
+    "test": "tsx --test src/config/env.test.ts src/config/ai-model.test.ts src/features/generations/generation.schema.test.ts src/features/generations/generation.prompt.test.ts src/features/generations/generation.service.test.ts src/features/requirements/requirement.test.ts src/features/conversations/conversation.test.ts src/features/conversations/conversation.stream.test.ts src/verification/generation-smoke.test.ts",
     "eval:conversation": "tsx src/features/conversations/conversation.eval-cli.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json",

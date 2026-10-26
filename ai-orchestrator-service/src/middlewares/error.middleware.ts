@@ -7,7 +7,7 @@ export const notFoundHandler: RequestHandler = (_req, res) => {
 
 export const errorHandler: ErrorRequestHandler = (error, req, res, _next) => {
   const requirements = req.path === "/internal/requirements";
-  const conversation = req.path === "/internal/conversations";
+  const conversation = req.path === "/internal/conversations" || req.path === "/internal/conversations/stream";
   const kind = conversation ? "Conversation" : requirements ? "Requirement" : "Generation";
   // Preserve the parser's size error; it is not a provider failure.
   if (error?.type === "entity.too.large" && error.status === 413) {

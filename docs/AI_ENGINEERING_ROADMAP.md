@@ -4,6 +4,95 @@
 
 **Purpose:** Convert the current synchronous generation demo into a reliable, explainable code-generation platform through small, verifiable milestones.
 
+## Conversation reliability extension — 2026-10-26
+
+Current verified core and real-provider evidence are in [Local workspace delivery](LOCAL_WORKSPACE_DELIVERY.md).
+The user requested four next features and an explainable design: streaming, durable chat history,
+stronger evaluations and bounded build repair. These extend the existing services; no new framework,
+queue, vector database or public deployment is needed. Older dated roadmap sections below are historical.
+
+### 1. Streaming: transport, not permission to execute
+
+Proposed full path: browser authenticated POST -> Next proxy -> Project owner/context validation ->
+AI SDK model stream -> Project SSE relay -> browser provisional text -> validated final response.
+
+- Use `fetch` with a POST body and existing bearer JWT, reading the response body incrementally.
+  Native `EventSource` cannot conveniently send that POST body or arbitrary authorization headers.
+  SSE is one-way HTTP streaming; WebSockets are unnecessary for this request/response flow.
+- Frames are `start`, cumulative `message`, `complete`, or terminal `error`. Never split a finished
+  response with a timer and call that model streaming. Only final validated decisions can start generation.
+- Preserve the old JSON route. Add separate streaming routes so existing clients/tests remain compatible.
+- Project must verify correlation, schemas, per-event and total byte limits before relaying; it must
+  not blindly proxy provider payloads. Disable proxy buffering and propagate cancellation upstream.
+- A disconnect or EOF without `complete` means interrupted, not a successful reply/build. Do not retry
+  automatically: another call can cost money. Keep the composer and original user message available.
+
+**Current slice:** AI's internal additive SSE endpoint and deterministic SDK/HTTP tests are implemented
+on the focused AI branch. Project relay, browser consumption and their end-to-end checks are not yet implemented.
+Streaming generated file contents is not part of this first text-response feature; revisions remain atomic.
+
+### 2. Durable history: database is truth, browser is presentation
+
+Proposed ownership stays in Project Service and the existing MongoDB. Store conversations independently
+of generated projects so greetings/plans can be saved without inventing an empty project.
+
+- A conversation stores `ownerId`, title, optional project link and timestamps. Turns store conversation
+  ID, server-owned sequence, client request key, user text, selected base ID, state and final response.
+  Use bounded turns rather than an endlessly growing array in one Mongo document.
+- JWT `sub` supplies owner identity. Every list/read/append checks ownership; never accept `ownerId`
+  from the browser. A new browser logged into the same account queries the same database records.
+- A unique `(conversationId, requestKey)` index prevents double submission from causing duplicate
+  turns/calls. Reserve a turn before inference; save the validated final response before `complete`.
+  Same-key replay reads saved completion without calling the provider again.
+- Store pending/interrupted outcomes explicitly. A crash after provider work but before save is unknown,
+  not proof that retry is free. No queue or automatic restart inference is implied by durable chat storage.
+- Paginate display history but send only a bounded recent context window to the model. History storage
+  and model context are separate: saving 100 messages does not mean paying to resend all 100 each turn.
+- Test same-account fresh-browser restoration, cross-owner denial, duplicate keys, response loss,
+  concurrent submits and failures. Existing browser-only history is not silently backfilled.
+
+### 3. Evaluations: fixed cases, separate graders, measurable reports
+
+Build on the existing reviewed routing cases, contract graders and opt-in live harness. Keep expected
+behavior independent of the model. Reports must distinguish deterministic tests from live model quality.
+
+- Routing checks: greeting/plan -> reply, essential detail -> clarify, explicit build/edit -> build.
+- Code checks: schema/manifest -> real compiler/build -> browser assertion (for example a working counter).
+  A syntactically valid JSON response is not build or usability proof.
+- Report case ID, test/prompt version, model, pass/fail reasons, first-text and total latency, actual
+  reported token usage, and build/browser evidence only where measured. Unknown usage stays unknown.
+- Summarize pass rate and latency distributions; compare runs on identical reviewed cases. Do not call
+  mocked responses a benchmark or use an LLM judge to certify its own output as correct.
+- Default commands are zero-provider-cost; live evaluation requires explicit flags, a small case limit
+  and reviewed model/cost bounds. Stop on provider failure without automatic retries.
+
+### 4. Bounded repair: fix once, rebuild, preserve previous good code
+
+Proposed policy **awaiting user choice**: disabled by default; user explicitly requests one repair after
+a deterministic candidate build failure. This can incur an additional model call and build.
+
+- Project owns the repair attempt/state; Execution supplies allowlisted bounded compiler diagnostics;
+  AI receives the original request, exact failed candidate and sanitized diagnostics as untrusted data.
+- Do not send environment files, JWTs, arbitrary build logs or shell commands to the model. Redact/limit
+  diagnostics; stop on transport/auth/unknown outcomes rather than trying to repair infrastructure.
+- Allow one attempt with a saved request identity, output/time cap, no fallback and zero SDK retries.
+  The repaired manifest goes through the same path/import validation and a fresh real build.
+- Publish only after success, keeping old revisions immutable. Another failure stays failed; do not
+  recurse. Repair is not a bypass of the gate or an unrestricted terminal tool.
+- Tests must prove disabled means zero extra calls, duplicate clicks do not repeat a repair, unsafe
+  diagnostics are withheld, a failed repair preserves the prior revision, and success requires new proof.
+
+### Delivery sequence and interview summary
+
+Deliver compatible service-scoped slices: AI stream -> Project relay -> frontend SSE; Project durable
+history -> frontend restoration; evaluation reports; then the agreed repair policy. Separate branches
+and verification keep source/output/transport/data bugs distinguishable. Git delivery policy is being
+confirmed; do not treat these proposed stages as already merged or tested.
+
+Interview explanation: "SSE improves perceived latency, Mongo preserves owner-scoped conversation state,
+evaluations measure correctness independently, and bounded repair uses compiler feedback without
+creating an unlimited agent loop. Storage, model reasoning, execution and UI have separate owners."
+
 ## Authoritative continuation — live local AI workspace (2026-10-23)
 
 The user clarified that advanced, useful AI skills must be demonstrated through **real model-driven local functionality**, not replaced by the fixture demo. The [AI portfolio delivery contract](AI_PORTFOLIO_DELIVERY_PLAN.md) is now the priority/acceptance source: a dated fresher-role sample, retrospective, skill-to-feature evidence map, core versus optional scope, and ordered service-specific phases A–F. Older six-phase/M0 sections below are historical proposals and evidence; their fixture-first completion target is not the final product requirement.
