@@ -21,19 +21,25 @@ async (page) => {
   const textbox = page.getByRole('textbox', { name: 'Message AgentForge', exact: true });
   const sendButton = page.getByRole('button', { name: 'Send message', exact: true });
   const dialog = page.getByRole('dialog', { name: 'Saved revision preview' });
+  let checkpoint = 'registration';
 
   // Wait for the exact request before inspecting its answer; UI timers alone are not evidence of inference.
   async function send(message) {
+    const operation = checkpoint;
+    checkpoint = `${operation}:fill-composer`;
     await textbox.fill(message);
     await sendButton.waitFor({ state: 'visible' });
+    checkpoint = `${operation}:wait-send-enabled`;
     await page.waitForFunction(() => {
       const button = document.querySelector('button[aria-label="Send message"]');
       return button && !button.disabled;
     });
+    checkpoint = `${operation}:send-and-wait-response`;
     const [response] = await Promise.all([
       page.waitForResponse(response => new URL(response.url()).pathname === '/api/conversations' && response.request().method() === 'POST', { timeout: 100_000 }),
       textbox.press('Enter'),
     ]);
+    checkpoint = `${operation}:validate-response`;
     if (!response.ok()) throw new Error(`Conversation API failed with HTTP ${response.status()}; no automatic retry.`);
     const body = await response.json();
     if (!body.response?.message?.trim()) throw new Error('Conversation returned no assistant message.');
@@ -61,6 +67,7 @@ async (page) => {
     await dialog.getByRole('button', { name: 'Close preview', exact: true }).click();
   }
 
+  try {
   await page.goto(`${origin}/register`);
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Demo Student');
   await page.getByRole('textbox', { name: 'Email', exact: true }).fill('conversation-live-owner@agentforge.test');
@@ -74,14 +81,19 @@ async (page) => {
   if (!token) throw new Error('Disposable registration returned no session.');
   await textbox.waitFor();
 
+  checkpoint = 'greeting';
   const greeting = await send('Hi');
   if (greeting.action !== 'reply') throw new Error('A greeting should reply without starting a build.');
+  checkpoint = 'planning';
   const planning = await send('Help me plan a simple frontend portfolio. Explain a short plan only; do not build or change files yet.');
   if (planning.action === 'build') throw new Error('Planning unexpectedly started a build.');
+  checkpoint = 'no-project-after-planning';
   if ((await read('/api/projects')).projects.length !== 0 || generationPosts !== 0) throw new Error('Greeting or planning created a project/generated code.');
 
+  checkpoint = 'initial-build-request';
   const initial = await send('Build it now. Make a static React/Next.js portfolio for Demo Student, an AI engineering student. Use the exact hero heading "Local AI Portfolio", About, Projects and Contact sections, a navy background, and plain CSS. Include a client-side counter whose button text starts exactly "Count 0" and changes to "Count 1" when clicked. Use synthetic placeholder contact details. No external imports, APIs, images, packages or backend. Choose all other design details yourself; no more questions.');
   if (initial.action !== 'build') throw new Error('The complete explicit build request did not start generation.');
+  checkpoint = 'initial-publication';
   await page.getByText('Viewing v1', { exact: true }).waitFor({ timeout: 180_000 });
   const projectId = new URL(page.url()).searchParams.get('project');
   if (!/^[a-f\d]{24}$/i.test(projectId ?? '')) throw new Error('No saved project URL after generation.');
@@ -90,16 +102,19 @@ async (page) => {
   const first = (await read(`/api/projects/${projectId}/revisions/${history1.revisions[0].id}`)).revision;
   if (first.buildVerification?.status !== 'build_passed') throw new Error('Initial revision has no real candidate-build evidence.');
   const originalFiles = JSON.stringify(first.files);
+  checkpoint = 'initial-preview';
   await preview('Local AI Portfolio', 'conversation-live-v1');
   await page.reload();
   await page.getByText('Viewing v1', { exact: true }).waitFor();
   await textbox.waitFor();
   if (generationPosts !== 1) throw new Error('Refresh unexpectedly regenerated code.');
 
+  checkpoint = 'follow-up-request';
   const followup = await send('Change only the hero heading from "Local AI Portfolio" to exactly "Hello, Future AI Engineer". Keep every other file and the existing counter behavior unchanged. Apply this edit now.');
   if (followup.action !== 'build') throw new Error('Explicit follow-up edit did not start generation.');
   const selected = conversationRequests.at(-1);
   if (selected.projectId !== projectId || selected.baseRevisionId !== first.id) throw new Error('Follow-up did not submit the selected persisted base.');
+  checkpoint = 'follow-up-publication';
   await page.getByText('Viewing v2', { exact: true }).waitFor({ timeout: 180_000 });
   const history2 = await read(`/api/projects/${projectId}/revisions`);
   if (history2.revisions.length !== 2) throw new Error('Follow-up did not save exactly a second revision.');
@@ -111,12 +126,18 @@ async (page) => {
   if (changed.length !== 1 || second.files.length !== first.files.length || !changed[0].content.includes('Hello, Future AI Engineer')) {
     throw new Error('Targeted follow-up changed unrelated files or did not make the requested edit.');
   }
+  checkpoint = 'follow-up-preview';
   await preview('Hello, Future AI Engineer', 'conversation-live-v2');
   await page.reload();
   await page.getByText('Viewing v2', { exact: true }).waitFor();
   await textbox.waitFor();
   if (conversationRequests.length !== 4 || generationPosts !== 2 || pageErrors || externalRequests) throw new Error('Unexpected repeat calls, browser error or external dependency.');
   await page.screenshot({ path: 'output/playwright/conversation-live-restored.png', fullPage: true });
-  return { passed: true, conversationRequests: conversationRequests.length, generationRequests: generationPosts,
+  return { passed: true, checkpoint: 'complete', conversationRequests: conversationRequests.length, generationRequests: generationPosts,
     checks: ['greeting', 'planning-without-project', 'generated-v1', 'interactive-preview', 'refresh', 'selected-base-followup', 'immutable-v1', 'generated-v2', 'interactive-v2', 'restored-v2'] };
+  } catch (error) {
+    // Do not include form values, access tokens or arbitrary page text in failure evidence.
+    const failure = String(error?.message ?? 'Unknown browser error').split('\n')[0].slice(0, 240);
+    return { passed: false, checkpoint, failure, conversationRequests: conversationRequests.length, generationRequests: generationPosts };
+  }
 }

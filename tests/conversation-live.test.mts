@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { guardLiveProvider, liveModelPricing, parseLiveOptions, validateLiveDatabase } from "../scripts/verify-conversation-live.mts";
+import { browserOutcome, guardLiveProvider, liveModelPricing, parseLiveOptions, safeBrowserError, validateLiveDatabase } from "../scripts/verify-conversation-live.mts";
 
 // Guards run without dotenv, Mongo, Docker, a browser or any real network request.
 test("live verification is credential-free by default and requires both opt-ins", () => {
@@ -72,4 +72,25 @@ test("unreviewed pricing and spend reservations fail before a provider call", as
   const guarded = guardLiveProvider(fetcher, model, [], 0.0001);
   await assert.rejects(guarded(origin, input(1)));
   assert.equal(requests, 0);
+});
+
+test("closing admission blocks late tool-loop calls while allowing local cleanup", async () => {
+  let requests = 0;
+  const guarded = guardLiveProvider((async () => { requests++; return Response.json({}); }) as typeof fetch, model, []);
+  guarded.stop();
+  await assert.rejects(guarded(origin, input(1)));
+  assert.equal(requests, 0);
+  await guarded("http://127.0.0.1:4311/_status/healthz");
+  assert.equal(requests, 1);
+});
+
+test("safe browser outcomes retain checkpoints and do not copy CLI source or credentials", () => {
+  assert.deepEqual(browserOutcome('### Result\n{"passed":false,"checkpoint":"planning","failure":"Timeout"}\n### Ran Playwright code\nsecret source'), {
+    passed: false, checkpoint: "planning", failure: "Timeout",
+  });
+  assert.throws(() => browserOutcome('### Result\ntrue'));
+  assert.throws(() => browserOutcome('### Error\nTimeoutError: hidden'));
+  const safe = safeBrowserError('### Error\nError: token=private-value Bearer private-jwt\npassword from unrelated code');
+  assert.doesNotMatch(safe, /private-value|private-jwt|unrelated/);
+  assert.match(safeBrowserError('### Error\nTimeoutError: page.waitForFunction timed out'), /waitForFunction/);
 });
