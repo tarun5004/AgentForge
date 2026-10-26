@@ -15,6 +15,11 @@ Start from the repository root with `npm run dev:web` and the Auth/Project/AI se
 
 Small file map: `ChatPanel` renders the composer/history; `ConversationTimeline` renders safe Markdown/activity/results; `useWorkspace` coordinates saved files and requests; `useConversation` owns display storage; `lib/conversation-api` validates chat replies and bounds the request context. None of these modules stores provider secrets.
 
+Runtime security refresh: Next.js and its matching ESLint config are pinned to 16.4.3; the shared lockfile
+uses Sharp 0.35.5 and source-map-js 1.2.2. These are scoped fixes for reported upstream advisories, not
+new features/dependencies. Rebuild frontend and the trusted Preview runner after pulling dependency
+changes; an existing Docker image still contains its original packages. See the [Next advisory](https://github.com/vercel/next.js/security/advisories/GHSA-2464-fhr4-w9xw).
+
 The dated sections below record earlier slices; the conversational workflow above replaces the old visible assessment/confirmation form, not its historical records.
 
 ## Unified agent chat — 2026-10-25
