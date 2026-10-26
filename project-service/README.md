@@ -31,6 +31,47 @@ Both control-plane services must run on the trusted host for this local-only con
 
 ## Routes
 
+### Durable conversations and checked SSE (2026-10-26)
+
+The legacy JSON POST below stays compatible. New owner-JWT routes are additive:
+
+| Method/path | Input | Result |
+| --- | --- | --- |
+| GET `/api/conversations` | Optional `before` conversation ID | 20 metadata rows and `nextCursor`. |
+| POST `/api/conversations/threads` | `{}` | 201 `{conversation}`; no Project or model call. |
+| GET `/api/conversations/:id` | Optional integer `before` turn cursor | Latest 20 turns, `turnCount`, `nextBefore`; never inference. |
+| POST `/api/conversations/:id/project` | `{projectId}` | Attach one owned project; no silent relinking. |
+| POST `/api/conversations/:id/turns/stream` | `{key,message,projectId?,baseRevisionId?}` | Checked SSE; final saved before completion. |
+
+`key` is 8-64 ASCII letters/digits/underscore/hyphen; `message` is trimmed 1-1,000 characters.
+IDs are owned Mongo IDs; a base requires a project. No owner, model, system role, files or forged
+transcript is accepted. Project reconstructs recent context from completed saved turns, bounded to
+16 messages/16 KB. An unlinked conversation can attach a project after an explicit build.
+
+One conversation document contains at most **100 turns**, so reserve and completion are atomic even
+on standalone MongoDB. Sidebar index: `{ownerId:1,_id:-1}`. Owner identity comes only from JWT `sub`.
+Admission atomically rejects duplicate keys, concurrent pending turns and full conversations. A completed
+same-key/same-body replay reads the saved response with no new inference. Different-body reuse is 409
+`IDEMPOTENCY_MISMATCH`; pending/interrupted replay is 409 `CHAT_OUTCOME_UNKNOWN`. New deliberate
+turns can expire abandoned pending reservations after 75 seconds; they never auto-retry old work.
+
+The stream emits `start {conversationId,key,contextTrimmed,replayed}`, provisional cumulative
+`message {message}`, final `complete {response}` or terminal `error {code,message}`. A provisional
+message cannot authorize generation. Project verifies the internal request ID, complete response
+schema, UTF-8/frame/count/total-byte bounds and clean EOF before accepting success. The final reply
+is saved before `complete`. Disconnect/55-second timeout cancels the upstream signal best-effort;
+this is not provider-billing rollback or a durable worker. Raw provider errors never reach the browser.
+
+New browser + same account + same running backend/database can retrieve these records. Existing
+browser-only transcripts are not silently uploaded/backfilled. Keep API keys and JWTs out of stored
+turns. No database reset/migration/new dependency/environment variable is required. A full conversation
+returns 409 `CHAT_BUSY_OR_FULL`; start a new thread rather than allowing an unbounded Mongo document.
+
+Tests: `npm --workspace project-service run test:chat-history` requires an explicit empty local
+`AGENTFORGE_TEST_MONGODB_URI` named `agentforge_test_*`. Only AI transport is a fixture; JWT,
+HTTP, atomic writes, cross-owner checks and Mongo persistence are real. Frontend integration is a
+separate service slice; this backend addition alone does not change the normal browser UI.
+
 ### Conversation (no automatic project creation)
 
 `POST /api/conversations` requires the existing owner JWT and accepts only

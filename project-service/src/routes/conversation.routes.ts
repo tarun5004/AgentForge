@@ -2,8 +2,10 @@ import express from "express";
 import { authenticate } from "../middlewares/auth.middleware.js";
 import { validateQueryKeys } from "../services/project-read.validation.js";
 import { converse } from "../services/conversation.service.js";
+import historyRouter from "./conversation-history.routes.js";
 
 const router = express.Router();
+router.use(authenticate, express.json({ limit: "100kb" }), historyRouter);
 // JSON escaping can exceed the logical context budget; validate that budget after parsing.
 router.post("/", authenticate, express.json({ limit: "100kb" }), async (req, res, next) => {
   try {

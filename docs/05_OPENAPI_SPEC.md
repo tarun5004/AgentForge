@@ -4,6 +4,18 @@ The V1 target contract uses `/api/v1` and request IDs. These are future conventi
 
 ## Implemented conversational workspace
 
+**Additive durable/SSE backend:** owner-JWT GET `/api/conversations` lists 20 metadata rows with an
+optional `before` Mongo-ID cursor; POST `/api/conversations/threads` with `{}` creates a chat (not a
+Project); GET `/api/conversations/:id?before=<0..100>` reads 20 saved turns and pagination metadata.
+POST `/api/conversations/:id/project` attaches `{projectId}` after ownership verification. POST
+`/api/conversations/:id/turns/stream` takes strict `{key,message,projectId?,baseRevisionId?}` (key
+8-64 URL-safe ASCII characters, message 1-1000 characters) and streams `start`, cumulative `message`,
+validated/saved `complete` or sanitized `error`. No browser transcript or owner/model override.
+100-turn storage cap; one pending turn; same completed key/body replays without inference. Admission
+conflicts are JSON 409; after stream headers, failures are terminal SSE errors. GET/list never infer.
+Full contracts/limits: [Project durable chat](../project-service/README.md#durable-conversations-and-checked-sse-2026-10-26).
+The original stateless JSON endpoint below remains available for old clients.
+
 `POST /api/conversations` requires the existing owner access JWT. Strict request:
 
 ```json

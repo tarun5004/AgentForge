@@ -7,6 +7,11 @@ import { validateRevisionFiles } from "./revision-files.js";
 
 // Conversation reads owned context only; actual code publication stays in the generation workflow.
 export async function converse(ownerId: string, body: unknown) {
+  return requestConversation(await prepareConversation(ownerId, body));
+}
+
+// Both transports must load the same owned immutable snapshot, never browser-supplied files.
+export async function prepareConversation(ownerId: string, body: unknown) {
   const input = parseConversationInput(body);
   const request: ConversationRequest = { requestId: randomUUID(), messages: input.messages };
   if (input.projectId) {
@@ -22,5 +27,5 @@ export async function converse(ownerId: string, body: unknown) {
   if (Buffer.byteLength(JSON.stringify(request), "utf8") > 240_000) {
     throw new AppError(413, "Selected revision and conversation exceed the context limit.", "CONTEXT_TOO_LARGE");
   }
-  return requestConversation(request);
+  return request;
 }

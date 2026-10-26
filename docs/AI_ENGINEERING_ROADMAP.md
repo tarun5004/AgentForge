@@ -27,8 +27,9 @@ AI SDK model stream -> Project SSE relay -> browser provisional text -> validate
 - A disconnect or EOF without `complete` means interrupted, not a successful reply/build. Do not retry
   automatically: another call can cost money. Keep the composer and original user message available.
 
-**Current slice:** AI's internal additive SSE endpoint and deterministic SDK/HTTP tests are implemented
-on the focused AI branch. Project relay, browser consumption and their end-to-end checks are not yet implemented.
+**Current slices:** AI's internal additive SSE endpoint is merged through PR #46 (97 tests, build/typecheck).
+Project's owner-scoped durable chat and bounded SSE relay are implemented on their focused branch;
+browser consumption and cross-browser UI checks are not yet implemented.
 Streaming generated file contents is not part of this first text-response feature; revisions remain atomic.
 
 ### 2. Durable history: database is truth, browser is presentation
@@ -36,13 +37,16 @@ Streaming generated file contents is not part of this first text-response featur
 Proposed ownership stays in Project Service and the existing MongoDB. Store conversations independently
 of generated projects so greetings/plans can be saved without inventing an empty project.
 
-- A conversation stores `ownerId`, title, optional project link and timestamps. Turns store conversation
-  ID, server-owned sequence, client request key, user text, selected base ID, state and final response.
-  Use bounded turns rather than an endlessly growing array in one Mongo document.
+- A conversation stores `ownerId`, title, optional project link and timestamps. Each turn stores its
+  client request key, user text, selected project/base IDs, state, timestamp and final response.
+  Implementation refinement: cap each conversation at 100 embedded turns. This makes admission and
+  completion atomic on standalone Mongo without multi-document transactions. Read 20 turns per page;
+  start a new conversation at the cap. Do not turn this into an endlessly growing array.
 - JWT `sub` supplies owner identity. Every list/read/append checks ownership; never accept `ownerId`
   from the browser. A new browser logged into the same account queries the same database records.
-- A unique `(conversationId, requestKey)` index prevents double submission from causing duplicate
-  turns/calls. Reserve a turn before inference; save the validated final response before `complete`.
+- A single atomic admission predicate rejects existing request keys and concurrent pending turns;
+  this is the embedded-document alternative to a unique turn-collection index. Reserve a turn before
+  inference; save the validated final response before `complete`.
   Same-key replay reads saved completion without calling the provider again.
 - Store pending/interrupted outcomes explicitly. A crash after provider work but before save is unknown,
   not proof that retry is free. No queue or automatic restart inference is implied by durable chat storage.
@@ -68,7 +72,7 @@ behavior independent of the model. Reports must distinguish deterministic tests 
 
 ### 4. Bounded repair: fix once, rebuild, preserve previous good code
 
-Proposed policy **awaiting user choice**: disabled by default; user explicitly requests one repair after
+Approved policy: disabled by default; user explicitly requests one repair after
 a deterministic candidate build failure. This can incur an additional model call and build.
 
 - Project owns the repair attempt/state; Execution supplies allowlisted bounded compiler diagnostics;
@@ -86,8 +90,8 @@ a deterministic candidate build failure. This can incur an additional model call
 
 Deliver compatible service-scoped slices: AI stream -> Project relay -> frontend SSE; Project durable
 history -> frontend restoration; evaluation reports; then the agreed repair policy. Separate branches
-and verification keep source/output/transport/data bugs distinguishable. Git delivery policy is being
-confirmed; do not treat these proposed stages as already merged or tested.
+and verification keep source/output/transport/data bugs distinguishable. The user approved sequential
+verified commit/push/PR/merge delivery; do not treat planned stages as already merged or tested.
 
 Interview explanation: "SSE improves perceived latency, Mongo preserves owner-scoped conversation state,
 evaluations measure correctness independently, and bounded repair uses compiler feedback without

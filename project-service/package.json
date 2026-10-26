@@ -13,7 +13,8 @@
     "test:integration": "tsx --test src/routes/project.routes.integration.test.ts",
     "test:build-gate": "tsx --test src/routes/build-gate.integration.test.ts",
     "test:brief": "tsx --test src/routes/brief.routes.integration.test.ts",
-    "test:conversation": "tsx --test src/routes/conversation.routes.integration.test.ts"
+    "test:conversation": "tsx --test src/routes/conversation.routes.integration.test.ts",
+    "test:chat-history": "tsx --test src/routes/conversation-history.integration.test.ts"
   },
   "keywords": [],
   "author": "",
