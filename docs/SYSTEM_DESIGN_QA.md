@@ -2,11 +2,16 @@
 
 Use these as short explanations, then open the linked code and trace one request yourself. AI-assisted implementation is fine; ownership means understanding and validating the decisions, not claiming every line was written manually. Proposed future phases are not implemented capabilities.
 
+The [current delivery report](LOCAL_WORKSPACE_DELIVERY.md) includes the real provider-to-Preview proof
+and an actual debugging example: a valid manifest imported Next's `Metadata` type from React, the build
+gate rejected it, and template reuse/type guidance reduced unnecessary generated boilerplate. This is
+why schema validation, compilation and browser interaction are three separate checks.
+
 ## 1. How does a prompt become a saved project?
 
 **Problem:** a model response alone disappears on refresh and is not proof of a usable project.
 
-**Design:** the workspace creates an owned Project, sends a generation request with a stable key, and Project Service saves validated output as a candidate. With the optional gate enabled, Execution builds it before Project inserts an immutable Revision. The browser reads that revision back.
+**Design:** Project first authenticates a bounded conversation and loads any owned selected revision. One model response chooses reply, clarification or explicit build/edit. Greetings/plans create no project. Only build enters the existing stable-key generation path; Project saves validated output as a candidate. With the optional gate enabled, Execution builds it before Project inserts an immutable Revision. The browser reads that revision back.
 
 **Trade-off:** synchronous AI still has a deadline; build work is process-local, not a durable queue. Gate-off/legacy revisions must not be called build-verified.
 

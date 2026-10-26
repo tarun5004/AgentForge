@@ -81,3 +81,20 @@
 **Why:** Replacing one notice loses the working story; adding fake progress would misrepresent execution. A bounded display journal and existing status/build evidence make the workflow understandable without changing its generation logic or introducing another service/dependency. The proposed cross-service tool-provenance addition was removed during audit: it was unnecessary scope for a sidebar presentation change. No live skill/tool event is shown without an API source.
 
 **Consequence:** Local chat is not cross-device synchronization, model memory, hidden reasoning, per-token streaming or a Codex-equivalent agent. Storage failures/trimming/interruption are visible; refresh never automatically starts AI. Requirements use saved cumulative answers and edits use the selected snapshot, not an ever-growing browser transcript. Only actual build proof earns a build-pass label. Restricted Markdown and the existing isolated Preview sandbox remain in place. No new model call is added by the UI.
+
+## ADR-011: One conversational decision, then the existing generation pipeline
+
+**Decision:** A bounded model response chooses reply, one essential clarification, or explicit build/edit.
+Project verifies any selected revision before the call; the browser creates a project only for build.
+Reuse immutable publication and restricted Execution rather than introducing another agent framework.
+Keep the legacy Brief API/data, while removing its mandatory visible form from new chat.
+
+**Why:** Sending every greeting through requirement assessment caused irrelevant questions and confusing
+failure states. A single structured response handles natural intent without a separate paid classifier.
+Reviewed local guidance provides useful retrieval with six small documents: TF-IDF by default, optional
+Google embeddings/in-memory cosine index when deliberately configured. No vector service is necessary.
+
+**Consequence:** The composer stays present, errors preserve input, and navigation/account guards discard
+late decisions. Chat can still misclassify intent; structured output and tests do not guarantee judgment.
+Run reports expose observed metadata, not hidden reasoning. No automatic chat retry, paid repair, arbitrary
+shell, per-token streaming, durable chat database or general private-repository ingestion is implied.
