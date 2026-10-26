@@ -19,6 +19,8 @@ Runtime security refresh: Next.js and its matching ESLint config are pinned to 1
 uses Sharp 0.35.5 and source-map-js 1.2.2. These are scoped fixes for reported upstream advisories, not
 new features/dependencies. Rebuild frontend and the trusted Preview runner after pulling dependency
 changes; an existing Docker image still contains its original packages. See the [Next advisory](https://github.com/vercel/next.js/security/advisories/GHSA-2464-fhr4-w9xw).
+The separate tooling refresh resolves brace-expansion to patched 1.1.21/5.0.12 within existing ranges;
+it changes lint-tool dependencies, not generated application code or the model/provider contract.
 
 The dated sections below record earlier slices; the conversational workflow above replaces the old visible assessment/confirmation form, not its historical records.
 
