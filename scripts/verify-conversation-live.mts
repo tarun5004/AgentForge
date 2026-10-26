@@ -6,6 +6,7 @@ import { randomBytes, createHash } from "node:crypto";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { dockerCommand, DockerCommandError } from "../execution-service/src/features/runs/docker.command.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const collections = ["users", "projects", "revisions", "generations", "projectbriefs", "conversations"];
@@ -214,7 +215,17 @@ export async function runLiveVerification() {
     const { createApp: projectApp } = await import("../project-service/src/app/app.ts");
     const { createApp: aiApp } = await import("../ai-orchestrator-service/src/app.ts");
     await Promise.all(Object.values(mongoose.models).map(model => model.init()));
-    preview = await (await import("../tests/frontend-preview.fixture.mts")).startPreviewFixture(true);
+    preview = await (await import("../tests/frontend-preview.fixture.mts")).startPreviewFixture(true, async (args, options) => {
+      try { return await dockerCommand(args, options); }
+      catch (error) {
+        // Synthetic test source only: preserve bounded compiler evidence locally, never in public API/logs.
+        if (error instanceof DockerCommandError && args.includes("--webpack")) {
+          report.buildFailure = { reason: error.reason, exitCode: error.exitCode,
+            diagnostic: error.diagnostic.replace(/\/preview\/[a-f0-9-]{36}\/[a-f0-9]{48}/g, "/preview/[REDACTED]") };
+        }
+        throw error;
+      }
+    });
     for (const [app, port] of [[authApp(), 4310], [projectApp(), 4311], [aiApp(), 4312]] as const) {
       const server = createServer(app); servers.push(server); server.listen(port, "127.0.0.1"); await once(server, "listening");
     }
@@ -255,6 +266,13 @@ export async function runLiveVerification() {
         if (user) {
           const projects = await db.collection("projects").find({ ownerId: user._id.toString() }, { projection: { _id: 1 } }).toArray();
           const ids = projects.map(project => project._id);
+          const failed = await db.collection("generations").find({ projectId: { $in: ids }, status: "failed" },
+            { projection: { "result.files": 1, errorCode: 1 } }).toArray();
+          if (failed.some(generation => generation.result?.files)) {
+            const candidatePath = reportPath.replace(/\.json$/, "-failed-candidates.json");
+            await writeFile(candidatePath, JSON.stringify(failed, null, 2), "utf8");
+            report.failedCandidateArtifact = candidatePath;
+          }
           for (const name of ["revisions", "generations", "projectbriefs"]) await db.collection(name).deleteMany({ projectId: { $in: ids } });
           await db.collection("conversations").deleteMany({ ownerId: user._id.toString() });
           await db.collection("projects").deleteMany({ _id: { $in: ids }, ownerId: user._id.toString() });
