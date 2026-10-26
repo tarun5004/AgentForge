@@ -2,6 +2,11 @@
 
 This service receives authenticated internal generation requests from Project Service, calls the configured model through Vercel AI Gateway or directly through Google, and validates a constrained Next.js frontend manifest. Project Service owns saved revisions; this service does not write Project data or execute generated code.
 
+Generation guidance explicitly covers interactive `'use client'` entry points, server root layouts,
+strict TypeScript and typed inline styles (plain CSS is preferred). The SDK contract test verifies these
+rules reach the actual model call. This improves guidance; it is not proof that every model output
+compiles. Only Execution's real build can supply that evidence; no automatic paid repair is enabled.
+
 ## Conversation, local retrieval and evaluations — 2026-10-25
 
 `POST /internal/conversations` uses the existing `x-internal-service-token`. Project Service, not the browser, calls it. Existing generation/requirements routes remain compatible.

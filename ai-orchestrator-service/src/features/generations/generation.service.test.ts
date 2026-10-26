@@ -74,6 +74,9 @@ test("SDK calls loadSkill, receives real local instructions, then produces the u
   assert.ok(context.includes(FRONTEND_SKILL_HASH));
   assert.ok(context.includes("small name component stays small"));
   assert.ok(context.includes("Reviewed local references"));
+  assert.ok(context.includes("put 'use client' before imports"));
+  assert.ok(context.includes("app/layout.tsx a server component"));
+  assert.ok(context.includes("React CSSProperties"));
   assert.deepEqual(result.files, manifest.files);
   assert.deepEqual(result.usage, { inputTokens: 20, outputTokens: 40, totalTokens: 60 });
   assert.deepEqual(Object.keys(result).sort(), ["requestId", "provider", "model", "summary", "files", "deletedPaths", "validation", "usage", "latencyMs"].sort());
