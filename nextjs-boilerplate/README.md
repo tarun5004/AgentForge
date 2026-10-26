@@ -1,6 +1,45 @@
 # AgentForge Frontend
 
-This Next.js application provides AgentForge's authentication screens and Cursor-inspired AI development workspace.
+This Next.js application provides AgentForge's authentication screens and local AI development workspace.
+
+## Unified agent chat — 2026-10-25
+
+Stabilization cleanup: the unconnected sample Terminal/Problems panel and unused sample files/messages/tasks have been removed. The workspace displays only persisted files, actual change metadata, and real Preview status. This cleanup does not add general conversation or change the existing requirements API; those remain separate work.
+
+The sidebar keeps requests, requirement replies, observed activity, results and follow-up changes in one timeline. Its compact header, plain assistant prose, inline expandable activity, header conversation picker and bottom composer follow the supplied Codex-sidebar reference. It is still a bounded frontend-building workflow, **not a general conversation endpoint**. A greeting currently goes through project/requirement assessment; conversational routing is the next separate slice, not claimed complete.
+
+- **Actual evidence, not animation:** activity is recorded on requests/responses and existing generation GET polling. The current API does not report live skill/tool events, so the UI does not invent them. There is no token streaming, simulated reasoning, percentage progress or new event infrastructure. The proposed cross-service provenance plumbing was removed from this UI slice during audit.
+- **Structured result:** summary, model/usage, A/M/D paths, build status and saved-revision actions. Only `buildVerification` produces a build-pass label; legacy records stay explicitly unverified. Preview uses the same existing modal/controller and iframe sandbox from both toolbar and chat.
+- **Same-chat edits:** the selected immutable revision remains the explicit base. Request body/key are frozen for retries. Failures preserve files; refresh/status reads never automatically POST another AI request. Confirmation before initial generation remains unchanged.
+- **Local persistence:** `localStorage` is scoped by account + project and read only after the backend proves ownership. It saves display messages/summary metadata, not JWTs, provider keys, generated files or private reasoning. Do not enter secrets in prompts. Upserts keep one activity card per request; refresh marks unfinished activity unconfirmed. A maximum of 120 entries / approximately 400 KB is retained, with visible trimming/storage warnings. This is same-browser history, **not** cross-device chat synchronization. Canonical project/revision metadata rebuilds missing summaries; unknown old activity is not invented.
+- **Privacy/control:** “Clear local chat messages” removes only the display cache and rebuilds saved revision summaries. It never deletes backend files or pending request keys. Clearing browser site data also removes this local history. Chat display history is not automatically sent to the model: requirements use cumulative answers; edits use selected base files plus the change prompt.
+- **Safety:** model replies use restricted Markdown, without raw HTML, external embeds or executable content. Restored cache data is runtime-validated and never authorizes API writes. No new package, environment variable, model call or public API request body is needed.
+
+### Small-chunk plan and file map
+
+1. **Sidebar presentation:** compact chat layout, existing build results, preserved request/refresh behavior. Uncommitted on `feature/frontend-agent-chat`, in `C:\vscode tool\agentforge-agent-chat`; the normal `loveable-main` checkout is not automatically updated by a worktree.
+2. **Conversational reply path (not implemented):** an ordinary message such as “Hi buddy” must receive a real assistant reply without creating a project or starting generation. Use the configured provider; do not hardcode canned AI answers. Review that small API contract before wiring it into the composer.
+3. **Build actions in that conversation (not implemented):** distinguish replies/questions from an actual build request, then reuse the existing owned project, selected snapshot and local Preview flow. Do not add an arbitrary shell agent, new agent framework or fake tool progress.
+
+| File | One responsibility |
+| --- | --- |
+| [ChatPanel](components/workspace/ChatPanel.tsx) | Header, conversation picker, composer and change bar. |
+| [ConversationTimeline](components/workspace/ConversationTimeline.tsx) | Draw messages, activity and results; no API calls. |
+| [useWorkspace](components/workspace/useWorkspace.ts) | Existing request, selected-revision and retry behavior. |
+| [useConversation](components/workspace/useConversation.ts) / [conversation](lib/conversation.ts) | Small display cache; not model context or backend authority. |
+| [PreviewLauncher](components/workspace/PreviewLauncher.tsx) | Existing local Preview; cancel the Strict Mode probe's scheduled duplicate start. |
+
+```powershell
+npm --workspace nextjs-boilerplate test
+npm --workspace nextjs-boilerplate run lint
+npm --workspace nextjs-boilerplate run build
+# Owned local frontend, all API calls intercepted before navigation:
+powershell -NoProfile -File scripts/verify-workspace-links.ps1 -BaseUrl http://localhost:3103 -Suite chat
+```
+
+No Project/AI API or database changes are required for this presentation slice. Existing Gemini work is preserved separately. This is a focused Codex-inspired sidebar, not equivalent Codex model capabilities, general chat, or an arbitrary command-running agent. UI fixtures prove presentation/recovery only; live model behavior must be reported separately.
+
+Audit verification (2026-10-25): **49 frontend tests**, lint, production build, and production-browser chat/history/requirements suites passed. Browser APIs were intercepted; no paid/live AI call or general-chat behavior is claimed. The Preview duplicate-start regression was also reproduced and checked in development Strict Mode before the production run. Gemini regression checks separately passed 57 tests plus typecheck/build. The extra uncommitted Project tool-provenance changes were reverted; their recoverable patch is in the original checkout's ignored `output/playwright/deferred-tool-provenance.patch`. No commits, pushes or merges were made.
 
 ## A3: requirements before initial generation — 2026-10-23
 

@@ -32,6 +32,16 @@ test("pending polling uses only GET and stops at a confirmed terminal status", a
   assert.equal(calls, 3);
 });
 
+test("progress observers receive only validated, matching status responses without extra requests", async () => {
+  const observations: GenerationStatus[] = [];
+  let reads = 0;
+  const result = await pollGeneration(generationId, async () => ++reads === 1 ? pending : ready,
+    new AbortController().signal, async () => {}, status => observations.push(status));
+  assert.equal(result, ready);
+  assert.deepEqual(observations, [pending, ready]);
+  assert.equal(reads, 2);
+});
+
 // Bounds prevent endless background work; the error retains the ID for explicit status/replay.
 test("poll limit preserves uncertainty rather than inventing a failed generation", async () => {
   let calls = 0;

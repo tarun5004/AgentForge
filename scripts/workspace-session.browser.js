@@ -87,7 +87,7 @@ async (page) => {
     const saved = page.getByRole('region', { name: 'Project requirements' });
     const current = await read();
     if (current.generations.length) await saved.waitFor();
-    const preserved = current.generations.length ? (await saved.innerText()).includes(text) : await prompt.inputValue() === text;
+    const preserved = current.generations.length ? (await page.getByRole('log', { name: 'Conversation' }).innerText()).includes(text) : await prompt.inputValue() === text;
     if (new URL(page.url()).pathname !== '/workspace' || !preserved) throw new Error(`Failure lost the session or prompt in ${current.mode}.`);
   }
 

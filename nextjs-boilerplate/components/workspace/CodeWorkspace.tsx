@@ -6,7 +6,6 @@ import { Group, Panel } from "react-resizable-panels";
 import { ChangesPanel } from "./ChangesPanel";
 import { EditorPanel } from "./EditorPanel";
 import { ResizeHandle } from "./ResizeHandle";
-import { TerminalPanel } from "./TerminalPanel";
 import type { WorkspaceFile } from "./workspace-data";
 import type { FileChange } from "@/lib/project-api";
 
@@ -32,7 +31,6 @@ export function CodeWorkspace({ isResizable, files: visibleFiles, changes: fileC
       onFileSelect={setActiveFilePath}
     /> : <section role="status" className="grid h-full min-h-[300px] place-items-center bg-[#101011] p-6 text-center text-sm text-[#99999e]">{message}</section>
   );
-  const terminal = <TerminalPanel />;
   const changes = (
     <ChangesPanel
       activeFile={activeFile}
@@ -46,7 +44,6 @@ export function CodeWorkspace({ isResizable, files: visibleFiles, changes: fileC
     return (
       <div className="grid min-w-0 grid-cols-1">
         <div className="min-h-[460px]">{editor}</div>
-        <div className="min-h-[220px] border-t border-[#2b2b2e]">{terminal}</div>
         <div className="min-h-[520px] border-t border-[#2b2b2e]">{changes}</div>
       </div>
     );
@@ -55,17 +52,7 @@ export function CodeWorkspace({ isResizable, files: visibleFiles, changes: fileC
   return (
     <Group id="code-and-changes" orientation="horizontal" className="h-full min-w-0">
       <Panel id="code-area" defaultSize="76%" minSize={500}>
-        <Group id="editor-and-terminal" orientation="vertical" className="h-full">
-          <Panel id="editor" defaultSize="70%" minSize={260}>
-            {editor}
-          </Panel>
-
-          <ResizeHandle direction="vertical" />
-
-          <Panel id="terminal" defaultSize={220} minSize={140} maxSize="55%">
-            {terminal}
-          </Panel>
-        </Group>
+        {editor}
       </Panel>
 
       <ResizeHandle direction="horizontal" />

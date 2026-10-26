@@ -1,6 +1,6 @@
 param(
     [string]$BaseUrl = 'http://localhost:3001',
-    [ValidateSet('links', 'history', 'access', 'session', 'preview', 'pending', 'requirements')][string]$Suite = 'links'
+    [ValidateSet('links', 'history', 'access', 'session', 'preview', 'pending', 'requirements', 'chat')][string]$Suite = 'links'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,7 +24,7 @@ function Invoke-BrowserCommand {
         $commandExit = $LASTEXITCODE
     } finally { $ErrorActionPreference = $previousPreference }
     if ($commandExit -ne 0 -or ($output -join "`n") -match '### Error') {
-        $output | Where-Object { "$_" -match '^(Error|SyntaxError|TimeoutError):' } | ForEach-Object { [Console]::Error.WriteLine("$_") }
+        $output | Where-Object { "$_" -match '^(Error|SyntaxError|TimeoutError):|Call log:|waiting for' } | ForEach-Object { [Console]::Error.WriteLine("$_") }
         throw "Browser command failed: $($CliArguments[0]). Inspect .playwright-cli/ artifacts for details."
     }
 }
@@ -102,6 +102,7 @@ try {
         Invoke-BrowserCommand @('screenshot', "--filename=output/playwright/$sessionName-pagination.png", '--full-page')
         # Only the mock session expires; this never logs out a real account.
         Invoke-BrowserCommand @('run-code', 'async page => { await page.evaluate(() => window.expireWorkspaceHistorySession()); }')
+        Invoke-BrowserCommand @('run-code', 'async page => { await page.locator(''header summary'').click(); }')
         Click-WorkspaceButton 'Reload saved projects'
         Invoke-BrowserCommand @('run-code', "async page => { await page.waitForURL(url => url.pathname === '/login', { timeout: 8000 }); }")
         Invoke-BrowserCommand @('snapshot')
@@ -124,6 +125,11 @@ try {
         Invoke-BrowserCommand @('snapshot')
         Invoke-BrowserCommand @('run-code', "--filename=$browserChecks")
         Write-Host 'PASS clarification, answer/consent edits, same-key refresh recovery and saved files. APIs intercepted; no real provider or database claim.'
+    } elseif ($Suite -eq 'chat') {
+        Invoke-BrowserCommand @('goto', "$BaseUrl/workspace")
+        Invoke-BrowserCommand @('snapshot')
+        Invoke-BrowserCommand @('run-code', "--filename=$browserChecks")
+        Write-Host 'PASS unified chat, real-response evidence rendering, preview controls, reload/failure/resize recovery and account isolation. APIs intercepted; no provider/build claim.'
     } elseif ($Suite -eq 'session') {
         Invoke-BrowserCommand @('goto', "$BaseUrl/workspace")
         Invoke-BrowserCommand @('snapshot')
