@@ -43,13 +43,21 @@ function executionOrigin(): string {
   } catch { throw new Error("EXECUTION_SERVICE_URL must be a loopback HTTP origin."); }
 }
 
+const aiOrchestratorUrl = process.env.AI_ORCHESTRATOR_URL?.trim() || "http://localhost:6001";
+let aiOrchestratorPort: string;
+try { aiOrchestratorPort = new URL(aiOrchestratorUrl).port; }
+catch { throw new Error("AI_ORCHESTRATOR_URL must be a valid URL."); }
+// Catch the known Fetch-blocked port at startup instead of failing every prompt with 502.
+if (aiOrchestratorPort === "6000") {
+  throw new Error("AI_ORCHESTRATOR_URL port 6000 is blocked by Fetch. Use port 6001.");
+}
+
 export const env = {
   PORT: port,
   NODE_ENV: nodeEnv as "development" | "production" | "test",
   MONGODB_URI: getRequiredEnv("MONGODB_URI"),
   ACCESS_TOKEN_SECRET: getRequiredEnv("ACCESS_TOKEN_SECRET"),
-  AI_ORCHESTRATOR_URL:
-    process.env.AI_ORCHESTRATOR_URL?.trim() || "http://localhost:6000",
+  AI_ORCHESTRATOR_URL: aiOrchestratorUrl,
   INTERNAL_SERVICE_TOKEN: getRequiredEnv("INTERNAL_SERVICE_TOKEN"),
   BUILD_GATE_ENABLED: buildGate === "true",
   EXECUTION_CHECK_TOKEN: checkToken,

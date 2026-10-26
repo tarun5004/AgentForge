@@ -34,11 +34,10 @@ Compose overrides local-only addresses, ports and development settings without e
 Compose supplies its two server-only proxy URLs explicitly; backend keys never enter that container.
 HTTP Auth uses `NODE_ENV=development` so refresh cookies work locally. This is not an authentication redesign.
 
-The original host-development `.env.example`/defaults still refer to AI port 6000. Compose overrides both
-the AI port and Project URL to 6001, because a real container probe showed Fetch failing with `bad port`
-on 6000 while Node's plain HTTP client returned 200. If you switch back to host-only development,
-manually set AI `PORT=6001` and Project `AI_ORCHESTRATOR_URL=http://localhost:6001` in your ignored `.env`
-files too. Docker setup does not rewrite those local files.
+Compose uses AI port 6001 because Node Fetch rejects port 6000, even when a plain HTTP health probe
+succeeds. Host defaults and templates now use 6001 too. Existing ignored `.env` files are not updated
+by Docker: set AI `PORT=6001` and Project `AI_ORCHESTRATOR_URL=http://localhost:6001`, then restart
+both services. Project rejects the blocked target at startup instead of failing every prompt with 502.
 
 ## Start, inspect and stop
 
