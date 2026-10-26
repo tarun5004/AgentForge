@@ -49,7 +49,7 @@ async (page) => {
   // Read persisted snapshots through owner-authenticated production routes, not browser display caches.
   async function read(path) {
     const response = await fetch(`http://127.0.0.1:4311${path}`, { headers: { Authorization: `Bearer ${token}` } });
-    if (!response.ok()) throw new Error(`Persisted API read failed: HTTP ${response.status()}.`);
+    if (!response.ok) throw new Error(`Persisted API read failed: HTTP ${response.status}.`);
     return response.json();
   }
 
