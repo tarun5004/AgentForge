@@ -1,6 +1,26 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
 import { browserOutcome, guardLiveProvider, liveModelPricing, parseLiveOptions, safeBrowserError, validateLiveDatabase } from "../scripts/verify-conversation-live.mts";
+
+// Exercise the actual browser helper: native Fetch responses differ from Playwright responses.
+test("persisted reads use native Fetch boolean status and preserve HTTP rejection", async () => {
+  const source = readFileSync(new URL("../scripts/conversation-live.browser.js", import.meta.url), "utf8");
+  const helper = source.match(/async function read\(path\) \{[\s\S]*?\n  \}/)?.[0];
+  assert.ok(helper, "The live scenario's persisted-read helper must be tested.");
+  for (const status of [200, 404]) {
+    const result = runInNewContext(`(${helper})("/api/projects")`, {
+      token: "test-owner-session",
+      fetch: async (url: string) => {
+        assert.equal(url, "http://127.0.0.1:4311/api/projects");
+        return Response.json({ projects: [] }, { status });
+      },
+    });
+    if (status === 200) assert.deepEqual(await result, { projects: [] });
+    else await assert.rejects(result, /HTTP 404/);
+  }
+});
 
 // Guards run without dotenv, Mongo, Docker, a browser or any real network request.
 test("live verification is credential-free by default and requires both opt-ins", () => {
