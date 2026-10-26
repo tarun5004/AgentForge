@@ -1,4 +1,4 @@
-import { generateText, Output, type LanguageModel } from "ai";
+import { generateText, streamText, Output, type LanguageModel, type LanguageModelUsage } from "ai";
 import { createAIModel } from "../../config/ai-model.js";
 import { conversationDecisionSchema, validateConversationDecision, type ConversationRequest } from "./conversation.schema.js";
 import { retrieveGuidance } from "./retrieval.js";
@@ -44,4 +44,65 @@ export async function respondToConversation(request: ConversationRequest, model:
     usage: { inputTokens: result.usage.inputTokens ?? null, outputTokens: result.usage.outputTokens ?? null, totalTokens: result.usage.totalTokens ?? null },
     latencyMs: Date.now() - startedAt,
   };
+}
+
+export type ConversationResponse = Awaited<ReturnType<typeof respondToConversation>>;
+
+// Only message snapshots are provisional; the validated final decision alone may authorize a build.
+export async function streamConversation(
+  request: ConversationRequest,
+  onMessage: (message: string) => Promise<void>,
+  signal: AbortSignal,
+  model: LanguageModel = createAIModel(),
+): Promise<ConversationResponse> {
+  const startedAt = Date.now();
+  const cancelled = new AbortController();
+  const abortSignal = AbortSignal.any([signal, cancelled.signal, AbortSignal.timeout(45_000)]);
+  abortSignal.throwIfAborted();
+  const guidance = await retrieveGuidance(request.messages.filter((message) => message.role === "user").slice(-3).map((message) => message.content).join("\n"), abortSignal);
+  let failed = false;
+  const result = streamText({
+    model,
+    instructions: CONVERSATION_INSTRUCTIONS,
+    prompt: JSON.stringify({ messages: request.messages, baseRevision: request.baseRevision ?? null, retrievedGuidance: guidance.sources.map(({ id, title, text }) => ({ id, title, text })) }),
+    output: Output.object({ schema: conversationDecisionSchema }),
+    maxOutputTokens: 2000,
+    maxRetries: 0,
+    timeout: 45_000,
+    abortSignal,
+    // The SDK surfaces streaming failures via callbacks as well as rejected final output.
+    onError: () => { failed = true; },
+  });
+  let previous = "";
+  let snapshots = 0;
+  try {
+    for await (const partial of result.partialOutputStream) {
+      abortSignal.throwIfAborted();
+      if (typeof partial.message !== "string") continue;
+      if (partial.message.length > 4000) throw new Error("AI message exceeds the stream limit.");
+      // Bound wire size without faking tokens or allowing a slow client to queue unlimited writes.
+      if (partial.message !== previous && snapshots < 64) {
+        await onMessage(partial.message);
+        previous = partial.message;
+        snapshots++;
+      }
+    }
+    abortSignal.throwIfAborted();
+    if (failed) throw new Error("AI conversation stream failed.");
+    let decision;
+    try { decision = validateConversationDecision(await result.output); }
+    catch { throw new Error("AI returned an invalid conversation response."); }
+    const [response, usage]: [Awaited<typeof result.response>, LanguageModelUsage] = await Promise.all([result.response, result.usage]);
+    return {
+      requestId: request.requestId, ...decision,
+      sources: guidance.sources.map(({ id, title }) => ({ id, title })),
+      retrieval: { method: guidance.method, embeddingModel: guidance.embeddingModel, inputTokens: guidance.inputTokens },
+      model: response.modelId,
+      usage: { inputTokens: usage.inputTokens ?? null, outputTokens: usage.outputTokens ?? null, totalTokens: usage.totalTokens ?? null },
+      latencyMs: Date.now() - startedAt,
+    };
+  } finally {
+    // A failed output sink must cancel provider work too, not just stop reading its tokens.
+    cancelled.abort();
+  }
 }

@@ -10,6 +10,41 @@ Small requests now prefer 1-3 files and reuse the trusted root layout. A capture
 Next's `Metadata` type from React and failed strict compilation. Guidance names the correct module and
 avoids generating optional root-layout boilerplate unless requested; it does not bypass the build gate.
 
+## Conversation streaming — AI backend slice (2026-10-26)
+
+`POST /internal/conversations/stream` is additive: the existing JSON route remains unchanged.
+It takes the same validated request and internal-service token. This slice does **not** yet change
+Project's public transport, persist chat history or connect the browser to streaming.
+
+The installed AI SDK's `streamText` + `Output.object` yields real partially parsed model output.
+Only the `message` field is sent provisionally; `action` and `prompt` cannot trigger work until the
+complete structured response passes the same cross-field validator as the JSON endpoint.
+
+SSE frames use `event: <name>`, `data: <JSON>` and a blank line:
+
+| Event | Data | Consumer rule |
+| --- | --- | --- |
+| `start` | `{requestId}` | Correlate this request. |
+| `message` | `{message}` | Replace provisional display text; do not append this cumulative snapshot. |
+| `complete` | `{response}` | Accept the final validated response, with decision and metadata. |
+| `error` | `{code,message}` | Mark interrupted; never build from partial output. |
+
+There are at most 64 provisional snapshots of at most 4,000 characters and one final response.
+This bounds transport size; not every model token creates a browser event. Newlines in model text
+are JSON-escaped so they cannot inject SSE events. Headers disable cache/transformation and request
+proxy buffering. Writes respect backpressure. Disconnect and the shared 45-second deadline cancel
+the upstream SDK signal; cancellation is best-effort, not a promise of zero provider billing.
+There is still one bounded model attempt, 2,000 output tokens, zero SDK retries and no repair/fallback.
+Invalid requests return JSON 400/413 and missing authentication returns 401 before streaming starts.
+After headers, a failure is a sanitized SSE `error`, not an HTTP status change or a fake completion.
+
+Validation: **97/97** AI tests passed, including nine new streaming cases; typecheck and build passed.
+The SDK fixtures prove partial JSON parsing and safe final validation; real loopback HTTP checks prove
+early delivery, authentication, framing, sanitized errors and disconnect cancellation. These tests block
+external provider requests. No live-model, Project-relay or browser-streaming success is claimed here.
+
+See [the four-feature design and delivery order](../docs/AI_ENGINEERING_ROADMAP.md#conversation-reliability-extension--2026-10-26).
+
 ## Conversation, local retrieval and evaluations — 2026-10-25
 
 `POST /internal/conversations` uses the existing `x-internal-service-token`. Project Service, not the browser, calls it. Existing generation/requirements routes remain compatible.
