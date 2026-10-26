@@ -86,14 +86,12 @@ async (page) => {
   }
 
   const selection = await page.evaluate(() => window.previewRealEvidence('selection'));
-  const prompt = page.getByRole('textbox', { name: 'Describe a frontend page or change' });
+  const prompt = page.getByRole('textbox', { name: 'Message AgentForge' });
   const dialog = page.getByRole('dialog', { name: 'Saved revision preview' });
   if (selection.phase === 0) {
     await prompt.fill('Build a portfolio website page');
     // Covers keyboard submission through the real authenticated Project API.
     await prompt.press('Enter');
-    await page.getByRole('button', { name: 'Confirm brief', exact: true }).click();
-    await page.getByRole('button', { name: 'Generate code', exact: true }).click();
     await page.getByText('Viewing v1', { exact: true }).waitFor();
     await page.getByRole('button', { name: 'Preview', exact: true }).click();
     const frame = dialog.frameLocator('iframe');
@@ -110,16 +108,17 @@ async (page) => {
   await page.reload();
   await page.getByText('Viewing v1', { exact: true }).waitFor();
   await prompt.fill('Return invalid output for this change');
-  await page.getByRole('button', { name: 'Send prompt', exact: true }).click();
+  await page.getByRole('button', { name: 'Send message', exact: true }).click();
   await page.getByRole('alert').filter({ hasText: 'Code generation failed.' }).waitFor();
   await page.getByText('Viewing v1', { exact: true }).waitFor();
   await prompt.fill('Return broken preview syntax for this change');
-  await page.getByRole('button', { name: 'Send prompt', exact: true }).click();
+  await page.getByRole('button', { name: 'Send message', exact: true }).click();
   await page.getByText('Viewing v2', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Preview', exact: true }).click();
   await dialog.getByRole('status').filter({ hasText: 'Build failed.' }).waitFor({ timeout: 150_000 });
   if (await dialog.locator('iframe').count()) throw new Error('Failed build published an iframe.');
   await dialog.getByRole('button', { name: 'Close preview' }).click();
+  await page.locator('summary[aria-label="Revision history"]').click();
   await page.getByRole('button', { name: 'v1 Build a portfolio website page Initial saved portfolio snapshot', exact: true }).click();
   await page.getByText('Viewing v1', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Preview', exact: true }).click();

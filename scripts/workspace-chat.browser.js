@@ -4,7 +4,11 @@ async (page) => {
     const projectId = '100000000000000000000011';
     const runId = '11111111-1111-4111-8111-111111111111';
     const state = { project: null, brief: null, revisions: [], posts: [], pending: null,
-      checks: 0, previews: 0, unexpected: 0, errors: 0, foreign: false, failNext: false };
+      checks: 0, previews: 0, chats: 0, unexpected: 0, errors: 0, foreign: false, failNext: false, failChat: false, failProject: false };
+    let chatBarrier = null;
+    let releaseChat = null;
+    await page.exposeFunction('chatFixtureHold', () => { chatBarrier = new Promise(resolve => { releaseChat = resolve; }); });
+    await page.exposeFunction('chatFixtureRelease', () => { releaseChat?.(); chatBarrier = null; });
     const previewUrl = `http://127.0.0.1:5101/preview/${runId}/${'a'.repeat(48)}/`;
     await page.exposeFunction('chatFixtureState', () => ({ ...state }));
     await page.exposeFunction('chatFixtureMode', mode => { state[mode] = true; });
@@ -30,8 +34,20 @@ async (page) => {
       if (path === '/api/auth/refresh') return json({ accessToken: 'chat-fixture-not-a-real-token', user: {
         id: state.foreign ? '400000000000000000000012' : '400000000000000000000011', name: 'Chat tester', email: 'chat@example.test' } });
       if (state.foreign && path.startsWith('/api/projects/')) return route.fulfill({ status: 404, json: { message: 'Project not found.' } });
+      if (path === '/api/conversations' && method === 'POST') {
+        state.chats++;
+        if (chatBarrier) await chatBarrier;
+        if (state.failChat) { state.failChat = false; return route.fulfill({ status: 502, json: { message: 'Fixture conversation unavailable.', code: 'AI_UNAVAILABLE' } }); }
+        const text = request.postDataJSON().messages.at(-1).content;
+        const action = /^Hi$|plan only/i.test(text) ? 'reply' : 'build';
+        return json({ response: { requestId: 'chat-fixture', action, message: action === 'reply' ? 'Hello! We can plan before building.' : 'I will apply the requested frontend change.',
+          prompt: action === 'build' ? text : null, sources: [{ id: 'editing', title: 'Selected revision editing' }],
+          retrieval: { method: 'lexical', embeddingModel: null, inputTokens: 0 }, model: 'fixture-model',
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }, latencyMs: 1 } });
+      }
       if (path === '/api/projects' && method === 'GET') return json({ projects: state.project && !state.foreign ? [state.project] : [], nextCursor: null });
       if (path === '/api/projects' && method === 'POST') {
+        if (state.failProject) { state.failProject = false; return route.fulfill({ status: 503, json: { message: 'Fixture project creation unavailable.' } }); }
         state.project = { id: projectId, name: 'Chat portfolio', initialPrompt: request.postDataJSON().prompt,
           template: 'nextjs', status: 'draft', latestRevision: null, createdAt: now() };
         return route.fulfill({ status: 201, json: { project: state.project } });
@@ -86,11 +102,32 @@ async (page) => {
 
   const state = () => page.evaluate(() => window.chatFixtureState());
   const log = page.getByRole('log', { name: 'Conversation' });
+  const prompt = page.getByRole('textbox', { name: 'Message AgentForge' });
   if (await page.getByRole('button', { name: 'Clear terminal', exact: true }).count()) throw new Error('Unconnected demo terminal must not return to the workspace.');
-  await page.getByRole('textbox', { name: 'Describe a frontend page or change' }).fill('Build a portfolio for Demo Student with a working counter.');
-  await page.getByRole('button', { name: 'Send prompt', exact: true }).click();
-  await page.getByRole('button', { name: 'Confirm brief', exact: true }).click();
-  await page.getByRole('button', { name: 'Generate code', exact: true }).click();
+  await prompt.fill('Hi'); await prompt.press('Enter');
+  await log.getByText('Hello! We can plan before building.', { exact: true }).waitFor();
+  if ((await state()).project || (await state()).posts.length) throw new Error('Greeting created backend work.');
+  await prompt.fill('Plan only: a portfolio website.'); await prompt.press('Enter');
+  await page.waitForFunction(() => document.querySelector('textarea')?.value === '');
+  if ((await state()).project || (await state()).posts.length) throw new Error('Planning created backend work.');
+  await page.evaluate(() => window.chatFixtureMode('failChat'));
+  await prompt.fill('Help with my next frontend request.'); await prompt.press('Enter');
+  await page.getByRole('alert').filter({ hasText: 'Fixture conversation unavailable.' }).waitFor();
+  if (await prompt.inputValue() !== 'Help with my next frontend request.') throw new Error('Failed conversation lost composer text.');
+  await page.evaluate(() => window.chatFixtureHold());
+  await prompt.fill('Build a request that must not survive navigation.'); await prompt.press('Enter');
+  await page.waitForFunction(() => window.chatFixtureState().then(value => value.chats === 4));
+  await page.evaluate(() => history.pushState(null, '', '/workspace?project=100000000000000000000099'));
+  await page.evaluate(() => window.chatFixtureRelease());
+  await page.waitForFunction(() => !document.querySelector('textarea')?.disabled);
+  if ((await state()).project || (await state()).posts.length) throw new Error('Stale conversation response created files after navigation.');
+  await page.goto(new URL('/workspace', page.url()).href);
+  await prompt.waitFor();
+  await page.evaluate(() => window.chatFixtureMode('failProject'));
+  await prompt.fill('Build a portfolio for Demo Student with a working counter.'); await prompt.press('Enter');
+  await page.getByRole('alert').filter({ hasText: 'Fixture project creation unavailable.' }).waitFor();
+  if (await prompt.inputValue() !== 'Build a portfolio for Demo Student with a working counter.') throw new Error('Failed project creation lost original text.');
+  await prompt.press('Enter');
   await page.getByText('Viewing v1', { exact: true }).waitFor();
   if (!(await log.innerText()).includes('Build a portfolio for Demo Student')) throw new Error('Initial prompt disappeared.');
   if (!(await log.innerText()).includes('Portfolio revision 1 is saved.')) throw new Error('Result is not part of the chat.');
@@ -109,7 +146,6 @@ async (page) => {
   if (!(await log.innerText()).includes('Preview request accepted')) throw new Error('Preview activity was not restored.');
 
   await page.evaluate(() => window.chatFixtureMode('failNext'));
-  const prompt = page.getByRole('textbox', { name: 'Describe a frontend page or change' });
   await prompt.fill('Change only the hero heading to AI Engineer.'); await prompt.press('Enter');
   await page.getByRole('alert').filter({ hasText: 'Fixture generation failed.' }).waitFor();
   if (!(await page.getByText('Viewing v1', { exact: true }).isVisible())) throw new Error('Failure lost saved files.');
@@ -136,5 +172,5 @@ async (page) => {
   await page.evaluate(() => window.chatFixtureMode('foreign'));
   await page.reload(); await page.getByRole('alert').filter({ hasText: 'Project not found.' }).waitFor();
   if ((await log.innerText()).includes('Demo Student')) throw new Error('Foreign account saw cached transcript.');
-  return { passed: 11, coverage: 'unified transcript, build evidence, single preview start, refresh, failed follow-up, successful follow-up, responsive reflow, mobile overflow, selected base, clear cache, account isolation', providerCalls: 0 };
+  return { passed: 16, coverage: 'greeting, planning, chat failure, navigation race, creation failure, transcript, build evidence, single preview, refresh, failed follow-up, successful follow-up, responsive reflow, mobile overflow, selected base, clear cache, account isolation', providerCalls: 0 };
 }

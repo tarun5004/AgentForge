@@ -124,7 +124,7 @@ try {
         Invoke-BrowserCommand @('goto', "$BaseUrl/workspace")
         Invoke-BrowserCommand @('snapshot')
         Invoke-BrowserCommand @('run-code', "--filename=$browserChecks")
-        Write-Host 'PASS clarification, answer/consent edits, same-key refresh recovery and saved files. APIs intercepted; no real provider or database claim.'
+        Write-Host 'PASS natural clarification, retained answers, failure recovery, build decision and saved-file refresh. APIs intercepted; no real provider or database claim.'
     } elseif ($Suite -eq 'chat') {
         Invoke-BrowserCommand @('goto', "$BaseUrl/workspace")
         Invoke-BrowserCommand @('snapshot')

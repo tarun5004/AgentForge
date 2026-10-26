@@ -79,7 +79,7 @@ async (page) => {
   if (address.pathname !== '/workspace') throw new Error('Access cases must stay in the signed-in workspace.');
   const projectId = address.searchParams.get('project');
   const revisionId = address.searchParams.get('revision');
-  const prompt = page.getByRole('textbox', { name: 'Describe a frontend page or change' });
+  const prompt = page.getByRole('textbox', { name: 'Message AgentForge' });
   let checkpoint;
 
   if (projectId === legacyId && revisionId === null) {
@@ -90,21 +90,21 @@ async (page) => {
     await page.getByText('Validation unknown (legacy)', { exact: true }).waitFor();
     await page.locator('summary[aria-label="Revision history"]').click();
     await page.getByText('Producing prompt unknown (legacy)', { exact: true }).waitFor();
-    await page.getByText('Change metadata unavailable.', { exact: true }).waitFor();
+    await page.getByText('Change metadata unavailable (legacy).', { exact: true }).waitFor();
     if (await page.getByRole('button', { name: 'page.tsx', exact: true }).count() !== 1) {
       throw new Error('Legacy files must load without fabricated added/modified badges.');
     }
     checkpoint = 'legacy';
   } else if (projectId === draftId && revisionId === null) {
-    await page.getByText('Saved draft. No generated files yet.', { exact: true }).waitFor();
-    await page.locator('summary[aria-label="Revision history"]').click();
-    await page.getByText('No saved revisions.', { exact: true }).waitFor();
+    await page.getByText('No generated files. Submit a prompt or choose a saved revision.', { exact: true }).waitFor();
+    await prompt.waitFor();
+    if (await page.locator('summary[aria-label="Revision history"]').count()) throw new Error('Empty draft invented a revision history.');
     checkpoint = 'draft';
   } else if (projectId === unavailableId || (projectId === legacyId && revisionId === unavailableRevisionId)) {
     checkpoint = projectId === unavailableId ? 'project404' : 'revision404';
     const message = checkpoint === 'project404' ? 'Project not found.' : 'Revision not found.';
     await page.getByRole('main').getByRole('alert').filter({ hasText: message }).waitFor();
-    if (!await prompt.isDisabled() || !await page.getByRole('button', { name: 'Send prompt', exact: true }).isDisabled()) {
+    if (!await page.getByRole('button', { name: 'Send message', exact: true }).isDisabled()) {
       throw new Error('Unavailable selection must not allow generation.');
     }
     // Read counters after the error renders; requests may finish during the DOM wait.
@@ -123,14 +123,14 @@ async (page) => {
     }
   }
   if (checkpoint === 'draft') {
-    await page.getByRole('button', { name: 'Assess saved request', exact: true }).waitFor();
-    if (await prompt.count()) throw new Error('Draft should use saved requirements, not an ignored editable initial prompt.');
+    await prompt.fill('Continue planning this saved draft');
+    if (await page.getByRole('button', { name: 'Send message', exact: true }).isDisabled()) throw new Error('Saved draft lost its permanent usable composer.');
   }
   if (checkpoint === 'recovery') {
     await page.getByText('No generated files. Submit a prompt or choose a saved revision.', { exact: true }).waitFor();
     await prompt.fill('A harmless draft that is never submitted');
     if (await page.getByRole('main').getByRole('alert').count() ||
-        await page.getByRole('button', { name: 'Send prompt', exact: true }).isDisabled()) {
+        await page.getByRole('button', { name: 'Send message', exact: true }).isDisabled()) {
       throw new Error('Empty drafts must stay usable without an error or generated files.');
     }
   }

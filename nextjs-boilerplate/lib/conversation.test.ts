@@ -36,7 +36,7 @@ test("bounded history visibly marks trimming and rejects malformed or executable
   assert.equal(result.trimmed, true);
   for (const invalid of [{ ...message, role: ["user"] }, { ...message, state: ["done"] },
     { ...message, createdAt: "tomorrow" }, { ...message, token: "must-not-store" },
-    { ...message, text: "x".repeat(2001) }, { ...message, details: Array(41).fill("extra") }]) assert.equal(isChatEntry(invalid), false);
+    { ...message, text: "x".repeat(4001) }, { ...message, details: Array(41).fill("extra") }]) assert.equal(isChatEntry(invalid), false);
 });
 
 test("history is account/project scoped and a refreshed running step is unconfirmed, not retried", () => {

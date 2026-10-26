@@ -111,17 +111,17 @@ async (page) => {
   const version = stage <= 4 ? 1 : 2;
   await page.getByText(`Viewing v${version}`, { exact: true }).waitFor();
   await page.getByText(`export default function Page() { return <main>${version === 1 ? 'Initial portfolio' : 'Revised portfolio 3'}</main>; }`, { exact: true }).waitFor();
-  const prompt = page.getByRole('textbox', { name: 'Describe a frontend page or change' });
+  const prompt = page.getByRole('textbox', { name: 'Message AgentForge' });
   const retry = page.getByRole('button', { name: 'Retry same attempt', exact: true });
   if (stage === 3 || stage === 4) {
     await retry.waitFor();
     await page.getByText('Unconfirmed attempt retained: Make the hero darker and remove old component', { exact: true }).waitFor();
-    if (await prompt.isEnabled()) throw new Error('An uncertain attempt must block a new submission.');
+    if (await page.getByRole('button', { name: 'Send message', exact: true }).isEnabled()) throw new Error('An uncertain attempt must block a new submission.');
   } else {
     // Waiting for an editable prompt also waits for canonical reads after refresh/error.
     await prompt.fill('A harmless draft that is never submitted');
     if (await retry.count()) throw new Error('Terminal/completed attempts must not show retry controls.');
-    if (stage === 1) await page.getByRole('alert').filter({ hasText: 'Saved files are unchanged; a new submission uses a new key.' }).waitFor();
+    if (stage === 1) await page.getByRole('alert').filter({ hasText: 'Code generation failed.' }).waitFor();
   }
   await page.evaluate(() => window.verifyRecovery());
 }

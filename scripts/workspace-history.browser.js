@@ -112,7 +112,7 @@ async (page) => {
   } else if (state.step === 4) {
     await page.getByRole('heading', { name: 'Sign in to AgentForge', exact: true }).waitFor({ timeout: 8000 });
     if (new URL(page.url()).pathname !== '/login' ||
-        await page.getByRole('textbox', { name: 'Describe a frontend page or change' }).count() || state.rejectedReads !== 1) {
+        await page.getByRole('textbox', { name: 'Message AgentForge' }).count() || state.rejectedReads !== 1) {
       throw new Error('A protected 401 must stay on login, clear the workspace and never bounce/retry.');
     }
   } else { throw new Error('Unexpected extra history check.'); }

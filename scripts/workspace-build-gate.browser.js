@@ -102,14 +102,12 @@ async (page) => {
   }
 
   const selection = await page.evaluate(() => window.buildGateEvidence('selection'));
-  const prompt = page.getByRole('textbox', { name: 'Describe a frontend page or change' });
+  const prompt = page.getByRole('textbox', { name: 'Message AgentForge' });
   const dialog = page.getByRole('dialog', { name: 'Saved revision preview' });
   if (selection.phase === 0) {
     await page.evaluate(() => window.buildGateAction('hold-check'));
     await prompt.fill('Build a portfolio website page');
     await prompt.press('Enter');
-    await page.getByRole('button', { name: 'Confirm brief', exact: true }).click();
-    await page.getByRole('button', { name: 'Generate code', exact: true }).click();
     await page.getByRole('status').filter({ hasText: 'Attempt accepted.' }).waitFor();
     await page.getByText('No generated files. Submit a prompt or choose a saved revision.', { exact: true }).waitFor();
     await page.evaluate(() => window.buildGateEvidence('pending'));

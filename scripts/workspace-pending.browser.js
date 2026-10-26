@@ -23,6 +23,11 @@ async (page) => {
       const request = route.request();
       const path = new URL(request.url()).pathname;
       if (path === '/api/auth/refresh') return route.fulfill({ json: { accessToken: 'pending-fixture-token', user: { id: '400000000000000000000001', name: 'Pending fixture', email: 'pending@example.test' } } });
+      if (path === '/api/conversations' && request.method() === 'POST') return route.fulfill({ json: { response: {
+        requestId: `pending-${state.posts.length}`, action: 'build', message: 'I will apply the requested change.', prompt: request.postDataJSON().messages.at(-1).content,
+        sources: [], retrieval: { method: 'lexical', embeddingModel: null, inputTokens: 0 }, model: 'test-fixture',
+        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }, latencyMs: 0,
+      } } });
       if (path.endsWith('/brief') && request.method() === 'GET') return route.fulfill({ json: { brief: null } });
       if (path === '/api/projects') return route.fulfill({ json: { projects: [project()], nextCursor: null } });
       if (path === `/api/projects/${id}`) return route.fulfill({ json: { project: project() } });
@@ -49,7 +54,7 @@ async (page) => {
     return;
   }
 
-  const prompt = page.getByRole('textbox', { name: 'Describe a frontend page or change' });
+  const prompt = page.getByRole('textbox', { name: 'Message AgentForge' });
   const state = () => page.evaluate(() => window.pendingGateState());
   const control = change => page.evaluate(value => window.pendingGateControl(value), change);
   // Inspect intent only, never print the browser session or generated source.

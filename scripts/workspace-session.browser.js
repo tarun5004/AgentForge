@@ -1,13 +1,13 @@
 // CLI-only regression checks. Block every API request before navigation: never spend model credits.
 async (page) => {
   if (page.url() === 'about:blank') {
-    const state = { mode: 'create401', refreshes: 0, creates: [], generations: [], rejectedReads: 0, unexpected: 0, errors: 0, logout: 0 };
+    const state = { mode: 'create401', refreshes: 0, creates: [], conversations: [], generations: [], rejectedReads: 0, unexpected: 0, errors: 0, logout: 0 };
     let releaseRefresh;
     const project = { id: '100000000000000000000001', name: 'Session test draft', initialPrompt: 'Build a portfolio website', template: 'nextjs', status: 'draft', createdAt: '2026-10-22T00:00:00.000Z', updatedAt: '2026-10-22T00:00:00.000Z', latestRevision: null };
     page.on('pageerror', () => { state.errors++; });
     await page.exposeFunction('sessionTestState', () => ({ ...state }));
     await page.exposeFunction('setSessionTestCase', mode => {
-      Object.assign(state, { mode, refreshes: 0, creates: [], generations: [], rejectedReads: 0, logout: 0 });
+      Object.assign(state, { mode, refreshes: 0, creates: [], conversations: [], generations: [], rejectedReads: 0, logout: 0 });
     });
     await page.exposeFunction('releaseSessionRefresh', () => { releaseRefresh?.(); });
     await page.route('**/api/**', async route => {
@@ -33,6 +33,15 @@ async (page) => {
         state.logout++;
         return route.fulfill({ json: {} });
       }
+      if (path === '/api/conversations' && method === 'POST') {
+        const input = request.postDataJSON(); state.conversations.push(input);
+        const text = input.messages.at(-1).content;
+        const action = text === 'Hi' ? 'reply' : 'build';
+        return route.fulfill({ json: { response: { requestId: `session-${state.conversations.length}`, action,
+          message: action === 'reply' ? 'Hello! How can I help?' : 'I will build that portfolio.', prompt: action === 'build' ? text : null,
+          sources: [], retrieval: { method: 'lexical', embeddingModel: null, inputTokens: 0 }, model: 'test-fixture',
+          usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }, latencyMs: 0 } } });
+      }
       if (method === 'GET' && path.startsWith('/api/projects')) {
         if (['concurrent', 'logoutRace'].includes(state.mode) && request.headers().authorization === 'Bearer test-token-1') {
           state.rejectedReads++;
@@ -55,10 +64,10 @@ async (page) => {
         if (state.mode !== 'generation401' && (state.creates.length === 1 || state.mode === 'retry401')) return unauthorized();
         return route.fulfill({ status: 201, json: { project } });
       }
-      if (path === `/api/projects/${project.id}/brief` && method === 'POST') {
+      if (path === `/api/projects/${project.id}/generations` && method === 'POST') {
         state.generations.push({ key: request.headers()['idempotency-key'], body: request.postDataJSON() });
         if (state.mode === 'generation401' && state.generations.length === 1) return unauthorized();
-        return route.fulfill({ status: 502, json: { message: 'Test AI unavailable.', code: 'ASSESSMENT_OUTCOME_UNKNOWN' } });
+        return route.fulfill({ status: 502, json: { message: 'Test AI unavailable.', code: 'AI_UNAVAILABLE' } });
       }
       state.unexpected++;
       await route.abort('failed');
@@ -67,27 +76,24 @@ async (page) => {
   }
 
   const origin = new URL(page.url()).origin;
-  const prompt = page.getByRole('textbox', { name: 'Describe a frontend page or change' });
-  const send = page.getByRole('button', { name: 'Send prompt', exact: true });
+  const prompt = page.getByRole('textbox', { name: 'Message AgentForge' });
+  const send = page.getByRole('button', { name: 'Send message', exact: true });
   const text = 'Build a portfolio website';
   const read = () => page.evaluate(() => window.sessionTestState());
   // Fresh app navigation restores one fixture session, then each case controls only its own failure.
   async function start(mode, query = '') {
     await page.evaluate(value => window.setSessionTestCase(value), mode);
     await page.goto(`${origin}/workspace${query}`);
-    if (query) await page.getByRole('button', { name: 'Assess saved request' }).waitFor();
-    else {
-      await prompt.waitFor();
-      await page.waitForFunction(() => !document.querySelector('#workspace-prompt')?.disabled);
-    }
+    await prompt.waitFor();
+    if (query) await page.getByText('Session test draft', { exact: true }).waitFor();
+    await page.waitForFunction(() => !document.querySelector('button[aria-label="Send message"]')?.disabled ||
+      !document.querySelector('#workspace-prompt')?.disabled && !document.body.textContent.includes('Loading saved workspace...'));
   }
   // An API outage should be visible without discarding the prompt or authenticated workspace.
   async function expectPreserved() {
-    await page.getByRole('main').getByRole('alert').waitFor();
-    const saved = page.getByRole('region', { name: 'Project requirements' });
+    await page.getByRole('main').getByRole('alert').first().waitFor();
     const current = await read();
-    if (current.generations.length) await saved.waitFor();
-    const preserved = current.generations.length ? (await page.getByRole('log', { name: 'Conversation' }).innerText()).includes(text) : await prompt.inputValue() === text;
+    const preserved = await prompt.inputValue() === text;
     if (new URL(page.url()).pathname !== '/workspace' || !preserved) throw new Error(`Failure lost the session or prompt in ${current.mode}.`);
   }
 
@@ -123,20 +129,25 @@ async (page) => {
   if (concurrent.refreshes !== 2 || concurrent.rejectedReads < 3) throw new Error('Parallel or late 401s rotated the cookie more than once.');
 
   await start('keyboard');
-  await prompt.fill('short');
+  await prompt.fill('');
   await prompt.press('Enter');
-  if ((await read()).creates.length) throw new Error('Short prompt was submitted.');
+  if ((await read()).conversations.length || (await read()).creates.length) throw new Error('Empty prompt was submitted.');
+  await prompt.fill('Hi');
+  await prompt.press('Enter');
+  await page.getByRole('log', { name: 'Conversation' }).getByText('Hello! How can I help?', { exact: true }).waitFor();
+  if ((await read()).creates.length || (await read()).generations.length) throw new Error('Greeting created a project or generated code.');
+  await start('keyboard');
   await prompt.fill(text);
   await prompt.press('Shift+Enter');
-  if (!(await prompt.inputValue()).endsWith('\n') || (await read()).creates.length) throw new Error('Shift+Enter must only add a line.');
+  if (!(await prompt.inputValue()).endsWith('\n') || (await read()).conversations.length) throw new Error('Shift+Enter must only add a line.');
   await prompt.evaluate(el => el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true })));
   await prompt.evaluate(el => el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true })));
-  if ((await read()).creates.length) throw new Error('IME/repeated Enter submitted a prompt.');
+  if ((await read()).conversations.length) throw new Error('IME/repeated Enter submitted a prompt.');
   await prompt.fill(text);
   await prompt.press('Enter');
   await page.keyboard.press('Enter');
   await expectPreserved();
-  if ((await read()).creates.length !== 1) throw new Error('Enter must submit once, not duplicate work.');
+  if ((await read()).creates.length !== 1 || (await read()).conversations.length !== 1) throw new Error('Enter must submit once, not duplicate work.');
 
   await start('logoutRace');
   await page.waitForFunction(async () => (await window.sessionTestState()).refreshes === 2);

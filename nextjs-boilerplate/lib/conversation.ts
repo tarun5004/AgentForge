@@ -26,7 +26,7 @@ export function isChatEntry(value: unknown): value is ChatEntry {
   return typeof entry.id === "string" && entry.id.length > 0 && entry.id.length <= 200 &&
     typeof entry.role === "string" && ["user", "assistant"].includes(entry.role) &&
     typeof entry.kind === "string" && ["message", "activity", "result", "requirements"].includes(entry.kind) &&
-    typeof entry.text === "string" && entry.text.length <= 2000 &&
+    typeof entry.text === "string" && entry.text.length <= 4000 &&
     typeof entry.createdAt === "string" && Number.isFinite(Date.parse(entry.createdAt)) &&
     (entry.state === undefined || (typeof entry.state === "string" && ["working", "done", "error", "unknown"].includes(entry.state))) &&
     (entry.revisionId === undefined || (typeof entry.revisionId === "string" && /^[a-f0-9]{24}$/i.test(entry.revisionId))) &&
@@ -87,7 +87,7 @@ export function clearConversation(userId: string, projectId: string): void {
 // Rebuild missing prompts/results from canonical revision metadata without fabricating tool history.
 export function restoreRevisionMessages(project: Project, revisions: RevisionSummary[], conversation: Conversation): Conversation {
   let result = conversation;
-  if (!result.entries.some((entry) => entry.id === "initial-request")) {
+  if (!result.entries.some((entry) => entry.role === "user")) {
     result = upsertChatEntry(result, { id: "initial-request", role: "user", kind: "message",
       text: project.initialPrompt, createdAt: project.createdAt });
   }

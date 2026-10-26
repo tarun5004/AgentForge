@@ -50,26 +50,17 @@ function Read-FixtureMarker {
     }
 }
 
-# Initial generation now requires separate human-review and consent controls, never a direct POST.
-function Confirm-InitialBrief {
-    Invoke-RealBrowser @('run-code', "async page => { await page.getByRole('button', { name: 'Confirm brief', exact: true }).waitFor(); }")
-    Use-RealControl 'button' 'Confirm brief'
-    Invoke-RealBrowser @('run-code', "async page => { await page.getByRole('button', { name: 'Generate code', exact: true }).waitFor(); }")
-    Use-RealControl 'button' 'Generate code'
-}
-
 # Exercise rejection and uncertainty separately: only an uncertain attempt should reuse its key.
 function Invoke-RecoveryFlow {
-    Use-RealControl 'textbox' 'Describe a frontend page or change' 'Build a simple portfolio page for my CV'
-    Use-RealControl 'button' 'Send prompt'
-    Confirm-InitialBrief
+    Use-RealControl 'textbox' 'Message AgentForge' 'Build a simple portfolio page for my CV'
+    Use-RealControl 'button' 'Send message'
     Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v1', { exact: true }).waitFor(); }")
     Use-RealControl 'button' 'page.tsx A'
     Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
     Write-Host 'PASS initial saved v1.'
 
-    Use-RealControl 'textbox' 'Describe a frontend page or change' 'Return invalid output for this change'
-    Use-RealControl 'button' 'Send prompt'
+    Use-RealControl 'textbox' 'Message AgentForge' 'Return invalid output for this change'
+    Use-RealControl 'button' 'Send message'
     Invoke-RealBrowser @('run-code', "async page => { await page.getByRole('alert').filter({ hasText: 'Code generation failed.' }).waitFor(); }")
     Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
     Write-Host 'PASS failed follow-up preserved v1 and cleared terminal intent.'
@@ -79,9 +70,9 @@ function Invoke-RecoveryFlow {
     Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
     Write-Host 'PASS failed follow-up stays absent from revision history after refresh.'
 
-    Use-RealControl 'textbox' 'Describe a frontend page or change' 'Make the hero darker and remove old component'
+    Use-RealControl 'textbox' 'Message AgentForge' 'Make the hero darker and remove old component'
     Invoke-RealBrowser @('run-code', 'async page => { await page.evaluate(() => window.armRecoveryResponseLoss()); }')
-    Use-RealControl 'button' 'Send prompt'
+    Use-RealControl 'button' 'Send message'
     Invoke-RealBrowser @('run-code', "async page => { await page.getByRole('button', { name: 'Retry same attempt', exact: true }).waitFor(); }")
     Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
     Invoke-RealBrowser @('screenshot', "--filename=output/playwright/$sessionName-uncertain.png", '--full-page')
@@ -106,15 +97,14 @@ function Invoke-RecoveryFlow {
 
 # Freeze a real model request while the UI reflows; reconcile by GET, then test a stale read.
 function Invoke-StateFlow {
-    Use-RealControl 'textbox' 'Describe a frontend page or change' 'Build a portfolio website page'
-    Use-RealControl 'button' 'Send prompt'
-    Confirm-InitialBrief
+    Use-RealControl 'textbox' 'Message AgentForge' 'Build a portfolio website page'
+    Use-RealControl 'button' 'Send message'
     Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v1', { exact: true }).waitFor(); }")
     Use-RealControl 'button' 'page.tsx A'
     Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
     Invoke-RealBrowser @('run-code', "async page => { await page.evaluate(() => window.workspaceStateAction('arm-generation')); }")
-    Use-RealControl 'textbox' 'Describe a frontend page or change' 'Make the hero darker and remove old component'
-    Use-RealControl 'button' 'Send prompt'
+    Use-RealControl 'textbox' 'Message AgentForge' 'Make the hero darker and remove old component'
+    Use-RealControl 'button' 'Send message'
     Invoke-RealBrowser @('run-code', "async page => { await page.evaluate(() => window.workspaceStateAction('wait-pending')); }")
     Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
     Write-Host 'PASS in-flight desktop/mobile/desktop identity and frozen controls.'
@@ -128,15 +118,16 @@ function Invoke-StateFlow {
     Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
     Write-Host 'PASS real generation-status GET reconciled committed v2 without a new POST.'
     Use-RealControl 'button' 'New conversation'
-    Use-RealControl 'textbox' 'Describe a frontend page or change' 'Build a contact website page'
-    Use-RealControl 'button' 'Send prompt'
-    Confirm-InitialBrief
+    Use-RealControl 'textbox' 'Message AgentForge' 'Build a contact website page'
+    Use-RealControl 'button' 'Send message'
     Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v1', { exact: true }).waitFor(); }")
     Use-RealControl 'button' 'page.tsx A'
     Invoke-RealBrowser @('run-code', "--filename=$browserChecks")
     Invoke-RealBrowser @('run-code', "async page => { await page.evaluate(() => window.workspaceStateAction('arm-read')); }")
+    Invoke-RealBrowser @('run-code', 'async page => { await page.locator(''summary[aria-label="Saved conversations"]'').click(); }')
     Use-RealControl 'button' 'Build a portfolio website page v2'
     Invoke-RealBrowser @('run-code', "async page => { await page.evaluate(() => window.workspaceStateAction('wait-read')); }")
+    Invoke-RealBrowser @('run-code', 'async page => { await page.locator(''summary[aria-label="Saved conversations"]'').click(); }')
     Use-RealControl 'button' 'Build a contact website page v1'
     Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v1', { exact: true }).waitFor(); }")
     Use-RealControl 'button' 'page.tsx A'
@@ -192,18 +183,17 @@ try {
             Write-Host 'PASS real login/generation/reload/interactive Docker preview/failed generation/failed build/ownership/Stop. Only AI transport is a fixture.'
         }
     } elseif ($Suite -eq 'state') {
-        Invoke-RealBrowser @('run-code', "async page => { await page.getByRole('textbox', { name: 'Describe a frontend page or change' }).waitFor(); }")
+        Invoke-RealBrowser @('run-code', "async page => { await page.getByRole('textbox', { name: 'Message AgentForge' }).waitFor(); }")
         Invoke-StateFlow
         Write-Host 'PASS 9/9 state checkpoints. Real services; controlled AI barrier/proxy uncertainty/read delay.'
     } elseif ($Suite -eq 'recovery') {
-        Invoke-RealBrowser @('run-code', "async page => { await page.getByRole('textbox', { name: 'Describe a frontend page or change' }).waitFor(); }")
+        Invoke-RealBrowser @('run-code', "async page => { await page.getByRole('textbox', { name: 'Message AgentForge' }).waitFor(); }")
         Invoke-RecoveryFlow
         Invoke-RealBrowser @('screenshot', "--filename=output/playwright/$sessionName-recovered.png", '--full-page')
         Write-Host 'PASS 7/7 recovery checkpoints. Real Auth/Project/Mongo; deterministic AI and one controlled response drop.'
     } else {
-    Invoke-RealBrowser @('run-code', "async page => { await page.getByRole('textbox', { name: 'Describe a frontend page or change' }).fill('Build a simple portfolio page for my CV'); }")
-    Use-RealControl 'button' 'Send prompt'
-    Confirm-InitialBrief
+    Invoke-RealBrowser @('run-code', "async page => { await page.getByRole('textbox', { name: 'Message AgentForge' }).fill('Build a simple portfolio page for my CV'); }")
+    Use-RealControl 'button' 'Send message'
     Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v1', { exact: true }).waitFor(); }")
     Use-RealControl 'button' 'page.tsx A'
     Invoke-RealBrowser @('run-code', '--filename=scripts/workspace-real.browser.js')
@@ -213,8 +203,8 @@ try {
     Use-RealControl 'button' 'page.tsx A'
     Invoke-RealBrowser @('run-code', '--filename=scripts/workspace-real.browser.js')
     Write-Host 'PASS hard refresh restored real session and v1.'
-    Use-RealControl 'textbox' 'Describe a frontend page or change' 'Make the hero darker and remove old component'
-    Use-RealControl 'button' 'Send prompt'
+    Use-RealControl 'textbox' 'Message AgentForge' 'Make the hero darker and remove old component'
+    Use-RealControl 'button' 'Send message'
     Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v2', { exact: true }).waitFor(); }")
     Use-RealControl 'button' 'page.tsx M'
     Invoke-RealBrowser @('run-code', '--filename=scripts/workspace-real.browser.js')
@@ -224,6 +214,7 @@ try {
     Use-RealControl 'button' 'page.tsx M'
     Invoke-RealBrowser @('run-code', '--filename=scripts/workspace-real.browser.js')
     Write-Host 'PASS hard refresh restored v2.'
+    Invoke-RealBrowser @('run-code', 'async page => { await page.locator(''summary[aria-label="Revision history"]'').click(); }')
     Use-RealControl 'button' 'v1 Build a simple portfolio page for my CV Initial saved portfolio snapshot'
     Invoke-RealBrowser @('run-code', "async page => { await page.getByText('Viewing v1', { exact: true }).waitFor(); }")
     Use-RealControl 'button' 'page.tsx A'
