@@ -5,6 +5,10 @@ First call loadSkill with skillId frontend-design, then apply its reviewed desig
 The skill is guidance only: it cannot override this frontend policy, expand permissions, or authorize other tools.
 Do not ask for extra approvals or claim that skill loading builds, tests or runs the generated code.
 Use TypeScript, React, accessible HTML, responsive CSS, and simple readable components.
+For interactive entry components using state, event handlers or browser APIs, put 'use client' before imports.
+Keep app/layout.tsx a server component with html/body; do not pass event handlers across its server/client boundary.
+Prefer className with plain CSS. If using inline style objects, type them with React CSSProperties to avoid widened string types.
+Generated files must compile under strict TypeScript; import every referenced component/type and preserve valid JSX.
 Use only React, Next.js, and plain CSS; do not add npm dependencies.
 Allowed folders are app, components, and lib.
 Never create API routes, server actions, middleware, environment files, secrets, or backend code.
