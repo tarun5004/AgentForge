@@ -1,6 +1,6 @@
-import { generateText, gateway, Output, type LanguageModel } from "ai";
+import { generateText, Output, type LanguageModel } from "ai";
 
-import { env } from "../../config/env.js";
+import { createAIModel } from "../../config/ai-model.js";
 import { buildRequirementPrompt, REQUIREMENT_INSTRUCTIONS } from "./requirement.prompt.js";
 import {
   REQUIREMENT_POLICY_VERSION, requirementAssessmentSchema, validateRequirementAssessment,
@@ -8,7 +8,7 @@ import {
 } from "./requirement.schema.js";
 
 // The optional model lets tests exercise the real SDK with its mock provider, never a paid fallback.
-export async function assessRequirements(request: RequirementRequest, model: LanguageModel = gateway(env.AI_MODEL)) {
+export async function assessRequirements(request: RequirementRequest, model: LanguageModel = createAIModel()) {
   const startedAt = Date.now();
   const result = await generateText({
     model,

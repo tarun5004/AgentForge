@@ -1,3 +1,54 @@
+# Direct Google live loop — 2026-10-25
+
+**Result: the core live generation-to-preview loop passed with `gemini-3.5-flash-lite`.** This is one synthetic portfolio and one follow-up, not exhaustive model evaluation, public-production readiness or completion of every roadmap feature. The earlier Gateway verification is preserved below as dated evidence.
+
+## What failed, and what changed
+
+1. An initially screenshot-transcribed key was rejected. A user-updated key passed model lookup and `countTokens`. No key values were logged or committed.
+2. Gemini 3.8 inference timed out; a separate Interactions diagnostic explicitly returned 503 high demand. Tiny 3.6 Flash and 3.5 Flash-Lite requests both returned `OK`.
+3. The first full generation found a real compatibility bug: Google rejected `Forced function calling (ANY mode) with a response mime type: 'application/json' is unsupported` (HTTP 400). Offline transport fixtures had previously accepted this invalid combination, so their green result was insufficient evidence.
+4. Updated the compatible pair to `ai@7.0.153` and `@ai-sdk/google@4.0.105`. The provider handles forced-tool output separately, retaining JSON schema output for the final step. A regression fixture now rejects the invalid forced-tool/JSON combination. No safety guard or manifest validation was removed.
+5. Retested 3.6: skill loading passed, but the final generation returned provider 503. Deliberately selected 3.5 Flash-Lite; there is no runtime paid-provider fallback or automatic SDK retry. Local config and direct-provider default now use the successfully tested model.
+
+## Verified real browser flow
+
+- Disposable registration succeeded against production Auth/Project modules, dedicated MongoDB and the actual AI app. Enter submitted a complete synthetic portfolio prompt; requirements returned ready without extra questions or logout.
+- Confirmed the saved brief and generated code. The model made the real read-only `loadSkill` call, then returned `app/globals.css`, `app/layout.tsx` and `app/page.tsx`.
+- Project returned 202 while Execution built the saved candidate. Only after a successful restricted Docker build did Project publish v1 with `build_passed` evidence.
+- Preview separately built and served the saved revision. The browser rendered the actual generated page, navy CSS (`rgb(13, 27, 42)`), and the React counter changed 0 -> 1. Iframe sandbox remained exactly `allow-scripts`; both screenshots were visually inspected.
+- Stopped preview and refreshed. Login, selected project/revision and saved files restored with no additional model call.
+- Submitted a follow-up against selected v1: change only the hero heading to `Hello, Future AI Engineer`. The real tool/generation calls and candidate build succeeded; v2's parent is v1.
+- Byte comparison found exactly one changed line (the h1) in `app/page.tsx`. CSS/layout stayed byte-identical, and v1's snapshot hash stayed unchanged.
+- Built/opened v2 Preview: new heading appeared, navy CSS remained, counter again changed 0 -> 1, and sandbox remained unchanged. Stop/close/refresh restored v2 with no extra provider call.
+- Browser console contained only the expected initial unauthenticated refresh 401 before disposable registration; no new error appeared during the successful generation/preview/reload flow.
+
+## Successful-loop usage, not a billing receipt
+
+| Operation | Input tokens | Output tokens | Total tokens |
+| --- | ---: | ---: | ---: |
+| Requirement assessment | 383 | 113 | 496 |
+| Initial skill call | 666 | 18 | 684 |
+| Initial code generation | 951 | 2,385 | 3,336 |
+| Follow-up skill call | 626 | 18 | 644 |
+| Follow-up code generation | 3,262 | 713 | 3,975 |
+| **Successful loop** | **5,888** | **3,247** | **9,135** |
+
+All five calls returned HTTP 200. This ledger excludes the earlier diagnostic/failed attempts; across this turn there were 13 inference attempts, including two tiny probes, two 400 rejections and one 503. Successful responses across those attempts reported 12,326 tokens. Failed-request usage/account-wide dollars were not measured; no zero-bill guarantee is made. Billing, credits and budgets were not changed.
+
+## Validation and artifacts
+
+- AI: 57/57 tests plus typecheck/build. Project: 34/34 tests (including six generation-contract tests). Execution: 45/45 tests. Frontend: 40/40 tests, lint and production build. Auth/Project/Execution builds also passed, with Execution typecheck. Total: 176 passing tests; no integration-suite count is inferred from these unit/contract runners.
+- Actual Docker candidate builds and Preview builds passed for both revisions. This is additional live evidence, not substituted unit-test coverage.
+- v1 snapshot SHA-256: `e15dd93e4728e6f6b2679d087274c25b19db2fffbebb8d8b0f203785ef206fe4`.
+- v2 snapshot SHA-256: `58644a183464029af45cb9d9debc4be63a7e8a168049dcb1158859a635dacfdc`.
+- Both build proofs pinned runner image `sha256:d06c878454a5a36edd9a5a14300f951725490980f81a370509567a96ecb6727a` and policy `next-static-build-v1`.
+- Ignored evidence: `output/playwright/gemini-live-before-sdk-fix.json`, `gemini-36-after-sdk-fix.json`, `gemini-live-flow-report.json`, `gemini-v1-live-preview.png`, `gemini-v2-live-preview.png`, `gemini-v1-restored.yml` and `gemini-v2.yml`. These contain test evidence, not reusable credentials or a production fake-provider mode.
+- Cleanup removed only the disposable account and its test records. All five collection counts returned zero; only owned verification processes/container were stopped. Normal application records, volumes and source changes were preserved. The downloaded trusted image/cache remain reusable.
+
+**Remaining:** rebuild/start the normal local stack from the intended merged source before recording; these temporary test services are not a silently updated normal Compose deployment. Existing dependency advisories and the unmerged clarification slice remain separate concerns. The generated example added extra skill labels and did not use the exact requested counter button wording; functional/build success is not proof of perfect instruction following or design quality. Terminal, backend generation, Kubernetes and advanced roadmap features are not claimed by this test.
+
+---
+
 # Free-credit model and live local loop — 2026-10-23
 
 **Result: bounded live smoke passed.** Real `google/gemini-2.5-flash` responses drove requirements, initial generation and a targeted follow-up; both saved revisions passed real restricted Docker builds and rendered as interactive browser previews. This is one synthetic portfolio case, not a general quality/reliability benchmark or production security certification.

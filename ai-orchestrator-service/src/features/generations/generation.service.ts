@@ -1,7 +1,8 @@
-import { gateway, isStepCount, Output, tool, ToolLoopAgent, type LanguageModel } from "ai";
+import { isStepCount, Output, tool, ToolLoopAgent, type LanguageModel } from "ai";
 import { z } from "zod";
 
 import { env } from "../../config/env.js";
+import { createAIModel, modelProvider } from "../../config/ai-model.js";
 import {
   generatedManifestSchema,
   type GenerationRequest,
@@ -12,7 +13,7 @@ import { buildGenerationPrompt, GENERATION_INSTRUCTIONS } from "./generation.pro
 import { FRONTEND_SKILL_ID, loadFrontendSkill } from "../../skills/frontend-skill.js";
 
 // One read-only skill call precedes generation; tests inject an SDK mock, never a production fake mode.
-export async function generateProject(request: GenerationRequest, model: LanguageModel = gateway(env.AI_MODEL)) {
+export async function generateProject(request: GenerationRequest, model: LanguageModel = createAIModel()) {
   const startedAt = Date.now();
   // Missing/changed local guidance fails before spending on a model request.
   const skill = await loadFrontendSkill();
@@ -63,7 +64,7 @@ export async function generateProject(request: GenerationRequest, model: Languag
 
   return {
     requestId: request.requestId,
-    provider: "vercel-ai-gateway" as const,
+    provider: modelProvider,
     model: env.AI_MODEL,
     summary: manifest.summary,
     files: manifest.files,

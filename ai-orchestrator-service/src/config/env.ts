@@ -1,7 +1,9 @@
 import dotenv from "dotenv";
+import { readAISettings } from "./ai-settings.js";
 
 dotenv.config();
 
+// Required internal credentials stay server-side regardless of the selected model provider.
 function getRequiredEnv(name: string): string {
   const value = process.env[name]?.trim();
 
@@ -12,21 +14,19 @@ function getRequiredEnv(name: string): string {
   return value;
 }
 
-if (!process.env.AI_GATEWAY_API_KEY?.trim() && !process.env.VERCEL_OIDC_TOKEN?.trim()) {
-  throw new Error(
-    "Missing AI Gateway authentication: set AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN.",
-  );
-}
+const aiSettings = readAISettings(process.env);
 
-const port = Number.parseInt(process.env.PORT ?? "6000", 10);
+const port = Number.parseInt(process.env.PORT ?? "6001", 10);
 
 if (!Number.isInteger(port) || port <= 0) {
   throw new Error("PORT must be a positive integer.");
 }
 
+// A server can listen on 6000, but Node Fetch refuses to call it.
+if (port === 6000) throw new Error("PORT 6000 is blocked by Fetch. Use PORT=6001.");
+
 export const env = {
   PORT: port,
   INTERNAL_SERVICE_TOKEN: getRequiredEnv("INTERNAL_SERVICE_TOKEN"),
-  // This local-demo default was free-credit eligible when checked; operators can override it.
-  AI_MODEL: process.env.AI_MODEL?.trim() || "google/gemini-2.5-flash",
+  ...aiSettings,
 };

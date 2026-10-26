@@ -98,6 +98,9 @@ test("checks final merged count and content size, not only the returned upserts"
 test("HTTP boundary rejects unauthorized, unsafe and oversized context without calling a model", async () => {
   process.env.INTERNAL_SERVICE_TOKEN = "slice-three-ai-fixture-token";
   process.env.AI_GATEWAY_API_KEY = "slice-three-not-a-real-provider-key";
+  process.env.AI_PROVIDER = "gateway";
+  process.env.AI_MODEL = "google/gemini-2.5-flash";
+  process.env.GOOGLE_GENERATIVE_AI_API_KEY = "";
   process.env.AI_MODEL = "fixture/not-a-real-model";
   const { createApp } = await import("../../app.js");
   const server = createApp().listen(0, "127.0.0.1");
