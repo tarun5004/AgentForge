@@ -6,6 +6,8 @@ Project owns authenticated projects, immutable revision history and publication.
 
 From the repository root run `npm ci`, copy this service's `.env.example` to its ignored `.env`, then run `npm --workspace project-service run dev`. Use a reachable MongoDB, Auth's same access-token verification secret, and AI Orchestrator URL/internal token. Never put credentials in frontend `NEXT_PUBLIC_*` variables. Existing Compose runs with the build gate disabled unless deliberately configured.
 
+Host AI requests use `AI_ORCHESTRATOR_URL=http://localhost:6001`. Port 6000 is rejected at startup because Node Fetch blocks it. Update existing local `.env` files and restart Project/AI together; a server health check alone does not prove Project can call AI.
+
 ## Opt-in candidate build gate (B2/3)
 
 ```text
@@ -28,6 +30,34 @@ Both control-plane services must run on the trusted host for this local-only con
 - Existing head/version uniqueness still arbitrates competing candidates. They do not silently become consecutive edits. No model repair loop, dependency/secret scanner, live terminal, Kubernetes or production security certification is included.
 
 ## Routes
+
+### Conversation (no automatic project creation)
+
+`POST /api/conversations` requires the existing owner JWT and accepts only
+`{messages: [{role: "user" | "assistant", content}], projectId?, baseRevisionId?}`.
+Send 1–16 messages, each 1–4,000 characters, ending with a user message; serialized
+messages must fit 16,000 UTF-8 bytes. A base requires an owned project and a revision
+belonging to that project. Files are loaded on the server, never supplied by the browser.
+No base means no files, including for a saved draft. No query switches are accepted.
+
+The response is `{response: {requestId, action: "reply" | "clarify" | "build", message,
+prompt, sources: [{id,title}], retrieval: {method,embeddingModel,inputTokens}, model,
+usage: {inputTokens,outputTokens,totalTokens}, latencyMs}}`. Only `build` carries a
+10–1,000-character prompt; other actions carry null. A build decision does **not**
+publish code: the frontend deliberately invokes the existing idempotent generation
+workflow. Conversation/plan requests create no projects, revisions or generation records.
+
+One internal AI request uses the existing URL/token, a 50-second timeout, no redirects
+and no retries. Upstream failures return sanitized 502 `AI_UNAVAILABLE`, never browser
+401/logout. A user-requested retry may spend again; chat responses are not durable jobs.
+The model receives bounded client-supplied conversation plus optional owned revision
+context; this is not cross-device server chat history. Legacy brief endpoints remain
+supported but are not required by the new chat path. Sources/retrieval metadata describe
+the AI service's local knowledge lookup; Project does not perform embeddings itself.
+
+Run the real HTTP/Mongo fixture suite with an **empty dedicated** local
+`AGENTFORGE_TEST_MONGODB_URI=mongodb://127.0.0.1:27029/agentforge_test_conversation_20261025`
+and `npm --workspace project-service run test:conversation`. It never calls a paid model.
 
 ### Saved requirements and confirmation (A2)
 

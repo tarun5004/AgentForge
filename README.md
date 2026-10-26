@@ -49,7 +49,7 @@ The frontend route guard is a user-experience check; every future protected back
 | Auth Service | `4000` | Register, login, refresh, logout, and authenticated profile endpoints |
 | Project Service | `3000` | Authenticated projects, generation records, and immutable revisions in MongoDB |
 | Execution Service | `5000` status-only; opt-in host controller `5002`, preview `5101` | Owner-scoped `/api/runs`, bounded Docker static builds, status/cancel/expiry; disabled by default |
-| AI Orchestrator | `6000` | Internal Vercel AI Gateway call with schema and safe-file validation |
+| AI Orchestrator | `6001` | Internal model call with schema and safe-file validation |
 
 The Project Service does not create Kubernetes Pods. Execution Service owns the opt-in **local** `POST /api/runs` workflow: read owned saved files, build a trusted Next.js template in a restricted container, remove the container and serve bounded expiring static output. The frontend Preview dialog uses this API. [Setup/security limits](execution-service/README.md) and [audit evidence](execution-service/VERIFICATION.md) distinguish fixture verification from an unrun paid-provider end-to-end test. This is not a public multi-tenant sandbox or Kubernetes implementation.
 

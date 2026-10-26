@@ -4,11 +4,13 @@ import morgan from "morgan";
 import { errorHandler, notFoundHandler } from "../middlewares/error.middleware.js";
 import router from "./index.routes.js";
 import { createCandidateRouter } from "../routes/candidate.routes.js";
+import conversationRouter from "../routes/conversation.routes.js";
 
 export function createApp() {
   const app = express();
 
   app.use(morgan("dev"));
+  app.use("/api/conversations", conversationRouter);
   app.use(express.json({ limit: "16kb" }));
 
   app.get("/_status/healthz", (_req, res) => {
