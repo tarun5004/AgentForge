@@ -116,10 +116,10 @@ async (page) => {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
       await page.getByRole('separator').first().waitFor({ state: width === 390 ? 'detached' : 'visible' });
       await page.getByText('Viewing v1', { exact: true }).waitFor();
-      for (const button of ['New conversation', 'Send prompt', 'Sign out']) {
+      for (const button of ['New conversation', 'Send message', 'Sign out']) {
         if (await page.getByRole('button', { name: button, exact: true }).isEnabled()) throw new Error('In-flight controls must stay frozen.');
       }
-      const prompt = page.getByRole('textbox', { name: 'Describe a frontend page or change' });
+      const prompt = page.getByRole('textbox', { name: 'Message AgentForge' });
       if (await prompt.isEnabled() || await prompt.inputValue() !== 'Make the hero darker and remove old component') throw new Error('In-flight prompt changed.');
       await page.evaluate(() => window.verifyWorkspaceState());
       if (width === 390) await page.screenshot({ path: `output/playwright/state-mobile-${Date.now()}.png`, fullPage: true });
@@ -130,14 +130,14 @@ async (page) => {
   const version = selection.step === 5 ? 2 : 1;
   await page.getByText(`Viewing v${version}`, { exact: true }).waitFor();
   if (pending) {
-    for (const button of ['New conversation', 'Send prompt', 'Sign out']) {
+    for (const button of ['New conversation', 'Send message', 'Sign out']) {
       if (await page.getByRole('button', { name: button, exact: true }).isEnabled()) throw new Error('In-flight controls must stay frozen.');
     }
-    if (await page.getByRole('textbox', { name: 'Describe a frontend page or change' }).isEnabled()) throw new Error('Prompt changed during generation.');
+    if (await page.getByRole('textbox', { name: 'Message AgentForge' }).isEnabled()) throw new Error('Prompt changed during generation.');
   } else if (selection.step === 4) {
     await page.getByRole('button', { name: 'Check status', exact: true }).waitFor();
   } else {
-    await page.getByRole('textbox', { name: 'Describe a frontend page or change' }).fill('An unsent verification draft');
+    await page.getByRole('textbox', { name: 'Message AgentForge' }).fill('An unsent verification draft');
     if (await page.getByRole('button', { name: 'Check status', exact: true }).count()) throw new Error('Completed state still shows pending controls.');
   }
   if (!pending) {

@@ -34,14 +34,16 @@ async (page) => {
 
   const address = new URL(page.url());
   if (address.pathname !== '/workspace') throw new Error('Workspace did not render.');
-  const prompt = page.getByRole('textbox', { name: 'Describe a frontend page or change' });
-  const send = page.getByRole('button', { name: 'Send prompt', exact: true });
+  const prompt = page.getByRole('textbox', { name: 'Message AgentForge' });
+  const send = page.getByRole('button', { name: 'Send message', exact: true });
+  const savedConversations = page.locator('summary[aria-label="Saved conversations"]');
+  if (!await savedConversations.evaluate(element => element.parentElement.open)) await savedConversations.click();
   await page.getByText('No saved projects yet.', { exact: true }).waitFor();
 
   if (address.search) {
     await page.getByRole('alert').filter({ hasText: 'Invalid workspace link.' }).waitFor();
-    if (!await prompt.isDisabled() || !await send.isDisabled()) {
-      throw new Error('Malformed selection must disable both prompt and submission.');
+    if (!await send.isDisabled()) {
+      throw new Error('Malformed selection must disable submission without removing the composer.');
     }
   } else {
     await page.getByText('No generated files. Submit a prompt or choose a saved revision.', { exact: true }).waitFor();

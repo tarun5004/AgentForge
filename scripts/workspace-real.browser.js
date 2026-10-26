@@ -1,7 +1,7 @@
 // Test-only CLI expression; no API interception and no export/trailing semicolon.
 async (page) => {
   if (page.url() === 'about:blank') {
-    const state = { stage: 0, token: null, projectId: null, generations: [], requests: [], refreshes: 0, errors: 0 };
+    const state = { stage: 0, token: null, projectId: null, generations: [], requests: [], decisions: [], refreshes: 0, errors: 0 };
     page.on('pageerror', () => { state.errors += 1; });
     // Tokens stay private to the test runner. CLI results/snapshots never include them.
     page.on('response', async (response) => {
@@ -11,6 +11,8 @@ async (page) => {
         if (['/api/auth/register', '/api/auth/refresh'].includes(path)) {
           state.token = (await response.json()).accessToken;
           if (path.endsWith('/refresh')) state.refreshes += 1;
+        } else if (path === '/api/conversations') {
+          state.decisions.push({ response: (await response.json()).response, body: response.request().postDataJSON() });
         } else if (path === '/api/projects') {
           state.projectId = (await response.json()).project.id;
         } else if (/^\/api\/projects\/[a-f\d]{24}(?:\/brief\/[a-f\d]{24})?\/generations$/.test(path)) {
@@ -29,7 +31,9 @@ async (page) => {
         if (!state.token || !state.projectId || state.generations.length !== 1) throw new Error('Initial generation was not captured.');
         const saved = await fetch(`http://127.0.0.1:4311/api/projects/${state.projectId}/brief`, { headers: { Authorization: `Bearer ${state.token}` } });
         const brief = (await saved.json()).brief;
-        if (!saved.ok || !brief?.confirmedAt || brief.assessment?.brief !== state.generations[0].sourcePrompt) throw new Error('Confirmed saved brief did not drive the initial generation.');
+        if (!saved.ok || brief !== null || state.decisions.length !== 1 || state.decisions[0].response.action !== 'build' ||
+            state.decisions[0].response.prompt !== state.generations[0].sourcePrompt ||
+            state.decisions[0].body.messages.at(-1).content !== state.generations[0].sourcePrompt) throw new Error('Conversation build decision did not drive initial generation without a legacy brief.');
       } else if (state.stage === 1) {
         if (!state.refreshes || state.generations.length !== 1) throw new Error('Refresh must restore a session, not regenerate.');
       } else if (state.stage >= 2) {
@@ -75,7 +79,8 @@ async (page) => {
           }
           const status = await (await fetch('http://127.0.0.1:4312/__fixture')).json();
           if (status.aiRequests.length !== 2 || status.aiRequests[1].baseVersion !== 1 || !status.aiRequests[1].baseMatchesInitial ||
-              status.counts.users !== 2 || status.counts.projects !== 1 || status.counts.revisions !== 2 || status.counts.generations !== 2 || status.counts.projectbriefs !== 1) {
+              status.counts.users !== 2 || status.counts.projects !== 1 || status.counts.revisions !== 2 || status.counts.generations !== 2 || status.counts.projectbriefs !== 0 ||
+              state.decisions.length !== 2 || state.decisions[1].body.baseRevisionId !== first.revisionId) {
             throw new Error('Unexpected model calls, selected base or persisted record counts.');
           }
         }
@@ -89,9 +94,9 @@ async (page) => {
   if (selection.stage > 4) throw new Error('Unexpected extra real-loop checkpoint.');
   const version = selection.stage === 0 || selection.stage === 1 || selection.stage === 4 ? 1 : 2;
   await page.getByText(`Viewing v${version}`, { exact: true }).waitFor();
-  await page.getByRole('textbox', { name: 'Describe a frontend page or change' }).waitFor();
+  await page.getByRole('textbox', { name: 'Message AgentForge' }).waitFor();
   // A disabled prompt may still be mounted while canonical reads are loading.
-  await page.getByRole('textbox', { name: 'Describe a frontend page or change' }).fill('A harmless draft that is never submitted');
+  await page.getByRole('textbox', { name: 'Message AgentForge' }).fill('A harmless draft that is never submitted');
   const expected = version === 1 ? 'Initial portfolio' : 'Revised portfolio 2';
   await page.getByText(`export default function Page() { return <main>${expected}</main>; }`, { exact: true }).waitFor();
   const url = new URL(page.url());

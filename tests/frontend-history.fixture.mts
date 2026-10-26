@@ -93,7 +93,7 @@ const aiServer = createServer((request, response) => {
     void shutdown();
     return;
   }
-  if (request.method !== "POST" || !["/internal/generations", "/internal/requirements"].includes(request.url ?? "") || request.headers["x-internal-service-token"] !== "frontend-fixture-internal") {
+  if (request.method !== "POST" || !["/internal/generations", "/internal/requirements", "/internal/conversations"].includes(request.url ?? "") || request.headers["x-internal-service-token"] !== "frontend-fixture-internal") {
     response.writeHead(404).end(); return;
   }
   let body = "";
@@ -101,6 +101,17 @@ const aiServer = createServer((request, response) => {
   request.on("end", async () => {
     try {
       const input = JSON.parse(body);
+      // Conversation decisions are a separate fixture boundary, not generated-code evidence.
+      if (request.url === "/internal/conversations") {
+        const prompt = input.messages.at(-1)?.content;
+        if (typeof prompt !== "string" || prompt.length < 10 || prompt.length > 1000) throw new Error("Fixture requires a bounded build request.");
+        response.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ response: {
+          requestId: input.requestId, action: "build", message: "I will build the requested frontend change.", prompt,
+          sources: [], retrieval: { method: "lexical", embeddingModel: null, inputTokens: 0 }, model: "deterministic-fixture",
+          usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }, latencyMs: 0,
+        } }));
+        return;
+      }
       // Contract fixture only: real model question quality is intentionally not simulated or claimed.
       if (request.url === "/internal/requirements") {
         response.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ assessment: {
