@@ -6,9 +6,11 @@ import { errorHandler, notFoundHandler } from "./middlewares/error.middleware.js
 import { requireInternalToken } from "./middlewares/internal-auth.middleware.js";
 import { createRequirementController } from "./features/requirements/requirement.controller.js";
 import { assessRequirements } from "./features/requirements/requirement.service.js";
+import { createConversationController } from "./features/conversations/conversation.controller.js";
+import { respondToConversation } from "./features/conversations/conversation.service.js";
 
-// Both internal APIs share authentication; the default assessor always uses the configured live model.
-export function createApp(requirementAssessor: typeof assessRequirements = assessRequirements) {
+// Internal workflows share authentication and the configured model; injection is only a test seam.
+export function createApp(requirementAssessor: typeof assessRequirements = assessRequirements, conversationResponder: typeof respondToConversation = respondToConversation) {
   const app = express();
 
   app.use(morgan("dev"));
@@ -25,6 +27,7 @@ export function createApp(requirementAssessor: typeof assessRequirements = asses
   );
 
   app.post("/internal/requirements", requireInternalToken, createRequirementController(requirementAssessor));
+  app.post("/internal/conversations", requireInternalToken, createConversationController(conversationResponder));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

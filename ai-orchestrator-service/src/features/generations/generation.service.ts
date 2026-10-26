@@ -11,6 +11,7 @@ import {
 } from "./generation.schema.js";
 import { buildGenerationPrompt, GENERATION_INSTRUCTIONS } from "./generation.prompt.js";
 import { FRONTEND_SKILL_ID, loadFrontendSkill } from "../../skills/frontend-skill.js";
+import { retrieveFrontendGuidance } from "../conversations/frontend-knowledge.js";
 
 // One read-only skill call precedes generation; tests inject an SDK mock, never a production fake mode.
 export async function generateProject(request: GenerationRequest, model: LanguageModel = createAIModel()) {
@@ -20,7 +21,7 @@ export async function generateProject(request: GenerationRequest, model: Languag
   let skillLoaded = false;
   const agent = new ToolLoopAgent({
     model,
-    instructions: GENERATION_INSTRUCTIONS,
+    instructions: `${GENERATION_INSTRUCTIONS}\nReviewed local references: ${JSON.stringify(retrieveFrontendGuidance(request.prompt).map(({ id, title, text }) => ({ id, title, text })))}`,
     maxOutputTokens: 8_000,
     maxRetries: 0,
     stopWhen: isStepCount(2),

@@ -8,7 +8,7 @@ const fileSchema = z.strictObject({
   path: z.string().min(1).max(120).describe("Canonical relative frontend path using forward slashes."),
   content: z.string().min(1).max(30_000).describe("Complete file contents without Markdown fences."),
 });
-const snapshotSchema = z.array(fileSchema).min(1).max(12);
+export const snapshotSchema = z.array(fileSchema).min(1).max(12);
 const ALLOWED_PATH = /^(app|components|lib)\/[a-zA-Z0-9_./-]+\.(tsx|ts|css)$/;
 const SERVER_DIRECTIVE = /["']use(?:\s|\\x20|\\u0020)+server["']/;
 
@@ -26,7 +26,7 @@ function validatePath(path: string): void {
 }
 
 // Validate content and case-insensitive uniqueness at the AI boundary as well as Project Service.
-function validateFiles(files: z.infer<typeof fileSchema>[]): void {
+export function validateFiles(files: z.infer<typeof fileSchema>[]): void {
   const seen = new Set<string>();
   let totalCharacters = 0;
   for (const file of files) {
