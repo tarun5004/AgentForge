@@ -351,3 +351,28 @@ Checks: real registration/session; Enter prompt; a test-only barrier proves 202 
 Reports identify `buildGate: true`, real-vs-fixture boundaries and independent DB/container cleanup results. The deliberate `--suite build-gate --fail-after-start` case must exit 1 and still report cleanup. Never treat a failed/interrupted run as a pass. Hard OS crash durability, normal demo activation and a separately approved live-provider smoke remain outside this test.
 
 Design reasoning and practice questions: [System Design Q&A](../docs/SYSTEM_DESIGN_QA.md).
+# Streaming and saved conversations (2026-10-27)
+
+The normal sidebar now uses Project's durable conversation routes and actual SSE response chunks.
+History is loaded from the backend after signing in, including in a fresh browser with no localStorage.
+Only final validated decisions can start generation. Provisional text is replaced in-place; Stop/error
+keeps the composer and original input. Reloading chat never automatically starts a build or model call.
+
+`lib/durable-chat.ts` owns API/frame validation; `useWorkspace.ts` coordinates selected IDs and requests;
+`useConversation.ts` keeps display/activity state; `ChatPanel.tsx` reuses the existing sidebar. The URL's
+optional `conversation` ID supports refresh and account-scoped reopening. Recent chat and older-message
+pagination are independent of saved project/revision lists. Old browser-only transcripts are not uploaded.
+Local activity remains a convenience cache, not durable cross-browser tool execution history.
+
+No WebSocket server, chat framework or dependency was added. Fetch POST carries the existing JWT/body;
+the Next wildcard rewrite streams nested `/api/conversations/*` routes to Project. App-shell fonts now
+use system fonts, keeping local startup/build independent of Google Fonts downloads.
+
+Verified: 60 frontend unit tests, type checks, lint and production build passed. A real Next/Auth/Project/
+Mongo browser flow passed seven checks: early proxy-stream delivery, greeting without Project creation,
+fresh-browser saved history, no inference during restoration, explicit build, project-linked refresh, and
+Stop retaining the composer. AI HTTP was a deterministic fixture; no live model or new Docker Preview
+proof is claimed. Script: `scripts/workspace-streaming.browser.js`, against the isolated
+`tests/frontend-history.fixture.mts` and Next on port 3102; use only a dedicated `agentforge_test_*` DB.
+Ignored screenshots are under `output/playwright/streaming-chat-*.png`. Older mocked browser fixtures
+targeting the stateless chat route have not been reverified against this new transport.

@@ -13,7 +13,7 @@ if (target.protocol !== "mongodb:" || !["127.0.0.1", "localhost"].includes(targe
   !/^\/agentforge_test_[a-zA-Z0-9_]+$/.test(target.pathname) || target.username || target.password || target.search) throw new Error("Unsafe test database target.");
 await mongoose.connect(uri, { serverSelectionTimeoutMS: 5_000 });
 const db = mongoose.connection.db!;
-for (const name of ["users", "projects", "revisions", "generations", "projectbriefs"]) {
+for (const name of ["users", "projects", "revisions", "generations", "projectbriefs", "conversations"]) {
   if (await db.collection(name).countDocuments({}) !== 0) throw new Error("Browser fixture requires an initially empty dedicated database.");
 }
 Object.assign(process.env, {
@@ -60,9 +60,15 @@ const demoMode = process.env.AGENTFORGE_LOCAL_DEMO === "1";
 const demoUserIds = new Set<string>();
 let holdNextGeneration = false;
 let releaseGeneration: (() => void) | undefined;
+let holdNextChat = false;
+let releaseChat: (() => void) | undefined;
+let conversationCalls = 0;
 
 // Real Auth/Project APIs and Mongo run unchanged; only the paid AI network boundary is replaced.
 const aiServer = createServer((request, response) => {
+  // A deterministic barrier proves text reached the browser before model completion.
+  if (request.method === "POST" && request.url === "/__fixture/hold-chat") { holdNextChat = true; response.end("armed"); return; }
+  if (request.method === "POST" && request.url === "/__fixture/release-chat") { releaseChat?.(); response.end("released"); return; }
   if (request.method === "POST" && ["/__fixture/hold-check", "/__fixture/release-check"].includes(request.url ?? "")) {
     if (!buildGateEnabled || !previewController) { response.writeHead(409).end(); return; }
     try {
@@ -93,7 +99,7 @@ const aiServer = createServer((request, response) => {
     void shutdown();
     return;
   }
-  if (request.method !== "POST" || !["/internal/generations", "/internal/requirements", "/internal/conversations"].includes(request.url ?? "") || request.headers["x-internal-service-token"] !== "frontend-fixture-internal") {
+  if (request.method !== "POST" || !["/internal/generations", "/internal/requirements", "/internal/conversations", "/internal/conversations/stream"].includes(request.url ?? "") || request.headers["x-internal-service-token"] !== "frontend-fixture-internal") {
     response.writeHead(404).end(); return;
   }
   let body = "";
@@ -101,6 +107,27 @@ const aiServer = createServer((request, response) => {
   request.on("end", async () => {
     try {
       const input = JSON.parse(body);
+      if (request.url === "/internal/conversations/stream") {
+        conversationCalls++;
+        const prompt = input.messages.at(-1)?.content;
+        if (typeof prompt !== "string" || !prompt.length || prompt.length > 1000) throw new Error("Invalid fixture chat.");
+        const action = /^(hi\b|hello\b)|plan only/i.test(prompt) ? "reply" : "build";
+        response.writeHead(200, { "Content-Type": "text/event-stream" });
+        response.write(`event: start\ndata: ${JSON.stringify({ requestId: input.requestId })}\n\n`);
+        response.write(`event: message\ndata: ${JSON.stringify({ message: "Early streamed reply" })}\n\n`);
+        if (holdNextChat) {
+          holdNextChat = false;
+          await new Promise<void>((resolve) => { releaseChat = resolve; response.on("close", resolve); });
+          releaseChat = undefined;
+        }
+        if (response.destroyed) return;
+        response.end(`event: complete\ndata: ${JSON.stringify({ response: {
+          requestId: input.requestId, action, message: action === "reply" ? "Hello! We can plan before building." : "I will build the requested frontend change.", prompt: action === "build" ? prompt : null,
+          sources: [], retrieval: { method: "lexical", embeddingModel: null, inputTokens: 0 }, model: "deterministic-fixture",
+          usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }, latencyMs: 0,
+        } })}\n\n`);
+        return;
+      }
       // Conversation decisions are a separate fixture boundary, not generated-code evidence.
       if (request.url === "/internal/conversations") {
         const prompt = input.messages.at(-1)?.content;
@@ -182,9 +209,9 @@ let stopping = false;
 async function readFixtureStatus(response: import("node:http").ServerResponse) {
   try {
     const counts: Record<string, number> = {};
-    for (const name of ["users", "projects", "revisions", "generations", "projectbriefs"]) counts[name] = await db.collection(name).countDocuments({});
+    for (const name of ["users", "projects", "revisions", "generations", "projectbriefs", "conversations"]) counts[name] = await db.collection(name).countDocuments({});
     response.setHeader("Content-Type", "application/json");
-    response.end(JSON.stringify({ fixtureId, databaseName: target.pathname.slice(1), counts, aiRequests, heldGeneration: !!releaseGeneration,
+    response.end(JSON.stringify({ fixtureId, databaseName: target.pathname.slice(1), counts, aiRequests, conversationCalls, heldGeneration: !!releaseGeneration,
       previewEnabled, buildGateEnabled, demoMode, checks: previewController?.checkEvidence() ?? null }));
   } catch { response.writeHead(503).end("Fixture status unavailable."); }
 }
@@ -194,6 +221,7 @@ async function shutdown() {
   stopping = true;
   // A failed browser must not leave server.close waiting on a held model request forever.
   releaseGeneration?.();
+  releaseChat?.();
   process.exitCode = await finishFixtureCleanup(async () => {
     await previewController?.stop();
     const { drainCandidatePublications } = await import("../project-service/src/services/generation.build-gate.ts");
@@ -204,6 +232,7 @@ async function shutdown() {
       { _id: { $in: [...demoUserIds].map((id) => new mongoose.Types.ObjectId(id)) } },
     ] }, { projection: { _id: 1 } }).toArray();
     const ownerIds = users.map((user) => user._id.toString());
+    await db.collection("conversations").deleteMany({ ownerId: { $in: ownerIds } });
     const projects = await db.collection("projects").find({ ownerId: { $in: ownerIds } }, { projection: { _id: 1 } }).toArray();
     const projectIds = projects.map((project) => project._id);
     await db.collection("revisions").deleteMany({ projectId: { $in: projectIds } });
@@ -212,7 +241,7 @@ async function shutdown() {
     await db.collection("projects").deleteMany({ _id: { $in: projectIds } });
     await db.collection("users").deleteMany({ _id: { $in: users.map((user) => user._id) } });
     const counts: Record<string, number> = {};
-    for (const name of ["users", "projects", "revisions", "generations", "projectbriefs"]) counts[name] = await db.collection(name).countDocuments({});
+    for (const name of ["users", "projects", "revisions", "generations", "projectbriefs", "conversations"]) counts[name] = await db.collection(name).countDocuments({});
     console.info(JSON.stringify({ fixtureCleanup: counts }));
     // Never widen deletion filters to remove someone else's unexpected records.
     if (Object.values(counts).some((count) => count !== 0)) throw new Error("Fixture data remains after scoped cleanup.");

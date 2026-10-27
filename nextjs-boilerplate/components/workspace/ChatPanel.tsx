@@ -38,6 +38,14 @@ export function ChatPanel({ workspace, onPreview }: { workspace: WorkspaceState;
         <summary aria-label="Saved conversations" title="Saved conversations" className="cursor-pointer list-none rounded p-1 text-[#b0b0b0] hover:bg-[#414141]"><History size={16} /></summary>
         <div className="absolute top-10 right-3 left-3 z-20 max-h-64 overflow-y-auto rounded-lg border border-[#505050] bg-[#292929] p-3 shadow-xl">
           <p className="font-medium">Recent conversations</p>
+          <button type="button" onClick={() => void workspace.refreshChats()} disabled={busy} className="mt-2 underline disabled:opacity-40">Reload conversations</button>
+          {workspace.chatListError && <p role="alert" className="mt-2 text-[#ffaaaa]">{workspace.chatListError}</p>}
+          {!workspace.chatListError && workspace.savedChats.length === 0 && <p className="mt-2 text-[#99999e]">No saved chats yet.</p>}
+          <div className="mt-2 space-y-1">{workspace.savedChats.map((saved) => <button key={saved.id} type="button" disabled={busy}
+            onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); workspace.navigate(saved.projectId, null, saved.id); }}
+            className="block w-full truncate rounded px-2 py-2 text-left hover:bg-[#383838] disabled:opacity-40">{saved.title}</button>)}</div>
+          {workspace.chatCursor && <button type="button" disabled={busy} onClick={() => void workspace.loadMoreChats()} className="mt-2 underline disabled:opacity-40">Load more conversations</button>}
+          <p className="mt-4 font-medium">Saved projects</p>
           <div className="mt-2 flex items-center justify-between">
             <span className="text-[10px] text-[#77777c]">Choose a conversation</span>
             <button type="button" onClick={() => void workspace.refreshProjects()} disabled={workspace.listBusy || busy} aria-label="Reload saved projects" className="p-1 text-[#99999e] disabled:opacity-40"><RefreshCw size={13} /></button>
@@ -50,7 +58,7 @@ export function ChatPanel({ workspace, onPreview }: { workspace: WorkspaceState;
             <span className="truncate">{saved.name}</span><span className="shrink-0 text-[10px] text-[#99999e]">{saved.latestRevision ? `v${saved.latestRevision.version}` : "Draft"}</span>
           </button>)}</div>
           {workspace.projectCursor && <button type="button" disabled={busy || workspace.listBusy} onClick={() => void workspace.loadMoreProjects()} className="mt-2 underline disabled:opacity-40">Load more projects</button>}
-          <p className="mt-3 text-[10px] text-[#99999e]">Chat history stays in this browser. Saved files stay on the backend.</p>
+          <p className="mt-3 text-[10px] text-[#99999e]">New chats are saved to your account. Older browser-only chats are not uploaded.</p>
         </div>
       </details>
       <button type="button" onClick={() => workspace.navigate(null)} disabled={busy} aria-label="New conversation" title="New conversation" className="rounded p-1 text-[#b0b0b0] hover:bg-[#414141] disabled:opacity-40"><MessageSquarePlus size={16} /></button>
@@ -61,6 +69,11 @@ export function ChatPanel({ workspace, onPreview }: { workspace: WorkspaceState;
     </div>
 
     <ConversationTimeline workspace={workspace} onPreview={onPreview} />
+    <div className="flex shrink-0 gap-3 px-3 py-1 text-xs text-[#bdbdbd]">
+      <button type="button" disabled={busy || workspace.loadBusy} onClick={workspace.refreshSelection} className="underline disabled:opacity-40">Reload saved chat</button>
+      {workspace.olderChatCursor !== null && <button type="button" disabled={busy || workspace.loadBusy} onClick={() => void workspace.loadOlderChat()} className="underline disabled:opacity-40">Load older messages</button>}
+      {workspace.replyStreaming && <button type="button" onClick={workspace.stopReply} className="ml-auto underline">Stop reply</button>}
+    </div>
 
     {revision && <details className="mx-3 max-h-[25%] shrink-0 overflow-y-auto rounded-t-xl border border-b-0 border-[#494949] px-3 py-2 text-xs">
       <summary aria-label="Revision history" className="flex cursor-pointer list-none items-center justify-between text-[#bdbdbd]"><span>{revision?.fileChanges?.length ?? 0} files changed</span><span>View changes</span></summary>

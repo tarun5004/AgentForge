@@ -28,8 +28,10 @@ AI SDK model stream -> Project SSE relay -> browser provisional text -> validate
   automatically: another call can cost money. Keep the composer and original user message available.
 
 **Current slices:** AI's internal additive SSE endpoint is merged through PR #46 (97 tests, build/typecheck).
-Project's owner-scoped durable chat and bounded SSE relay are implemented on their focused branch;
-browser consumption and cross-browser UI checks are not yet implemented.
+Project's owner-scoped durable chat and bounded SSE relay are merged through PR #47 (8 new real
+Mongo/HTTP tests, 7 legacy conversation tests, 40 units, build/typecheck). The frontend branch connects
+real SSE and server history; 60 units, lint/typecheck/build and seven real-service browser checkpoints
+passed, with deterministic AI HTTP only. Frontend PR delivery follows these checks.
 Streaming generated file contents is not part of this first text-response feature; revisions remain atomic.
 
 ### 2. Durable history: database is truth, browser is presentation
