@@ -70,11 +70,21 @@ export function useConversation(userId: string | null) {
     write(projectId, { id, role: "assistant", kind: "activity", text, state, details });
   }, [write, userId]);
 
+  // Database messages replace cached message text; local build/Preview activity is only a display convenience.
+  const restoreServer = useCallback((projectId: string, entries: ChatEntry[]) => {
+    const cached = current.current.userId === userId && current.current.projectId === projectId ? current.current.conversation : EMPTY;
+    const ids = new Set(entries.map((entry) => entry.id));
+    let next = { ...cached, entries: cached.entries.filter((entry) => entry.kind === "result" ||
+      (entry.kind === "activity" && (!entry.id.startsWith("chat:") || ids.has(entry.id)))) };
+    for (const entry of entries) next = upsertChatEntry(next, entry);
+    commit(projectId, next);
+  }, [userId, commit]);
+
   // Clearing display history must not alter backend revisions or silently retry abandoned work.
   const clear = useCallback((project: Project, revisions: RevisionSummary[]) => {
     if (userId) clearConversation(userId, project.id);
     commit(project.id, restoreRevisionMessages(project, revisions, EMPTY));
   }, [userId, commit]);
 
-  return { view, restore, restoreDraft, adoptProject, entries, resetDraft, write, activity, clear };
+  return { view, restore, restoreDraft, adoptProject, entries, resetDraft, write, activity, clear, restoreServer };
 }

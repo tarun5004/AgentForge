@@ -18,7 +18,8 @@ import { pollGeneration } from "@/lib/generation-poll";
 import { generationActivity } from "@/lib/conversation";
 import { useConversation } from "./useConversation";
 import type { RequirementBrief } from "@/lib/requirement-brief";
-import { sendConversation, conversationContext, conversationReport } from "@/lib/conversation-api";
+import { conversationReport } from "@/lib/conversation-api";
+import { createSavedChat, getSavedChat, linkChatProject, listSavedChats, savedChatEntries, streamSavedChat, type SavedChatSummary } from "@/lib/durable-chat";
 
 export type WorkspaceSnapshot = Pick<Revision, "id" | "version" | "parentRevisionId" | "sourcePrompt" | "summary" | "files" | "fileChanges" | "model" | "usage" | "validation" | "buildVerification">;
 
@@ -66,6 +67,15 @@ export function useWorkspace(
   const restoreChat = chat.restore;
   const writeChat = chat.write;
   const restoreDraft = chat.restoreDraft;
+  const restoreServerChat = chat.restoreServer;
+  const [savedChats, setSavedChats] = useState<SavedChatSummary[]>([]);
+  const [chatListAccount, setChatListAccount] = useState<string | null>(null);
+  const [chatListError, setChatListError] = useState("");
+  const [chatCursor, setChatCursor] = useState<string | null>(null);
+  const [olderChatCursor, setOlderChatCursor] = useState<number | null>(null);
+  const threadRef = useRef<string | null>(null);
+  const chatAbort = useRef<AbortController | null>(null);
+  const [replyStreaming, setReplyStreaming] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectCursor, setProjectCursor] = useState<string | null>(null);
   const [listBusy, setListBusy] = useState(true);
@@ -89,7 +99,7 @@ export function useWorkspace(
   const mounted = useRef(true);
   const account = useRef(userId);
   const pollAbort = useRef<AbortController | null>(null);
-  const selectionKey = workspaceUrl(selection.projectId, selection.revisionId);
+  const selectionKey = workspaceUrl(selection.projectId, selection.revisionId, selection.conversationId ?? null);
   const visible = loadedKey === selectionKey;
 
   useEffect(() => { account.current = userId; }, [userId]);
@@ -103,6 +113,28 @@ export function useWorkspace(
     }
     return errorMessage(error);
   }, [router, invalidateSession]);
+
+  // Conversation metadata is independent of projects, so a saved greeting is discoverable on another browser.
+  const refreshChats = useCallback(async (before?: string) => {
+    if (!session) return;
+    const owner = userId;
+    try {
+      const page = await listSavedChats(session, undefined, before);
+      if (!mounted.current || account.current !== owner) return;
+      setSavedChats((current) => before ? [...current, ...page.conversations.filter((item) => !current.some((old) => old.id === item.id))] : page.conversations);
+      setChatCursor(page.nextCursor); setChatListError(""); setChatListAccount(owner);
+    } catch (error) { if (mounted.current && account.current === owner) setChatListError(reportError(error)); }
+  }, [session, userId, reportError]);
+
+  useEffect(() => {
+    if (!session) return;
+    const controller = new AbortController();
+    void listSavedChats(session, controller.signal).then((page) => {
+      if (controller.signal.aborted) return;
+      setSavedChats(page.conversations); setChatCursor(page.nextCursor); setChatListError(""); setChatListAccount(userId);
+    }).catch((error) => { if (!controller.signal.aborted) setChatListError(reportError(error)); });
+    return () => controller.abort();
+  }, [session, userId, reportError]);
 
   // Abort an older list request so load-more/reload cannot reorder sidebar results.
   const loadProjectPage = useCallback(async (cursor: string | null = null) => {
@@ -138,7 +170,7 @@ export function useWorkspace(
     }).finally(() => {
       if (!controller.signal.aborted) setListBusy(false);
     });
-    return () => { mounted.current = false; controller.abort(); listAbort.current?.abort(); selectionAbort.current?.abort(); pollAbort.current?.abort(); };
+    return () => { mounted.current = false; controller.abort(); listAbort.current?.abort(); selectionAbort.current?.abort(); pollAbort.current?.abort(); chatAbort.current?.abort(); };
   }, [session, reportError]);
 
   useEffect(() => {
@@ -150,10 +182,20 @@ export function useWorkspace(
       setLoadBusy(true);
       setLoadError("");
       try {
+        const savedChat = selection.conversationId ? await getSavedChat(selection.conversationId, session!, controller.signal) : null;
+        if (controller.signal.aborted || !mounted.current) return;
+        if (savedChat?.projectId && !selection.projectId) {
+          router.replace(workspaceUrl(savedChat.projectId, null, savedChat.id), { scroll: false });
+          return;
+        }
+        if (savedChat && savedChat.projectId !== selection.projectId) throw new Error("This conversation belongs to a different project.");
+        threadRef.current = savedChat?.id ?? null;
+        setOlderChatCursor(savedChat?.nextBefore ?? null);
         if (!selection.projectId) {
           setProject(null); setRevision(null); setRevisions([]); setRevisionCursor(null);
           setLoadedKey(selectionKey); setPending(null);
           restoreDraft();
+          if (savedChat) restoreServerChat("draft", savedChatEntries(savedChat));
           return;
         }
         const [savedProject, history, selected] = await Promise.all([
@@ -174,6 +216,7 @@ export function useWorkspace(
         setProject(savedProject); setRevision(snapshot); setRevisions(history.revisions); setRevisionCursor(history.nextCursor);
         setLoadedKey(selectionKey);
         restoreChat(savedProject, history.revisions);
+        if (savedChat) restoreServerChat(savedProject.id, savedChatEntries(savedChat));
         if (snapshot) writeChat(savedProject.id, { id: `revision:${snapshot.id}`, role: "assistant", kind: "result",
           text: snapshot.summary, revisionId: snapshot.id, details: revisionDetails(snapshot), state: "done" });
         if (savedBrief?.assessment) writeChat(savedProject.id, {
@@ -191,16 +234,16 @@ export function useWorkspace(
     }
     void loadSelection();
     return () => controller.abort();
-  }, [session, userId, busy, selection.projectId, selection.revisionId, selection.error, selectionKey, reload, reportError, restoreChat, restoreDraft, writeChat]);
+  }, [session, userId, busy, selection.projectId, selection.revisionId, selection.conversationId, selection.error, selectionKey, reload, reportError, restoreChat, restoreDraft, restoreServerChat, writeChat, router]);
 
   // Invalidate old GETs immediately, before route props arrive from Next navigation.
-  function navigate(projectId: string | null, revisionId: string | null = null) {
+  function navigate(projectId: string | null, revisionId: string | null = null, conversationId = projectId && projectId === project?.id ? threadRef.current : null) {
     if (submissionLock.current) return;
     selectionAbort.current?.abort();
     setLoadedKey(""); setLoadError(""); setSubmitError(""); setPending(null); setPrompt("");
-    if (!projectId) chat.resetDraft();
+    if (!projectId && !conversationId) chat.resetDraft();
     setNotice(projectId ? "Loading saved project..." : "Ask a question or describe what to build.");
-    router.replace(workspaceUrl(projectId, revisionId), { scroll: false });
+    router.replace(workspaceUrl(projectId, revisionId, conversationId), { scroll: false });
     // Same-URL selection is a genuine reload, not a no-op navigation.
     setReload((value) => value + 1);
   }
@@ -211,21 +254,34 @@ export function useWorkspace(
     if (!session || !userId || !text || text.length > 1000 || submissionLock.current || !visible || loadBusy || loadError || pending) return;
     const threadId = project?.id ?? "draft";
     const requestId = crypto.randomUUID();
-    const requestUrl = window.location.pathname + window.location.search;
+    const allowedUrls = new Set([window.location.pathname + window.location.search,
+      workspaceUrl(project?.id ?? null, revision?.id ?? null, threadRef.current)]);
     // Browser Back/Forward is still available while request buttons are locked.
-    const stillSelected = () => mounted.current && account.current === userId && window.location.pathname + window.location.search === requestUrl;
-    const context = conversationContext(chat.entries(threadId), text);
+    const stillSelected = () => mounted.current && account.current === userId && allowedUrls.has(window.location.pathname + window.location.search);
     submissionLock.current = true; setBusy(true); setSubmitError("");
     selectionAbort.current?.abort();
     chat.write(threadId, { id: `chat:${requestId}:user`, role: "user", kind: "message", text });
-    chat.activity(threadId, `chat:${requestId}`, "Waiting for the AI response.", "working",
-      context.trimmed ? ["Only the recent conversation fits in this request; older displayed messages were not sent."] : []);
+    chat.activity(threadId, `chat:${requestId}`, "Waiting for the AI response.", "working");
     let buildPrompt: string | undefined;
     try {
-      const response = await sendConversation({
-        messages: context.messages, ...(project ? { projectId: project.id } : {}),
+      let id = threadRef.current;
+      if (!id) {
+        const created = await createSavedChat(session);
+        if (!stillSelected()) return;
+        id = created.id; threadRef.current = id;
+        if (project) await linkChatProject(id, project.id, session);
+        const url = workspaceUrl(project?.id ?? null, revision?.id ?? null, id);
+        allowedUrls.add(url); setLoadedKey(url); router.replace(url, { scroll: false });
+      }
+      const controller = new AbortController();
+      chatAbort.current = controller;
+      setReplyStreaming(true);
+      const response = await streamSavedChat(id, {
+        key: requestId, message: text, ...(project ? { projectId: project.id } : {}),
         ...(revision ? { baseRevisionId: revision.id } : {}),
-      }, session);
+      }, session, (message) => {
+        if (stillSelected()) chat.write(threadId, { id: `chat:${requestId}:assistant`, role: "assistant", kind: "message", text: message, state: "working" });
+      }, AbortSignal.any([controller.signal, AbortSignal.timeout(60_000)]));
       if (!stillSelected()) return;
       chat.activity(threadId, `chat:${requestId}`, "AI response received.", "done", conversationReport(response));
       chat.write(threadId, { id: `chat:${requestId}:assistant`, role: "assistant", kind: "message",
@@ -237,10 +293,13 @@ export function useWorkspace(
       if (!stillSelected()) return;
       const message = reportError(error);
       chat.activity(threadId, `chat:${requestId}`, message, "error");
-      setNotice("Your message is kept below. Send again deliberately when ready; nothing is retried automatically.");
+      chat.write(threadId, { id: `chat:${requestId}:assistant`, role: "assistant", kind: "message", text: "Reply interrupted; partial text was not accepted. Reload saved chat to check the outcome.", state: "unknown" });
+      setNotice("Message kept below. Reload saved chat before a deliberate new attempt; no automatic retry.");
     } finally {
       submissionLock.current = false;
-      if (mounted.current) setBusy(false);
+      chatAbort.current = null;
+      if (mounted.current) { setBusy(false); setReplyStreaming(false); }
+      void refreshChats();
     }
     if (buildPrompt && stillSelected()) await submit(false, buildPrompt);
   }
@@ -271,7 +330,7 @@ export function useWorkspace(
     // The POST proves this version exists even if refreshing latest metadata fails afterward.
     setProject({ ...savedProject, status: "ready", latestRevision: { id: result.revisionId, version: result.revisionVersion } });
     setRevision(snapshotFromGeneration(result));
-    setLoadedKey(workspaceUrl(savedProject.id, result.revisionId));
+    setLoadedKey(workspaceUrl(savedProject.id, result.revisionId, threadRef.current));
     setPrompt(""); setSubmitError(""); setPending(null);
     setNotice(`Revision v${result.revisionVersion} committed. ${result.files.length} files saved.`);
     if (attemptKey) chat.activity(savedProject.id, `generation:${attemptKey}`,
@@ -280,7 +339,7 @@ export function useWorkspace(
       text: result.summary, state: "done", revisionId: result.revisionId,
       details: revisionDetails(snapshotFromGeneration(result)),
     });
-    router.replace(workspaceUrl(savedProject.id, result.revisionId), { scroll: false });
+    router.replace(workspaceUrl(savedProject.id, result.revisionId, threadRef.current), { scroll: false });
     void loadProjectPage();
   }
 
@@ -305,9 +364,12 @@ export function useWorkspace(
           if (!stillSelected()) return;
           setProject(savedProject); setRevision(null); setRevisions([]);
           chat.adoptProject(savedProject);
-          setLoadedKey(workspaceUrl(savedProject.id));
-          allowedUrls.add(workspaceUrl(savedProject.id));
-          router.replace(workspaceUrl(savedProject.id), { scroll: false });
+          if (threadRef.current) await linkChatProject(threadRef.current, savedProject.id, session);
+          if (!stillSelected()) return;
+          const url = workspaceUrl(savedProject.id, null, threadRef.current);
+          setLoadedKey(url);
+          allowedUrls.add(url);
+          router.replace(url, { scroll: false });
           void loadProjectPage();
         }
         intent = { projectId: savedProject.id, key: crypto.randomUUID(),
@@ -401,9 +463,28 @@ export function useWorkspace(
     setReload((value) => value + 1);
   }
 
+  // Page older server turns without another model call; merge by stable request IDs.
+  async function loadOlderChat() {
+    if (!session || !threadRef.current || olderChatCursor === null || busy || loadBusy) return;
+    const id = threadRef.current;
+    const owner = userId;
+    setLoadBusy(true);
+    try {
+      const page = await getSavedChat(id, session, undefined, olderChatCursor);
+      if (threadRef.current !== id || account.current !== owner || !mounted.current) return;
+      for (const entry of savedChatEntries(page)) chat.write(project?.id ?? "draft", entry);
+      setOlderChatCursor(page.nextBefore);
+    } catch (error) { if (threadRef.current === id && account.current === owner && mounted.current) setSubmitError(reportError(error)); }
+    finally { if (threadRef.current === id && account.current === owner && mounted.current) setLoadBusy(false); }
+  }
+
   return {
     conversation: visible && chat.view.userId === userId && chat.view.projectId === (project?.id ?? "draft") ? chat.view.conversation : null,
     recordPreview: chat.activity,
+    savedChats: chatListAccount === userId ? savedChats : [], chatListError, chatCursor, olderChatCursor, refreshChats,
+    loadMoreChats: () => refreshChats(chatCursor ?? undefined), loadOlderChat,
+    stopReply: () => chatAbort.current?.abort(),
+    replyStreaming,
     // Clearing UI history is separate from deleting saved work or abandoning a paid request.
     clearLocalChat: () => {
       if (busy || !window.confirm("Clear this browser's chat messages? Saved backend revisions and pending request keys will be kept.")) return;
