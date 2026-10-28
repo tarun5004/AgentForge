@@ -13,7 +13,7 @@ queue, vector database or public deployment is needed. Older dated roadmap secti
 
 ### 1. Streaming: transport, not permission to execute
 
-Proposed full path: browser authenticated POST -> Next proxy -> Project owner/context validation ->
+Implemented path: browser authenticated POST -> Next proxy -> Project owner/context validation ->
 AI SDK model stream -> Project SSE relay -> browser provisional text -> validated final response.
 
 - Use `fetch` with a POST body and existing bearer JWT, reading the response body incrementally.
@@ -29,14 +29,14 @@ AI SDK model stream -> Project SSE relay -> browser provisional text -> validate
 
 **Current slices:** AI's internal additive SSE endpoint is merged through PR #46 (97 tests, build/typecheck).
 Project's owner-scoped durable chat and bounded SSE relay are merged through PR #47 (8 new real
-Mongo/HTTP tests, 7 legacy conversation tests, 40 units, build/typecheck). The frontend branch connects
+Mongo/HTTP tests, 7 legacy conversation tests, 40 units, build/typecheck). Frontend PR #48 merged
 real SSE and server history; 60 units, lint/typecheck/build and seven real-service browser checkpoints
-passed, with deterministic AI HTTP only. Frontend PR delivery follows these checks.
+passed, with deterministic AI HTTP only.
 Streaming generated file contents is not part of this first text-response feature; revisions remain atomic.
 
 ### 2. Durable history: database is truth, browser is presentation
 
-Proposed ownership stays in Project Service and the existing MongoDB. Store conversations independently
+Implemented ownership stays in Project Service and the existing MongoDB. Store conversations independently
 of generated projects so greetings/plans can be saved without inventing an empty project.
 
 - A conversation stores `ownerId`, title, optional project link and timestamps. Each turn stores its
@@ -96,6 +96,13 @@ lost-write acknowledgement and captured-gate tests cover the backend. The real M
 check also passed with deterministic AI output: invalid compile -> one explicit fixture repair ->
 fresh successful restricted build -> immutable publication. Real-provider repair quality and frontend
 repair controls are not claimed by this backend slice.
+
+The frontend now wires an explicit repair action into the existing generation/polling flow.
+63 units and six real-service browser checkpoints pass, including an injected lost response,
+reload/same-key repair replay, a fresh real Docker build and an interactive repaired iframe.
+There is no automatic repair, extra framework or live-provider repair quality claim. Tab-scoped
+repair identity and cross-browser durable chat are deliberately separate. Interview explanations
+for all four features are in [System-design Q&A 16–19](SYSTEM_DESIGN_QA.md#16-how-does-a-reply-stream-through-three-services).
 
 - Project owns the repair attempt/state; Execution supplies allowlisted bounded compiler diagnostics;
   AI receives the original request, exact failed candidate and sanitized diagnostics as untrusted data.

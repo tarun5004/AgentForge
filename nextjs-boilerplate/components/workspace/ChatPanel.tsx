@@ -95,12 +95,17 @@ export function ChatPanel({ workspace, onPreview }: { workspace: WorkspaceState;
       <p role="status" className="mb-2 text-[10px] text-[#99999e]">{busy || pending ? workspace.notice : revision ? `Chat, plan, or request an edit to v${revision.version}.` : workspace.notice}</p>
       {project?.latestRevision && revision && revision.id !== project.latestRevision.id && <p className="mb-2 text-[10px] text-[#e8ce87]">Historical base selected: v{revision.version}. Latest is v{project.latestRevision.version}.</p>}
       {pending && !busy && <div className="mb-3 space-y-2 rounded border border-[#655738] p-2 text-[11px] text-[#e8ce87]">
-        <p>Unconfirmed attempt retained: {pending.body.prompt ?? "Initial generation"}</p>
+        <p>Unconfirmed {pending.repairOf ? "repair" : "attempt"} retained: {pending.body.prompt ?? (pending.repairOf ? "one reserved repair" : "Initial generation")}</p>
         <div className="flex flex-wrap gap-3">
           <button type="button" onClick={() => void workspace.submit(true)} className="underline">Retry same attempt</button>
           {pending.generationId && <button type="button" onClick={() => void workspace.checkPending()} className="underline">Check status</button>}
           <button type="button" onClick={workspace.abandonPending} className="underline">Abandon attempt</button>
         </div>
+      </div>}
+      {workspace.failedGeneration?.repairAvailable && !pending && !busy && <div className="mb-3 rounded border border-[#655738] p-2 text-[11px] text-[#e8ce87]">
+        <p>The saved candidate did not compile. One optional repair uses an extra AI call and a fresh build. No automatic retries.</p>
+        <button type="button" disabled={workspace.loadBusy} onClick={() => void workspace.repairOnce()}
+          className="mt-2 underline disabled:opacity-40">Repair once (uses AI tokens)</button>
       </div>}
       <div className="rounded-2xl border border-[#505050] bg-[#333333] px-3 pb-2 pt-3 focus-within:border-[#888888]">
         <label htmlFor="workspace-prompt" className="sr-only">Message AgentForge</label>

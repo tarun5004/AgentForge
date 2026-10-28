@@ -1,5 +1,28 @@
 # AgentForge V1 — Testing Strategy
 
+## Explicit repair verification — 2026-10-28
+
+`scripts/workspace-repair.browser.js` passed six checkpoints through real Next/Auth/Project/Mongo,
+Execution HTTP, restricted Docker builds and the sandboxed iframe. Only AI HTTP output and one
+deliberately lost accepted proxy response were fixtures. Assertions: failure makes no automatic repair;
+composer remains usable; reload makes no inference; repair retry retains the exact endpoint/key/body;
+only a new successful build publishes; repaired Count 0 changes to Count 1 in Preview.
+The backend recorded one repair call and one committed revision. Screenshot
+`output/playwright/explicit-repair-preview.png` was inspected; it is fixture behavior evidence,
+not a live model's visual-design quality. No paid/free provider call was made in this verification.
+
+An earlier development run was interrupted by Fast Refresh after a runtime edit during polling;
+the retained key remained visible, but that run was not counted as a pass. The clean rerun used
+unchanged runtime code and passed. The expected initial unauthenticated refresh 401 and injected
+proxy 502 are not uncaught application errors. Named test browsers/services and fixture records
+were cleaned up without touching normal app data. Broader older mocked browser suites were not
+reverified by this change.
+
+Narrow checks: 63 frontend units, lint/typecheck/production build; 108 AI tests; 50 Execution tests;
+45 Project units, 40 legacy integration cases, seven deterministic repair cases and five existing
+build-gate cases. A separate backend repair run included a real failed compile and fresh passing
+Docker repair build. These test types are separate from live-provider quality/billing evidence.
+
 ## Manual local demo — 2026-10-23
 
 Scope: `feature/frontend-local-demo`, based on merged free-first scope PR #22. `npm run demo:local` extends the existing isolated launcher, without starting AI Orchestrator or adding a production fake-provider mode. It sets fake process-only configuration, enables real candidate checks/Preview, binds Next to loopback and renders an explicit fixture-AI notice. Manual mode does not bootstrap Playwright. No dependency or real `.env` change.
