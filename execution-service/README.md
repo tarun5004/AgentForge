@@ -152,3 +152,18 @@ The trusted host controller can expose `POST /internal/checks` when local previe
 - Eight in-memory check entries deduplicate/replay checks; ownership is rechecked even on a hit. Restart can repeat a build. This is not a durable queue and never calls a model. The handler may outlast a browser request; Project must call it from its async worker, not inside its old synchronous generation deadline.
 
 Verification: `npm --workspace execution-service test`, `run typecheck`, `run build`. Explicit real Docker check: `RUN_DOCKER_TESTS=1`, select the trusted `PREVIEW_RUNNER_IMAGE`, then `npm --workspace execution-service run test:candidate-docker`. Fixture source only; no paid AI or normal Mongo records.
+
+### Safe feedback for an explicit repair
+
+Only an exited compile failure on the protected `/internal/checks` route adds `diagnostics`
+to its existing 422 `BUILD_VERIFICATION_FAILED` response. Each of at most eight rows contains
+`path`, `line`, `column`, `category` (`typescript`, `module`, `syntax`, or `compile`) and
+an optional `TS` error `code`. Paths must match files in the checked candidate; coordinates
+and codes are bounded. Unrecognized formats yield a generic `compile` row with null location.
+Raw compiler messages, source snippets, quoted imports, host paths and credentials are never returned.
+
+Timeouts, cleanup failures and other uncertain outcomes do not become repair feedback.
+Container cleanup still completes before returning the failure. Public `/api/runs` responses
+are unchanged. This slice supplies feedback only: it does not call AI, enable repair, or
+weaken the container policy. Location/category feedback is intentionally less detailed than
+raw logs, so it cannot guarantee that a model will fix every compiler error.

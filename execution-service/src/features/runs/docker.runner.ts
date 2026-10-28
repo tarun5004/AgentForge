@@ -1,4 +1,5 @@
 import { dockerCommand, DockerCommandError } from "./docker.command.js";
+import { compilerDiagnostics } from "./compiler-diagnostics.js";
 import { parseArtifacts, type Artifacts } from "./run.artifacts.js";
 import type { Revision } from "./run.schema.js";
 import { RunBuildError, RunCleanupError, RunError, type BuildStage } from "./run.errors.js";
@@ -60,8 +61,11 @@ export async function createDockerRunner(image: string, command = dockerCommand)
         stage = "artifacts";
         return parseArtifacts(json);
       } catch (error) {
-        // The failed stage is known; a command exit alone cannot diagnose a specific source error.
-        throw new RunBuildError(stage, error instanceof DockerCommandError ? error.reason : "command_failed");
+        const reason = error instanceof DockerCommandError ? error.reason : "command_failed";
+        // Only an exited compiler can supply feedback; timeouts and infrastructure failures cannot.
+        const diagnostics = stage === "compile" && error instanceof DockerCommandError && reason === "command_failed"
+          ? compilerDiagnostics(error.diagnostic, revision.files) : [];
+        throw new RunBuildError(stage, reason, diagnostics);
       } finally {
         // Even if create lost its acknowledgement, the unique name identifies only this job.
         try {

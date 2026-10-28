@@ -81,6 +81,10 @@ behavior independent of the model. Reports must distinguish deterministic tests 
 Approved policy: disabled by default; user explicitly requests one repair after
 a deterministic candidate build failure. This can incur an additional model call and build.
 
+Execution's first repair slice supplies bounded known-file locations, TS codes and fixed categories
+on the internal candidate-check failure only; no raw logs reach callers. Its 50 tests and
+typecheck/build pass with simulated Docker transport. This does not enable repair or claim a live build/model result.
+
 - Project owns the repair attempt/state; Execution supplies allowlisted bounded compiler diagnostics;
   AI receives the original request, exact failed candidate and sanitized diagnostics as untrusted data.
 - Do not send environment files, JWTs, arbitrary build logs or shell commands to the model. Redact/limit

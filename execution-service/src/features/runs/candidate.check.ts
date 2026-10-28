@@ -5,12 +5,20 @@ import type { Runner } from "./docker.runner.js";
 import { readJson } from "./project.client.js";
 import { RunBuildError, RunCleanupError, RunError } from "./run.errors.js";
 import { revisionSchema, validateRevision } from "./run.schema.js";
+import type { CompilerDiagnostic } from "./compiler-diagnostics.js";
 
 const id = z.string().regex(/^[a-f0-9]{24}$/);
 export const checkInputSchema = z.strictObject({
   projectId: id, generationId: id, snapshotHash: z.string().regex(/^[a-f0-9]{64}$/),
 });
 type CheckInput = z.infer<typeof checkInputSchema>;
+
+// Carry bounded feedback only to the internal caller; public preview status keeps its existing DTO.
+class CandidateBuildFailure extends RunError {
+  constructor(public diagnostics: CompilerDiagnostic[]) {
+    super(422, "BUILD_VERIFICATION_FAILED", "The frontend build command failed.");
+  }
+}
 export type BuildVerification = {
   status: "build_passed"; policyVersion: "next-static-build-v1"; snapshotHash: string;
   runnerImageId: string; checkId: string; completedAt: string;
@@ -92,7 +100,7 @@ export function createCandidateChecks(runner: Runner, load: ReturnType<typeof cr
           if (error instanceof RunError) throw error;
           if (error instanceof RunCleanupError) throw new RunError(503, "CLEANUP_UNCONFIRMED", "Build container cleanup needs operator review.");
           if (error instanceof RunBuildError && error.stage === "compile" && error.reason === "command_failed") {
-            throw new RunError(422, "BUILD_VERIFICATION_FAILED", error.message);
+            throw new CandidateBuildFailure(error.diagnostics);
           }
           throw new RunError(503, "BUILD_CHECK_UNAVAILABLE", "Build verification is not confirmed. Retry the same saved attempt.");
         }
@@ -127,8 +135,13 @@ export function createCheckRouter(checks: CandidateChecks, serviceToken: string)
   });
   router.post("/", async (req, res) => {
     const input = checkInputSchema.parse(req.body);
-    const buildVerification = await checks.check(input, req.headers.authorization!);
-    res.json({ buildVerification });
+    try {
+      const buildVerification = await checks.check(input, req.headers.authorization!);
+      res.json({ buildVerification });
+    } catch (error) {
+      if (!(error instanceof CandidateBuildFailure)) throw error;
+      res.status(error.statusCode).json({ code: error.code, message: error.message, diagnostics: error.diagnostics });
+    }
   });
   return router;
 }
