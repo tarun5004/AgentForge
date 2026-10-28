@@ -85,6 +85,10 @@ Execution's first repair slice supplies bounded known-file locations, TS codes a
 on the internal candidate-check failure only; no raw logs reach callers. Its 50 tests and
 typecheck/build pass with simulated Docker transport. This does not enable repair or claim a live build/model result.
 
+AI's additive `/internal/repairs` boundary validates exact failed files and typed feedback, loads
+the pinned skill locally and makes one tool-free, zero-retry, 8000-output-token call. It returns
+validated changes only; Project attempt reservation and a fresh build remain required before UI activation.
+
 - Project owns the repair attempt/state; Execution supplies allowlisted bounded compiler diagnostics;
   AI receives the original request, exact failed candidate and sanitized diagnostics as untrusted data.
 - Do not send environment files, JWTs, arbitrary build logs or shell commands to the model. Redact/limit

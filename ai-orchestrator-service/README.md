@@ -134,6 +134,23 @@ Free-credit eligibility is **not zero-priced/unlimited inference**: calls deduct
 
 Routes: free health `GET /_status/healthz`; authenticated `POST /internal/generations` using `x-internal-service-token`. Request fields are `requestId`, `projectId`, `prompt`, `template: nextjs`, `mode: economy`, plus optional server-loaded `baseRevision`. The response is `{ generation }`, including upserts/deletions, model/usage/latency and `manifest_validated` policy metadata. See [the implemented contract](../docs/05_OPENAPI_SPEC.md#implemented-slice-3--internal-context-and-file-change-boundary-2026-10-12).
 
+### One-call repair boundary
+
+`POST /internal/repairs` uses the same internal token. It accepts only `requestId`, `projectId`,
+the original `prompt`, exact `failedFiles` (1–12 frontend files), and `diagnostics` (1–8 rows).
+Each row contains a known candidate `path` or null, nullable positive `line`/`column` up to 999999,
+`category` (`typescript`, `module`, `syntax`, `compile`) and nullable `TS` error `code`.
+No raw message, shell command, provider setting or browser transcript is accepted.
+Serialized context is capped at 240000 UTF-8 bytes; files use the existing frontend policy.
+
+The service reads the hash-pinned skill locally and makes **one** `generateText` call with no tools,
+zero SDK retries, an 8000-output-token cap and an 80-second timeout. Its manifest is independently
+validated relative to `failedFiles`; unchanged files are preserved. Response shape matches
+`{ generation }` above. Validation is not build proof. There is no fallback, recursive repair,
+publication, or attempt store here: Project Service must authorize/reserve one explicit attempt,
+retain paid output and run a fresh Execution check before publication. This endpoint alone does
+not enable repair in the UI. Tests use SDK mocks/loopback HTTP, not a live provider.
+
 ## Direct Google setup — 2026-10-25
 
 For a Google AI Studio key, set these in **this service's ignored `.env`** (preserve the existing internal token):
