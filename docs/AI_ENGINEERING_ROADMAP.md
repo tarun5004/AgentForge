@@ -59,6 +59,10 @@ of generated projects so greetings/plans can be saved without inventing an empty
 
 ### 3. Evaluations: fixed cases, separate graders, measurable reports
 
+Implementation: versioned reports, prompt/case hashes, first-text and total latency, p50/p95,
+unknown-aware token totals and zero-inference offline comparison now extend the existing CLI.
+103 AI tests, build/typecheck passed; no new live-model quality result is claimed.
+
 Build on the existing reviewed routing cases, contract graders and opt-in live harness. Keep expected
 behavior independent of the model. Reports must distinguish deterministic tests from live model quality.
 

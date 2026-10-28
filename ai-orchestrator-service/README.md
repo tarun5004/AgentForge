@@ -12,6 +12,32 @@ avoids generating optional root-layout boilerplate unless requested; it does not
 
 ## Conversation streaming — AI backend slice (2026-10-26)
 
+### Reproducible evaluation reports (2026-10-27)
+
+The existing 18 reviewed routing cases now produce versioned reports with case/prompt SHA-256 hashes,
+per-case grades, measured total latency, stream first-text latency, nearest-rank p50/p95, model IDs and
+known token totals. Missing usage stays null and incomplete cases are counted. These are routing/
+contract evaluations, not compilation, visual quality, a held-out benchmark or invoice verification.
+Existing real Docker/browser checks remain separate evidence; no LLM judges itself as correct.
+
+```powershell
+# Zero calls and no credential/config import: list the reviewed cases.
+npm --workspace ai-orchestrator-service run eval:conversation
+# Explicit provider/quota usage: at most two reviewed cases here; no retries on failure.
+npm --workspace ai-orchestrator-service run eval:conversation -- --live --stream --limit=2 --case=greeting,portfolio-plan --report=after.json
+# Zero inference: compare existing reports on identical cases, prompt, mode and transport.
+npm --workspace ai-orchestrator-service run eval:conversation -- --compare=before.json,after.json
+```
+
+Reports are created only under ignored root `output/evaluations/`, with a simple `.json` filename;
+existing files are never overwritten. Comparison validates rows and recomputes summaries rather than
+trusting saved pass rates. A changed case/prompt/transport or incomplete batch cannot silently become
+a like-for-like model comparison. Reports contain grades/metrics, not conversation text or credentials.
+Default and offline comparison modes do not import provider configuration. Live calls still require
+available account quota and an explicit `--live`; this helper does not impose an account dollar cap.
+Verified with 103/103 AI tests, typecheck and build. Six reporting checks cover metrics, unknown values,
+comparison compatibility, CLI admission and a real credential-free dry run. No live evaluation was run.
+
 `POST /internal/conversations/stream` is additive: the existing JSON route remains unchanged.
 It takes the same validated request and internal-service token. This slice does **not** yet change
 Project's public transport, persist chat history or connect the browser to streaming.
