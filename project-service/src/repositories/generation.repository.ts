@@ -5,6 +5,7 @@ import {
   type GenerationResult,
 } from "../models/generation.model.js";
 import type { BuildVerification } from "../clients/build-verification.js";
+import type { RepairDiagnostic } from "../clients/repair.contract.js";
 
 export type GenerationReadRecord = GenerationDocument & { _id: Types.ObjectId };
 
@@ -18,6 +19,7 @@ type NewGenerationAttempt = {
   expectedVersion: number;
   requestPolicyVersion: "generation-request-v1";
   buildPolicyVersion?: "next-static-build-v1";
+  repairOf?: string;
 };
 
 // Recognize only this unique index. Other duplicate errors must not masquerade as retries.
@@ -40,6 +42,17 @@ export async function findGenerationByKey(
 // The controller's caller already proved project ownership; never fetch an attempt by ID alone.
 export async function findOwnedGeneration(projectId: string, ownerId: string, generationId: string) {
   return Generation.findOne({ _id: generationId, projectId, ownerId }).lean<GenerationReadRecord | null>();
+}
+
+// A unique repairOf index closes simultaneous clicks even when they use different request keys.
+export function isRepairDuplicate(error: unknown): boolean {
+  return error instanceof mongo.MongoServerError && error.code === 11000 &&
+    !!error.keyPattern && Object.keys(error.keyPattern).length === 1 && error.keyPattern.repairOf === 1;
+}
+
+// Scope lookup to the same owner/project even though ObjectIds and the unique index are global.
+export async function findRepairAttempt(projectId: string, ownerId: string, repairOf: string) {
+  return Generation.findOne({ projectId, ownerId, repairOf }).lean<GenerationReadRecord | null>();
 }
 
 // Store identity in the same insert as the pending state; a racing request cannot overwrite it.
@@ -73,10 +86,12 @@ export async function markGenerationReady(
 export async function markGenerationFailed(
   generationId: string,
   errorCode: string,
+  diagnostics?: RepairDiagnostic[],
 ): Promise<void> {
   await Generation.updateOne(
     { _id: generationId, status: "pending" },
-    { $set: { status: "failed", errorCode, failedAt: new Date() } },
+    { $set: { status: "failed", errorCode, failedAt: new Date(), ...(diagnostics?.length ? { buildDiagnostics: diagnostics } : {}) } },
+    { runValidators: true },
   );
 }
 

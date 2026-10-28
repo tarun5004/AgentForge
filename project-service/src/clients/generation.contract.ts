@@ -58,10 +58,15 @@ export function prepareGenerationRequest(input: unknown) {
 // Check response identity and independently build the complete snapshot at Project Service.
 // Internal HTTP is still a trust boundary; AI metadata does not replace local file validation.
 export function validateGenerationResponse(input: unknown, request: GenerationInput) {
+  return validateFileChangeResponse(input, request.requestId, request.baseRevision?.files ?? []);
+}
+
+// Repairs use the failed snapshot as their edit base; publication still diffs against the original parent.
+export function validateFileChangeResponse(input: unknown, requestId: string, baseFiles: { path: string; content: string }[]) {
   try {
     const { generation } = generationResponseSchema.parse(input);
-    if (generation.requestId !== request.requestId) throw new Error("AI response requestId mismatch.");
-    const snapshot = mergeRevisionFiles(request.baseRevision?.files ?? [], {
+    if (generation.requestId !== requestId) throw new Error("AI response requestId mismatch.");
+    const snapshot = mergeRevisionFiles(baseFiles, {
       files: generation.files, deletedPaths: generation.deletedPaths,
     });
     return { ...generation, snapshot };

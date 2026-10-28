@@ -7,6 +7,7 @@ import type { GenerationResult } from "../models/generation.model.js";
 import { prepareGenerationRequest, type GenerationInput } from "../clients/generation.contract.js";
 import {
   findGenerationByKey,
+  findRepairAttempt,
   findOwnedGeneration,
   insertPendingGeneration,
   isGenerationKeyDuplicate,
@@ -33,6 +34,7 @@ import {
   logGenerationBookkeepingFailure, publishGeneration, recordGenerationFailure,
   repairPublishedGeneration, unknownGenerationOutcome,
 } from "./generation.publication.js";
+import { isRepairable } from "./repair.policy.js";
 
 // Build a public response from the committed snapshot, not from a stale pointer/status.
 // Explicit fields keep database implementation details out of the browser response.
@@ -281,12 +283,16 @@ export async function getGeneration(ownerId: string, rawProjectId: unknown, rawG
   }
   if (generation.status !== "pending" && generation.status !== "failed") throw unknownGenerationOutcome(generationId);
   // Old database error strings must not become an unbounded public response.
-  const safeCodes = ["REVISION_CONFLICT", "AI_GENERATION_FAILED", "AI_OUTPUT_INVALID", "CONTEXT_TOO_LARGE", "SNAPSHOT_TOO_LARGE", "BUILD_VERIFICATION_FAILED"];
+  const safeCodes = ["REVISION_CONFLICT", "AI_GENERATION_FAILED", "AI_REPAIR_FAILED", "AI_OUTPUT_INVALID", "CONTEXT_TOO_LARGE", "SNAPSHOT_TOO_LARGE", "BUILD_VERIFICATION_FAILED"];
+  const repair = generation.status === "failed" && !generation.repairOf
+    ? await findRepairAttempt(projectId, ownerId, generationId) : null;
   const response = {
     id: generationId, status: generation.status, hasSavedResult: !!generation.result,
     errorCode: generation.status === "failed"
       ? (safeCodes.includes(generation.errorCode ?? "") ? generation.errorCode : "GENERATION_FAILED")
       : null,
+    ...(generation.status === "failed" ? { repairAvailable: env.REPAIR_ENABLED && isRepairable(generation) && !repair,
+      repairAttemptId: repair?._id.toString() ?? null } : {}),
   };
   assertReadResponseSize({ generation: response });
   return response;

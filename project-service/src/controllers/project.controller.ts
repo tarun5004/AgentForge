@@ -9,11 +9,24 @@ import {
   listRevisions,
 } from "../services/project.service.js";
 import { createGeneration, getGeneration } from "../services/generation.service.js";
+import { createRepair } from "../services/repair.service.js";
+
+// Browser supplies identity only; the service loads owned source and feedback before any repair call.
+export async function createRepairController(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!req.user) throw new AppError(401, "Authentication required.");
+    const generation = await createRepair(req.user.id, req.params.projectId, req.params.generationId,
+      req.header("idempotency-key"), req.body, req.header("authorization") ?? "");
+    res.setHeader("Cache-Control", "no-store");
+    res.status(generation.status === "pending" ? 202 : 201).json({ generation });
+  } catch (error) { next(error); }
+}
 
 export async function getGenerationController(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     if (!req.user) throw new AppError(401, "Authentication required.");
     const generation = await getGeneration(req.user.id, req.params.projectId, req.params.generationId, req.query);
+    res.setHeader("Cache-Control", "no-store");
     res.status(200).json({ generation });
   } catch (error) {
     next(error);

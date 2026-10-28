@@ -1,5 +1,6 @@
 import { Schema, Types, model } from "mongoose";
 import type { BuildVerification } from "../clients/build-verification.js";
+import type { RepairDiagnostic } from "../clients/repair.contract.js";
 
 export type GeneratedFile = {
   path: string;
@@ -39,6 +40,8 @@ export type GenerationDocument = {
   requestPolicyVersion?: string;
   buildPolicyVersion?: "next-static-build-v1";
   buildVerification?: BuildVerification;
+  buildDiagnostics?: RepairDiagnostic[];
+  repairOf?: Types.ObjectId;
   status: GenerationStatus;
   result?: GenerationResult;
   revisionId?: Types.ObjectId;
@@ -107,6 +110,15 @@ const generationSchema = new Schema<GenerationDocument>(
     requestPolicyVersion: { type: String, enum: ["generation-request-v1"], immutable: true },
     buildPolicyVersion: { type: String, enum: ["next-static-build-v1"], immutable: true },
     buildVerification: { type: buildEvidenceSchema, required: false },
+    buildDiagnostics: { type: [new Schema<RepairDiagnostic>({
+      path: { type: String, maxlength: 120, default: null },
+      line: { type: Number, min: 1, max: 999999, default: null },
+      column: { type: Number, min: 1, max: 999999, default: null },
+      category: { type: String, required: true, enum: ["typescript", "module", "syntax", "compile"] },
+      code: { type: String, match: /^TS\d{4,5}$/, default: null },
+    }, { _id: false })], default: undefined,
+      validate: (rows: RepairDiagnostic[]) => rows.length <= 8 },
+    repairOf: { type: Schema.Types.ObjectId, ref: "Generation", immutable: true },
     status: {
       type: String,
       enum: ["pending", "ready", "failed"],
@@ -123,5 +135,7 @@ const generationSchema = new Schema<GenerationDocument>(
 
 generationSchema.index({ projectId: 1, idempotencyKey: 1 }, { unique: true });
 generationSchema.index({ ownerId: 1, createdAt: -1 });
+// Existing documents omit repairOf, so the additive sparse index does not reserve a null repair slot.
+generationSchema.index({ repairOf: 1 }, { unique: true, sparse: true });
 
 export const Generation = model<GenerationDocument>("Generation", generationSchema);

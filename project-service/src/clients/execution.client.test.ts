@@ -6,7 +6,7 @@ import { AppError } from "../middlewares/error.middleware.js";
 Object.assign(process.env, { NODE_ENV: "test", MONGODB_URI: "mongodb://127.0.0.1:27017/agentforge_test_unused_client",
   ACCESS_TOKEN_SECRET: "fixture-access-secret", INTERNAL_SERVICE_TOKEN: "fixture-ai-secret", BUILD_GATE_ENABLED: "true",
   EXECUTION_CHECK_TOKEN: "fixture-execution-service-token-0001", EXECUTION_SERVICE_URL: "http://127.0.0.1:5100" });
-const { requestCandidateCheck } = await import("./execution.client.js");
+const { requestCandidateCheck, BuildVerificationFailure } = await import("./execution.client.js");
 const input = { projectId: "100000000000000000000001", generationId: "200000000000000000000001", snapshotHash: "a".repeat(64) };
 const proof = { status: "build_passed", policyVersion: "next-static-build-v1", snapshotHash: input.snapshotHash,
   runnerImageId: `sha256:${"b".repeat(64)}`, checkId: "12345678-1234-4234-8234-123456789abc", completedAt: "2026-10-23T00:00:00.000Z" };
@@ -42,6 +42,22 @@ test("only explicit trusted compile/source-policy rejection becomes a terminal f
     for (const code of ["BUILD_VERIFICATION_FAILED", "CANDIDATE_UNSUPPORTED"]) {
       globalThis.fetch = async () => Response.json({ code, message: "untrusted diagnostic must not leak" }, { status: 422 });
       await assert.rejects(requestCandidateCheck(input, "Bearer fixture-owner"), (error: unknown) => error instanceof AppError && error.code === "BUILD_VERIFICATION_FAILED" && !error.message.includes("untrusted diagnostic"));
+    }
+  } finally { globalThis.fetch = original; }
+});
+
+test("compile feedback is strictly typed and malformed/private fields are withheld", async () => {
+  const original = globalThis.fetch;
+  const row = { path: "app/page.tsx", line: 4, column: 2, category: "typescript", code: "TS2322" };
+  try {
+    for (const diagnostics of [[row], [{ ...row, message: "PRIVATE_LOG" }], [{ ...row, code: "secret" }]]) {
+      globalThis.fetch = async () => Response.json({ code: "BUILD_VERIFICATION_FAILED", diagnostics }, { status: 422 });
+      await assert.rejects(requestCandidateCheck(input, "Bearer fixture-owner"), (error: unknown) => {
+        assert.ok(error instanceof BuildVerificationFailure);
+        assert.deepEqual(error.diagnostics, diagnostics[0] === row ? [row] : []);
+        assert.doesNotMatch(JSON.stringify(error), /PRIVATE_LOG|secret/);
+        return true;
+      });
     }
   } finally { globalThis.fetch = original; }
 });

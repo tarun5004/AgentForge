@@ -4,6 +4,27 @@ The V1 target contract uses `/api/v1` and request IDs. These are future conventi
 
 ## Implemented conversational workspace
 
+### Explicit build repair (additive)
+
+Owner JWT + `Idempotency-Key`: `POST /api/projects/:projectId/generations/:generationId/repair`,
+empty body only. `REPAIR_ENABLED=false` by default; enabling requires the local build gate.
+Only an owned known failed compile with saved candidate/safe feedback is eligible. One sparse-unique
+`repairOf` reservation precedes one model call. It retains original parent/version; a fresh exact-snapshot
+build must pass before immutable publication. Success is 202 pending or 201 committed same-key replay.
+GET generation failed status adds boolean `repairAvailable` and nullable `repairAttemptId`; it never starts work.
+
+New 409 codes: `REPAIR_DISABLED`, `REPAIR_UNAVAILABLE`, `REPAIR_ALREADY_ATTEMPTED`; existing
+key/version conflicts remain 409. Sanitized 502 `AI_REPAIR_FAILED` consumes the one slot; 503
+`OUTCOME_UNKNOWN` requires retaining the same key. No replay can repeat a missing/uncertain model call.
+Raw diagnostic messages and browser-controlled source/model overrides are not accepted or returned.
+Full setup, crash/replay limits and verification: [Project repair](../project-service/README.md#explicit-one-attempt-build-repair).
+
+Internal AI `POST /internal/repairs` uses `x-internal-service-token`, strict
+`{requestId,projectId,prompt,failedFiles,diagnostics}` and the existing `{generation}` envelope.
+One tool-free call, 8000 output tokens, 80 seconds, zero SDK retries. Internal Execution check's
+compile 422 adds up to eight allowlisted `{path,line,column,category,code}` rows; no raw compiler text.
+These internal endpoints do not independently authorize a public repair or publish a revision.
+
 **Additive durable/SSE backend:** owner-JWT GET `/api/conversations` lists 20 metadata rows with an
 optional `before` Mongo-ID cursor; POST `/api/conversations/threads` with `{}` creates a chat (not a
 Project); GET `/api/conversations/:id?before=<0..100>` reads 20 saved turns and pagination metadata.
