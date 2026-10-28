@@ -5,6 +5,7 @@ import { test } from "node:test";
 import { createApp } from "../../app/app.js";
 import { candidateHash, checkInputSchema, checkServiceToken, createCandidateChecks, createCandidateClient } from "./candidate.check.js";
 import { createDockerRunner } from "./docker.runner.js";
+import { DockerCommandError } from "./docker.command.js";
 import { RunBuildError, RunCleanupError, RunError } from "./run.errors.js";
 
 const projectId = "100000000000000000000001";
@@ -129,4 +130,32 @@ test("one Docker runner shares admission between preview and candidate consumers
   const active = runner.build({ id: "first", revision, previewPath: "/preview/first", signal: new AbortController().signal });
   await assert.rejects(runner.build({ id: "second", revision, previewPath: "/check/second", signal: new AbortController().signal }), (error: unknown) => error instanceof RunError && error.code === "BUILD_BUSY");
   release(); await active;
+});
+
+test("internal compile failure returns safe locations through the real runner, never raw logs", async (t) => {
+  const calls: string[] = [];
+  const runner = await createDockerRunner("fixture", async (args) => {
+    calls.push(args[0]!);
+    if (args[0] === "info") return '"linux"';
+    if (args[0] === "image") return imageId;
+    if (args[0] === "ps") return "";
+    if (args[0] === "inspect") return "true";
+    if (args.includes("build")) throw new DockerCommandError("PRIVATE_MESSAGE", "./app/page.tsx:5:3\nType error: SECRET_VALUE", 1);
+    return "";
+  });
+  const checks = createCandidateChecks(runner, async () => revision);
+  const server = createServer(createApp(undefined, { checks, token }));
+  const origin = await listen(server);
+  t.after(async () => { server.close(); await checks.close(); });
+  const response = await fetch(`${origin}/internal/checks`, { method: "POST",
+    headers: { "Content-Type": "application/json", authorization: "Bearer owner", "x-execution-check-token": token },
+    body: JSON.stringify(input),
+  });
+  assert.equal(response.status, 422);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  const body = await response.json();
+  assert.equal(body.code, "BUILD_VERIFICATION_FAILED");
+  assert.deepEqual(body.diagnostics, [{ path: "app/page.tsx", line: 5, column: 3, category: "typescript", code: null }]);
+  assert.doesNotMatch(JSON.stringify(body), /PRIVATE|SECRET|Bearer|stack/);
+  assert.equal(calls.at(-1), "rm");
 });

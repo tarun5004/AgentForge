@@ -1,4 +1,5 @@
 import type { DockerFailureReason } from "./docker.command.js";
+import type { CompilerDiagnostic } from "./compiler-diagnostics.js";
 
 // Carry safe public messages without leaking Docker or upstream response details.
 export class RunError extends Error {
@@ -27,7 +28,8 @@ const stageMessages: Record<BuildStage, string> = {
 
 // Build public diagnostics from trusted enums only, never compiler text or an upstream Error.message.
 export class RunBuildError extends Error {
-  constructor(public stage: BuildStage, public reason: DockerFailureReason = "command_failed") {
+  constructor(public stage: BuildStage, public reason: DockerFailureReason = "command_failed",
+    public diagnostics: CompilerDiagnostic[] = []) {
     let detail = stageMessages[stage];
     if (reason === "timeout") detail = `Time limit exceeded while ${stageDescriptions[stage]}.`;
     else if (reason === "output_limit") detail = `Output limit exceeded while ${stageDescriptions[stage]}.`;
