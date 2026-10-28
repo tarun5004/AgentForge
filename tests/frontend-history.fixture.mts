@@ -24,6 +24,7 @@ Object.assign(process.env, {
   AI_ORCHESTRATOR_URL: "http://127.0.0.1:4312", INTERNAL_SERVICE_TOKEN: "frontend-fixture-internal",
   // Isolate mode from developer env: old suites stay ungated; only the explicit gated suite enables it.
   BUILD_GATE_ENABLED: process.env.AGENTFORGE_TEST_BUILD_GATE === "1" ? "true" : "false",
+  REPAIR_ENABLED: process.env.AGENTFORGE_TEST_REPAIR === "1" ? "true" : "false",
   EXECUTION_CHECK_TOKEN: "frontend-fixture-execution-token-0001", EXECUTION_SERVICE_URL: "http://127.0.0.1:5310",
 });
 const { createApp: createAuthApp } = await import("../auth-service/src/app/app.ts");
@@ -63,6 +64,7 @@ let releaseGeneration: (() => void) | undefined;
 let holdNextChat = false;
 let releaseChat: (() => void) | undefined;
 let conversationCalls = 0;
+let repairCalls = 0;
 
 // Real Auth/Project APIs and Mongo run unchanged; only the paid AI network boundary is replaced.
 const aiServer = createServer((request, response) => {
@@ -99,7 +101,7 @@ const aiServer = createServer((request, response) => {
     void shutdown();
     return;
   }
-  if (request.method !== "POST" || !["/internal/generations", "/internal/requirements", "/internal/conversations", "/internal/conversations/stream"].includes(request.url ?? "") || request.headers["x-internal-service-token"] !== "frontend-fixture-internal") {
+  if (request.method !== "POST" || !["/internal/generations", "/internal/repairs", "/internal/requirements", "/internal/conversations", "/internal/conversations/stream"].includes(request.url ?? "") || request.headers["x-internal-service-token"] !== "frontend-fixture-internal") {
     response.writeHead(404).end(); return;
   }
   let body = "";
@@ -107,6 +109,18 @@ const aiServer = createServer((request, response) => {
   request.on("end", async () => {
     try {
       const input = JSON.parse(body);
+      if (request.url === "/internal/repairs") {
+        if (process.env.AGENTFORGE_TEST_REPAIR !== "1" || !Array.isArray(input.failedFiles) || !input.diagnostics?.length) throw new Error("Repair fixture is not enabled or input is missing.");
+        repairCalls++;
+        const content = initialFiles[0]!.content.replace("Zero-cost portfolio preview", "Repaired portfolio preview");
+        response.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ generation: {
+          requestId: input.requestId, provider: "browser-test-fixture", model: "deterministic-fixture",
+          summary: "Repaired portfolio snapshot", files: [{ path: "app/page.tsx", content }], deletedPaths: [],
+          validation: { policyVersion: "frontend-manifest-v1", status: "manifest_validated" },
+          usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }, latencyMs: 0,
+        } }));
+        return;
+      }
       if (request.url === "/internal/conversations/stream") {
         conversationCalls++;
         const prompt = input.messages.at(-1)?.content;
@@ -211,7 +225,7 @@ async function readFixtureStatus(response: import("node:http").ServerResponse) {
     const counts: Record<string, number> = {};
     for (const name of ["users", "projects", "revisions", "generations", "projectbriefs", "conversations"]) counts[name] = await db.collection(name).countDocuments({});
     response.setHeader("Content-Type", "application/json");
-    response.end(JSON.stringify({ fixtureId, databaseName: target.pathname.slice(1), counts, aiRequests, conversationCalls, heldGeneration: !!releaseGeneration,
+    response.end(JSON.stringify({ fixtureId, databaseName: target.pathname.slice(1), counts, aiRequests, conversationCalls, repairCalls, heldGeneration: !!releaseGeneration,
       previewEnabled, buildGateEnabled, demoMode, checks: previewController?.checkEvidence() ?? null }));
   } catch { response.writeHead(503).end("Fixture status unavailable."); }
 }

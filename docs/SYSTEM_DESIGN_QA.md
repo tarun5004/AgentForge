@@ -146,3 +146,65 @@ Trace: [service flow](../project-service/src/services/brief.service.ts), [atomic
 **Debug example:** browser network showed a saved assessment, but no answer fields rendered. An empty-selection transition reset answer state without resetting its snapshot marker, so the next load incorrectly skipped restoration. Resetting both fixed it; the regression now covers first submission, resize and hard refresh. This is why a successful typecheck alone was insufficient.
 
 **Trade-off:** tab storage can contain non-secret answer text; disabled storage loses unsaved retry identity on hard refresh. Server pending work still needs explicit read/replay/abandonment. Fixtures prove UI/contracts and real-service fixtures prove persistence; neither proves live model quality or provider billing behavior.
+
+## 16. How does a reply stream through three services?
+
+**Interview answer:** "The browser sends an authenticated POST and reads SSE frames from its response.
+Next rewrites to Project, which checks ownership and stored context. AI SDK streams provisional text;
+Project validates each frame before relaying it. Only the validated final response can authorize a build."
+
+**Code path:** [AI stream](../ai-orchestrator-service/src/features/conversations/conversation.service.ts) ->
+[Project relay](../project-service/src/clients/conversation.stream.ts) ->
+[browser decoder](../nextjs-boilerplate/lib/durable-chat.ts). `message` is a cumulative snapshot, so the
+UI replaces text rather than appending duplicates. `complete` means the validated answer was saved.
+EOF/Stop without completion is interruption, not success. `fetch` supports our POST/auth headers;
+WebSockets are unnecessary for one-way replies. Generated revisions remain atomic, not partial streamed files.
+
+## 17. Why can another browser restore a chat?
+
+**Interview answer:** "Mongo is the source of truth, not localStorage. JWT sub identifies the owner;
+every chat read/append uses that owner. A fresh browser logged into the same account queries the same records."
+
+One bounded conversation document embeds at most 100 turns. An atomic update reserves one pending
+turn/key; completion saves the validated response before SSE `complete`. Same completed key/body replays
+saved data without inference. Reads return 20 turns per page; the model receives only a bounded recent
+window, not the whole database history. The cap keeps standalone-Mongo admission simple without a
+transaction/queue. Storage durability does not promise automatic inference recovery after a crash.
+
+Trace: [model/index](../project-service/src/models/conversation.model.ts),
+[atomic repository](../project-service/src/repositories/conversation.repository.ts),
+[history service](../project-service/src/services/conversation-history.service.ts).
+
+## 18. How do we evaluate an AI feature without trusting its own claim?
+
+**Interview answer:** "Reviewed cases define expected behavior independently of the model. We grade
+routing/schema results, then use a real compiler and browser for code behavior. A model saying 'tested'
+is not a passing test."
+
+The CLI records case/prompt hashes, pass/fail reasons, first text, total latency and reported tokens.
+Reports compute pass rate and nearest-rank p50/p95. Unknown usage stays null. Offline comparison rejects
+incompatible case/prompt/transport sets and makes zero model calls. Live routing evaluation is explicit;
+fixture tests prove our harness, not real model quality or a general benchmark. Build/browser checks
+remain separate evidence rather than an LLM judging its own code.
+
+Trace: [report/compare](../ai-orchestrator-service/src/features/conversations/conversation.report.ts),
+[CLI](../ai-orchestrator-service/src/features/conversations/conversation.eval-cli.ts).
+
+## 19. Why is build repair one attempt instead of an automatic loop?
+
+**Interview answer:** "Repair costs another model request and might fail again. I reserve one explicit
+attempt in Mongo before inference, give AI only the failed files and safe compiler locations/categories,
+then require a fresh build before publishing. The previous good revision never gets overwritten."
+
+The unique sparse `repairOf` index guards concurrent clicks across processes. The repair keeps the
+original parent/version. Model edits are merged relative to failed files, while the saved revision's
+diff is computed against its original parent. A new hash-bound build proof is mandatory; old proof
+cannot certify new bytes. AI failure consumes the slot. If a result-save acknowledgement is lost,
+same-key replay can recover saved output/build, but never repeats inference when no output is saved.
+That favors avoiding duplicate spend over guaranteed automatic completion. Zero SDK retries and token/time
+caps bound our call; they are not a hard dollar guarantee for provider/Gateway internals.
+
+Trace: [safe feedback](../execution-service/src/features/runs/compiler-diagnostics.ts),
+[single AI call](../ai-orchestrator-service/src/features/generations/repair.service.ts),
+[reservation/lifecycle](../project-service/src/services/repair.service.ts),
+[browser request identity](../nextjs-boilerplate/lib/pending-generation.ts).

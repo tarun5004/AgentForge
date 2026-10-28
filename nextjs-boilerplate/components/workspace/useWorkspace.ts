@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  createProject, generateProject, getGeneration, getProject, getRevision,
+  createProject, generateProject, repairProject, getGeneration, getProject, getRevision,
   listProjects, listRevisions, ProjectApiError,
   getRequirementBrief, generateConfirmedBrief,
-  type Generation, type GenerationStatus, type Project, type Revision, type RevisionSummary,
+  type Generation, type GenerationStatus, type FailedGenerationStatus, type Project, type Revision, type RevisionSummary,
 } from "@/lib/project-api";
 import {
-  clearPendingGeneration, readPendingGeneration, savePendingGeneration,
+  clearPendingGeneration, readPendingGeneration, savePendingGeneration, readFailedGeneration, saveFailedGeneration,
   type PendingGeneration,
 } from "@/lib/pending-generation";
 import { workspaceUrl, type WorkspaceSelection } from "@/lib/workspace-selection";
@@ -49,10 +49,11 @@ function errorMessage(error: unknown): string {
 }
 
 // A confirmed rejection can use a new key; transport errors/503/in-progress must retain it.
-function isTerminalGenerationError(error: unknown): boolean {
+function isTerminalGenerationError(error: unknown, repair = false): boolean {
   if (!(error instanceof ProjectApiError)) return false;
-  return [400, 404, 413, 502].includes(error.status) ||
-    ["GENERATION_FAILED", "REVISION_CONFLICT", "IDEMPOTENCY_MISMATCH"].includes(error.code ?? "");
+  if (error.status === 502) return !repair || ["AI_REPAIR_FAILED", "GENERATION_FAILED"].includes(error.code ?? "");
+  return [400, 404, 413].includes(error.status) ||
+    ["GENERATION_FAILED", "REVISION_CONFLICT", "IDEMPOTENCY_MISMATCH", "REPAIR_DISABLED", "REPAIR_UNAVAILABLE"].includes(error.code ?? "");
 }
 
 // State lives above responsive panels. URL IDs select data; Mongo remains the source of files.
@@ -91,6 +92,7 @@ export function useWorkspace(
   const [notice, setNotice] = useState("Ask a question, plan a website, or describe what to build.");
   const [submitError, setSubmitError] = useState("");
   const [pending, setPending] = useState<PendingGeneration | null>(null);
+  const [failedGeneration, setFailedGeneration] = useState<FailedGenerationStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
   const selectionAbort = useRef<AbortController | null>(null);
@@ -193,7 +195,7 @@ export function useWorkspace(
         setOlderChatCursor(savedChat?.nextBefore ?? null);
         if (!selection.projectId) {
           setProject(null); setRevision(null); setRevisions([]); setRevisionCursor(null);
-          setLoadedKey(selectionKey); setPending(null);
+          setLoadedKey(selectionKey); setPending(null); setFailedGeneration(null);
           restoreDraft();
           if (savedChat) restoreServerChat("draft", savedChatEntries(savedChat));
           return;
@@ -205,6 +207,14 @@ export function useWorkspace(
         ]);
         const snapshot = selected ?? (savedProject.latestRevision
           ? await getRevision(savedProject.id, savedProject.latestRevision.id, session!, controller.signal) : null);
+        const failedId = readFailedGeneration(userId!, savedProject.id);
+        let failedStatus: FailedGenerationStatus | null = null;
+        if (failedId) {
+          try {
+            const status = await getGeneration(savedProject.id, failedId, session!, controller.signal);
+            if (status.status === "failed") failedStatus = status;
+          } catch (error) { if (error instanceof ProjectApiError && error.status === 401) throw error; }
+        }
         let savedBrief: RequirementBrief | null = null;
 
         // Requirements remain part of the conversation even after its first revision is published.
@@ -215,6 +225,7 @@ export function useWorkspace(
         if (controller.signal.aborted || !mounted.current) return;
         setProject(savedProject); setRevision(snapshot); setRevisions(history.revisions); setRevisionCursor(history.nextCursor);
         setLoadedKey(selectionKey);
+        setFailedGeneration(failedStatus);
         restoreChat(savedProject, history.revisions);
         if (savedChat) restoreServerChat(savedProject.id, savedChatEntries(savedChat));
         if (snapshot) writeChat(savedProject.id, { id: `revision:${snapshot.id}`, role: "assistant", kind: "result",
@@ -240,7 +251,7 @@ export function useWorkspace(
   function navigate(projectId: string | null, revisionId: string | null = null, conversationId = projectId && projectId === project?.id ? threadRef.current : null) {
     if (submissionLock.current) return;
     selectionAbort.current?.abort();
-    setLoadedKey(""); setLoadError(""); setSubmitError(""); setPending(null); setPrompt("");
+    setLoadedKey(""); setLoadError(""); setSubmitError(""); setPending(null); setFailedGeneration(null); setPrompt("");
     if (!projectId && !conversationId) chat.resetDraft();
     setNotice(projectId ? "Loading saved project..." : "Ask a question or describe what to build.");
     router.replace(workspaceUrl(projectId, revisionId, conversationId), { scroll: false });
@@ -331,7 +342,8 @@ export function useWorkspace(
     setProject({ ...savedProject, status: "ready", latestRevision: { id: result.revisionId, version: result.revisionVersion } });
     setRevision(snapshotFromGeneration(result));
     setLoadedKey(workspaceUrl(savedProject.id, result.revisionId, threadRef.current));
-    setPrompt(""); setSubmitError(""); setPending(null);
+    setPrompt(""); setSubmitError(""); setPending(null); setFailedGeneration(null);
+    if (userId) saveFailedGeneration(userId, savedProject.id, null);
     setNotice(`Revision v${result.revisionVersion} committed. ${result.files.length} files saved.`);
     if (attemptKey) chat.activity(savedProject.id, `generation:${attemptKey}`,
       `Revision v${result.revisionVersion} is ready.`, "done", generationActivity(result));
@@ -344,12 +356,13 @@ export function useWorkspace(
   }
 
   // Freeze project/base/key for the whole attempt; no UI change may mutate an in-flight request.
-  async function submit(retry = false, generationPrompt?: string) {
+  async function submit(retry = false, generationPrompt?: string, repairOf?: string) {
     if (!session || !userId || submissionLock.current || (!retry && (loadBusy || selection.error))) return;
-    if (!retry && generationPrompt === undefined) { await sendMessage(); return; }
+    if (!retry && generationPrompt === undefined && !repairOf) { await sendMessage(); return; }
     const text = (generationPrompt ?? prompt).trim();
     if (!retry && (pending || !visible || loadError)) return;
-    if (!retry && (text.length < 10 || text.length > 1000)) return;
+    if (!retry && !repairOf && (text.length < 10 || text.length > 1000)) return;
+    if (repairOf && (!project || failedGeneration?.id !== repairOf || !failedGeneration.repairAvailable)) return;
     if (retry && !pending) return;
     const allowedUrls = new Set([window.location.pathname + window.location.search]);
     // Admit only the project URL transition made deliberately by this operation.
@@ -373,20 +386,29 @@ export function useWorkspace(
           void loadProjectPage();
         }
         intent = { projectId: savedProject.id, key: crypto.randomUUID(),
-          body: { prompt: text, ...(revision ? { baseRevisionId: revision.id } : {}) },
+          body: repairOf ? {} : { prompt: text, ...(revision ? { baseRevisionId: revision.id } : {}) },
+          ...(repairOf ? { repairOf } : {}),
         };
+        setFailedGeneration(null);
+        if (!repairOf) saveFailedGeneration(userId, savedProject.id, null);
         savePendingGeneration(userId, intent); setPending(intent);
       }
       if (!savedProject || savedProject.id !== intent.projectId) throw new Error("Reload this project before retrying.");
       if (retry) chat.write(savedProject.id, { id: `generation:${intent.key}:request`, role: "user", kind: "message",
-        text: intent.body.prompt ?? "Generate code from the confirmed brief.",
+        text: intent.repairOf ? "Retry the same reserved repair." : intent.body.prompt ?? "Generate code from the confirmed brief.",
         details: intent.body.baseRevisionId ? [`Selected base: ${intent.body.baseRevisionId}`] : undefined,
       });
-      chat.activity(savedProject.id, `generation:${intent.key}`, "Generation requested. Waiting for validated model output.", "working");
-      setNotice(intent.body.baseRevisionId ? "Generating changes against the frozen selected revision..." : "Project saved. Generating its first revision...");
-      let result: GenerationStatus = intent.briefId
-        ? await generateConfirmedBrief(intent.projectId, intent.briefId, session, intent.key)
-        : await generateProject(intent.projectId, session, intent.key, intent.body);
+      chat.activity(savedProject.id, `generation:${intent.key}`, intent.repairOf ? "One repair requested. Waiting for validated output and a fresh build." : "Generation requested. Waiting for validated model output.", "working");
+      let result: GenerationStatus;
+      if (intent.repairOf) {
+        setNotice("Repairing the failed candidate once; saved revisions stay unchanged until a fresh build passes.");
+        result = await repairProject(intent.projectId, intent.repairOf, session, intent.key);
+      } else {
+        setNotice(intent.body.baseRevisionId ? "Generating changes against the frozen selected revision..." : "Project saved. Generating its first revision...");
+        result = intent.briefId
+          ? await generateConfirmedBrief(intent.projectId, intent.briefId, session, intent.key)
+          : await generateProject(intent.projectId, session, intent.key, intent.body);
+      }
       if (!stillSelected()) return;
       const activityId = `generation:${intent.key}`;
       const activityProjectId = intent.projectId;
@@ -407,19 +429,29 @@ export function useWorkspace(
         result = await pollGeneration(generationId, () => getGeneration(projectId, generationId, session,
           AbortSignal.any([signal, AbortSignal.timeout(10_000)])), signal, undefined, recordProgress);
       }
-      if (result.status === "failed") throw new ProjectApiError("Generation or build verification failed. Saved files remain unchanged.", 502, "GENERATION_FAILED", result.id);
       if (!stillSelected()) return;
+      if (result.status === "failed") {
+        saveFailedGeneration(userId, intent.projectId, result.id); setFailedGeneration(result);
+        throw new ProjectApiError("Generation or build verification failed. Saved files remain unchanged.", 502, "GENERATION_FAILED", result.id);
+      }
       clearPendingGeneration(userId, intent.projectId);
       acceptGeneration(result, savedProject, intent.key);
     } catch (error) {
       if (!stillSelected()) return;
       if (intent) {
         if (error instanceof ProjectApiError && error.generationId) intent = { ...intent, generationId: error.generationId };
-        const terminal = isTerminalGenerationError(error);
+        const terminal = isTerminalGenerationError(error, !!intent.repairOf);
         chat.activity(intent.projectId, `generation:${intent.key}`, errorMessage(error), terminal ? "error" : "unknown");
-        if (terminal) { clearPendingGeneration(userId, intent.projectId); setPending(null); setNotice("Saved files are unchanged. You can revise the message and send again."); }
+        if (terminal) {
+          clearPendingGeneration(userId, intent.projectId); setPending(null);
+          if (error instanceof ProjectApiError && error.generationId) saveFailedGeneration(userId, intent.projectId, error.generationId);
+          setNotice(intent.repairOf ? "The repair request ended. Saved revisions remain unchanged." : "Saved files are unchanged. You can revise the message and send again.");
+        }
         else { savePendingGeneration(userId, intent); setPending(intent); setNotice("Completion is not confirmed. Check status or retry the same attempt."); }
-        setSubmitError(`${reportError(error)} ${terminal ? "Saved files are unchanged; a new submission uses a new key." : "Outcome not confirmed. Check status or retry this same attempt."}`);
+        const recovery = terminal
+          ? (intent.repairOf ? "No automatic second repair will run." : "Saved files are unchanged; a new submission uses a new key.")
+          : "Outcome not confirmed. Check status or retry this same attempt.";
+        setSubmitError(`${reportError(error)} ${recovery}`);
       } else {
         setSubmitError(`${reportError(error)} Check saved projects before creating another draft.`);
         void loadProjectPage();
@@ -443,6 +475,8 @@ export function useWorkspace(
         acceptGeneration(result, project, pending.key);
       } else if (result.status === "failed") {
         if (userId) clearPendingGeneration(userId, pending.projectId);
+        if (userId) saveFailedGeneration(userId, pending.projectId, result.id);
+        setFailedGeneration(result);
         setPending(null); setSubmitError(`Attempt failed: ${result.errorCode ?? "GENERATION_FAILED"}. Saved files remain available.`);
         chat.activity(project.id, `generation:${pending.key}`, "Attempt failed. Saved files remain available.", "error", generationActivity(result));
       } else {
@@ -494,10 +528,11 @@ export function useWorkspace(
     projects, projectCursor, listBusy, listError, project: visible ? project : null,
     revision: visible ? revision : null, revisions: visible ? revisions : [], revisionCursor,
     loadBusy, loadError: selection.error || loadError, prompt, setPrompt, notice, submitError,
-    pending: visible ? pending : null, busy,
+    pending: visible ? pending : null, failedGeneration: visible ? failedGeneration : null, busy,
     canSubmit: !busy && !loadBusy && !loadError && !selection.error && !pending && visible,
     selectedProjectId: selection.projectId,
     navigate, submit, checkPending, abandonPending, loadMoreRevisions,
+    repairOnce: () => failedGeneration?.repairAvailable ? submit(false, undefined, failedGeneration.id) : Promise.resolve(),
     loadMoreProjects: () => loadProjectPage(projectCursor), refreshProjects: () => loadProjectPage(),
     refreshSelection: () => setReload((value) => value + 1),
   };

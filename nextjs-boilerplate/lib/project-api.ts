@@ -37,9 +37,11 @@ export type Generation = {
 export type PendingGenerationStatus = {
   id: string; status: "pending"; hasSavedResult: boolean; errorCode: null;
 };
-export type GenerationStatus = Generation | PendingGenerationStatus | {
+export type FailedGenerationStatus = {
   id: string; status: "failed"; hasSavedResult: boolean; errorCode: string | null;
+  repairAvailable?: boolean; repairAttemptId?: string | null;
 };
+export type GenerationStatus = Generation | PendingGenerationStatus | FailedGenerationStatus;
 export type GenerationBody = { prompt?: string; baseRevisionId?: string };
 
 // Preserve status/codes so the UI distinguishes retryable uncertainty from terminal failure.
@@ -225,6 +227,16 @@ export async function generateProject(projectId: string, token: ProjectAccess, k
   return body.generation;
 }
 
+// One explicit click reserves one repair; retry callers retain the same original ID and request key.
+export async function repairProject(projectId: string, failedId: string, token: ProjectAccess, key: string): Promise<Generation | PendingGenerationStatus> {
+  const body = await request(`${projectPath(projectId)}/generations${projectPath(failedId)}/repair`, token, {
+    method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": key },
+    body: "{}", signal: AbortSignal.timeout(100_000),
+  });
+  if (!isGeneration(body.generation) && !isPendingGeneration(body.generation)) throw new Error("Invalid repair response. Keep the request key and check again.");
+  return body.generation;
+}
+
 // Read uncertainty without starting AI or publishing saved output.
 export async function getGeneration(projectId: string, generationId: string, token: ProjectAccess, signal?: AbortSignal): Promise<GenerationStatus> {
   const body = await request(`${projectPath(projectId)}/generations${projectPath(generationId)}`, token, { signal });
@@ -232,6 +244,11 @@ export async function getGeneration(projectId: string, generationId: string, tok
   const value = body.generation;
   if (!isRecord(value) || value.id !== generationId || typeof value.status !== "string" || !["pending", "failed"].includes(value.status) || typeof value.hasSavedResult !== "boolean" ||
     !(value.status === "pending" ? value.errorCode === null : value.errorCode === null || typeof value.errorCode === "string")) throw new Error("Invalid generation status response.");
+  if (value.status === "failed" && (
+    (value.repairAvailable !== undefined && typeof value.repairAvailable !== "boolean") ||
+    (value.repairAttemptId !== undefined && value.repairAttemptId !== null && !isProjectId(value.repairAttemptId)) ||
+    (value.repairAvailable === true && (value.errorCode !== "BUILD_VERIFICATION_FAILED" || !value.hasSavedResult || value.repairAttemptId !== null))
+  )) throw new Error("Invalid repair eligibility response.");
   return value as GenerationStatus;
 }
 

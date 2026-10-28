@@ -5,15 +5,41 @@ This Next.js application provides AgentForge's authentication screens and local 
 ## Conversational workspace
 
 - One permanent composer accepts short greetings, planning questions and frontend build/edit requests. Enter sends; Shift+Enter inserts a line. A failed reply or build keeps the original text available. Navigation/account changes cannot apply a late response to a different project.
-- `POST /api/conversations` returns one validated `reply`, `clarify`, or `build` decision from the configured model. Greetings/plans do not create projects. Only a build decision creates/updates files through the existing idempotent generation API; there is no automatic retry after an ambiguous chat failure.
+- Authenticated saved-chat POST streams cumulative reply text over SSE, then one validated `reply`, `clarify`, or `build` decision. Greetings/plans do not create projects. Only a build decision creates/updates files through the existing idempotent generation API; there is no automatic retry after an ambiguous chat failure. The old JSON conversation API remains compatible.
 - Recent user/assistant messages are sent as bounded context (at most 16 messages / 16 KB). A visible activity detail records when older displayed history was excluded. Source files come from the server-owned selected revision, never editable browser payloads.
 - Each assistant reply has an expandable **Run report**: model, reported tokens (unknown remains unknown), latency, decision, retrieval method and exact guidance source IDs. This is observed metadata, not private reasoning or a claim that code compiled.
 - Desktop layout keeps the compact gray reference-style chat/sidebar, editor and Preview. Changes/history are in one drawer. The old questionnaire, duplicate Changes panel, sample terminal and fake demo data were removed; legacy backend Brief endpoints/data remain supported.
-- Display history stays account-scoped in this browser, including an unsaved draft conversation. The first generated project adopts that transcript. Saved source files/revisions remain authoritative in MongoDB. No new frontend dependency.
+- New conversations are saved to the owner account in MongoDB and restore in a fresh authenticated browser. The UI keeps bounded display/activity caches; older browser-only history is not silently uploaded. Saved source files/revisions remain authoritative in MongoDB. No new frontend dependency.
 
 Start from the repository root with `npm run dev:web` and the Auth/Project/AI services running. AI uses port 6001. Local Preview additionally requires the trusted host Execution setup below; starting Compose's status-only Execution container is not enough.
 
 Small file map: `ChatPanel` renders the composer/history; `ConversationTimeline` renders safe Markdown/activity/results; `useWorkspace` coordinates saved files and requests; `useConversation` owns display storage; `lib/conversation-api` validates chat replies and bounds the request context. None of these modules stores provider secrets.
+
+### Optional one-attempt repair
+
+After a known candidate compile failure, the composer remains usable. If Project reports
+`repairAvailable=true`, one inline **Repair once (uses AI tokens)** action explains that it makes
+an extra AI call and fresh build. No repair runs on mount, refresh or failure automatically.
+Backend `REPAIR_ENABLED=false` remains the default; see [Project setup](../project-service/README.md#explicit-one-attempt-build-repair).
+
+`lib/project-api.ts` sends only the failed ID, empty body and stable request key. `useWorkspace`
+reuses the existing pending/poll/publication flow instead of adding another agent state machine.
+Tab storage retains `repairOf` separately from the repair's new generation ID, so retry cannot
+accidentally POST to ordinary generation. Generic proxy 502/transport uncertainty retains that identity;
+GET checks never infer. Account/URL guards prevent late work appearing in another selection.
+
+Only a failed ID is retained for reopening the repair action in the same tab; eligibility is re-read
+from the backend. This local marker is not cross-browser repair discovery, and disabled storage can
+lose the marker/key on refresh. Chat history and committed revisions are separately durable.
+No source, compiler logs or credentials are stored in the new repair marker.
+
+Verification: 63 unit tests, typecheck, lint, production build and the six-checkpoint
+`scripts/workspace-repair.browser.js` browser flow. Browser composition uses an empty dedicated test
+DB with `AGENTFORGE_TEST_PREVIEW=1`, `AGENTFORGE_TEST_BUILD_GATE=1`, `AGENTFORGE_TEST_REPAIR=1`
+and a trusted existing `PREVIEW_RUNNER_IMAGE`. Real Auth/Project/Mongo/Execution/Docker run locally;
+AI HTTP responses and one deliberately lost proxy response are fixtures, not live-provider evidence.
+The test proves a failed compile -> one explicit repair -> stable replay after reload -> new passing
+build -> interactive isolated Preview. See [system-design Q&A 16–19](../docs/SYSTEM_DESIGN_QA.md#16-how-does-a-reply-stream-through-three-services).
 
 Runtime security refresh: Next.js and its matching ESLint config are pinned to 16.4.3; the shared lockfile
 uses Sharp 0.35.5 and source-map-js 1.2.2. These are scoped fixes for reported upstream advisories, not
