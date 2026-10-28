@@ -1,5 +1,6 @@
 import { candidateHash, matchingBuildVerification } from "../clients/build-verification.js";
-import { requestCandidateCheck } from "../clients/execution.client.js";
+import { BuildVerificationFailure, requestCandidateCheck } from "../clients/execution.client.js";
+import { safeRepairDiagnostics } from "../clients/repair.contract.js";
 import { AppError } from "../middlewares/error.middleware.js";
 import { findOwnedGeneration, saveBuildVerification, type GenerationReadRecord } from "../repositories/generation.repository.js";
 import { logGenerationBookkeepingFailure, publishGeneration, recordGenerationFailure, unknownGenerationOutcome } from "./generation.publication.js";
@@ -23,7 +24,9 @@ async function checkAndPublish(generation: GenerationReadRecord, authorization: 
     await publishGeneration(saved);
   } catch (error) {
     if (error instanceof AppError && error.code === "BUILD_VERIFICATION_FAILED") {
-      await recordGenerationFailure(generation, "BUILD_VERIFICATION_FAILED");
+      const diagnostics = error instanceof BuildVerificationFailure
+        ? safeRepairDiagnostics(error.diagnostics, generation.result?.files) : [];
+      await recordGenerationFailure(generation, "BUILD_VERIFICATION_FAILED", diagnostics);
     } else {
       // Busy, network, DB and expired internal JWT outcomes stay pending for an explicit same-key retry.
       logGenerationBookkeepingFailure("build_gate_unconfirmed", id, error);

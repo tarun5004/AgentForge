@@ -89,6 +89,14 @@ AI's additive `/internal/repairs` boundary validates exact failed files and type
 the pinned skill locally and makes one tool-free, zero-retry, 8000-output-token call. It returns
 validated changes only; Project attempt reservation and a fresh build remain required before UI activation.
 
+Project now reserves one sparse-unique `repairOf` attempt before inference, stores typed feedback,
+independently merges the repaired candidate, and uses captured fresh-build publication. Off by default;
+failed/unknown model work cannot silently repeat. Owner-isolation, concurrency, no-recursion, failure,
+lost-write acknowledgement and captured-gate tests cover the backend. The real Mongo/HTTP/Docker
+check also passed with deterministic AI output: invalid compile -> one explicit fixture repair ->
+fresh successful restricted build -> immutable publication. Real-provider repair quality and frontend
+repair controls are not claimed by this backend slice.
+
 - Project owns the repair attempt/state; Execution supplies allowlisted bounded compiler diagnostics;
   AI receives the original request, exact failed candidate and sanitized diagnostics as untrusted data.
 - Do not send environment files, JWTs, arbitrary build logs or shell commands to the model. Redact/limit

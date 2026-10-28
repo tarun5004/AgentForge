@@ -6,16 +6,17 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 // A fresh process and empty directory keep local credentials/dotenv out of configuration tests.
-function readConfig(url = "") {
+function readConfig(url = "", overrides: Record<string, string | undefined> = {}) {
   const directory = mkdtempSync(join(tmpdir(), "agentforge-project-config-"));
   try {
     return spawnSync(process.execPath, ["--import", import.meta.resolve("tsx"), "--input-type=module", "-e",
       `const {env}=await import(${JSON.stringify(new URL("./env.ts", import.meta.url).href)}); process.stdout.write(env.AI_ORCHESTRATOR_URL);`], {
       cwd: directory, encoding: "utf8", timeout: 10_000,
       env: { ...process.env, NODE_ENV: "test", PORT: "3000", BUILD_GATE_ENABLED: "false",
+        REPAIR_ENABLED: "false",
         EXECUTION_CHECK_TOKEN: undefined, DOTENV_CONFIG_QUIET: "true",
         MONGODB_URI: "mongodb://127.0.0.1/agentforge_test_config", ACCESS_TOKEN_SECRET: "config-test-only",
-        INTERNAL_SERVICE_TOKEN: "config-internal-test-only", AI_ORCHESTRATOR_URL: url },
+        INTERNAL_SERVICE_TOKEN: "config-internal-test-only", AI_ORCHESTRATOR_URL: url, ...overrides },
     });
   } finally { rmSync(directory, { recursive: true, force: true }); }
 }
@@ -24,6 +25,14 @@ test("host AI defaults to a Fetch-compatible port", () => {
   const result = readConfig();
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, "http://localhost:6001");
+});
+
+test("repair defaults off, rejects malformed flags and cannot bypass the build gate", () => {
+  assert.equal(readConfig("", { REPAIR_ENABLED: undefined }).status, 0);
+  const invalid = readConfig("", { REPAIR_ENABLED: "yes" });
+  assert.notEqual(invalid.status, 0); assert.match(invalid.stderr, /REPAIR_ENABLED must be true or false/);
+  const ungated = readConfig("", { REPAIR_ENABLED: "true" });
+  assert.notEqual(ungated.status, 0); assert.match(ungated.stderr, /Repair requires BUILD_GATE_ENABLED=true/);
 });
 
 test("the blocked port fails at startup, while Compose DNS remains supported", () => {

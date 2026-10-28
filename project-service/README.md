@@ -132,6 +132,44 @@ Internal candidate GET: `/internal/projects/:projectId/generations/:generationId
 
 ## Verification
 
+### Explicit one-attempt build repair
+
+Repair is **off by default**. Set `REPAIR_ENABLED=true` only together with `BUILD_GATE_ENABLED=true`
+and the existing host Execution check credentials. The compatible AI `/internal/repairs` and
+Execution safe-feedback endpoints must be deployed first. Real local `.env` files are not changed automatically.
+
+Owner-JWT `POST /api/projects/:projectId/generations/:generationId/repair` accepts `{}` (or no body)
+and `Idempotency-Key`; it loads the owned failed candidate, original prompt and safe compiler feedback.
+Browser-provided files, diagnostics and model settings are rejected. Only a captured, known compile failure
+with stored output/feedback is eligible, not a timeout, auth/cleanup failure, uncertain result, legacy
+incomplete record, already repaired candidate or repair-of-repair. A changed project head rejects before spending.
+
+- Mongo reserves a new Generation with immutable `repairOf` **before** calling AI. The sparse unique
+  `repairOf` index permits at most one repair per original across concurrent requests/processes;
+  startup waits for Generation indexes. Existing records omit the field and need no backfill.
+- The failed original stays failed. The repair copies its original parent and expected version.
+  AI edits the failed snapshot; Project independently merges it, validates the full result and computes
+  the revision diff against the original saved parent. Repair usage describes the repair call only;
+  original generation usage remains on its separate record.
+- Save output before queuing a **fresh** hash-bound build check. Return 202 pending or 201 committed
+  on completed replay. Publication uses the existing immutable Revision/unique-version guard.
+  Old revisions survive failed repair; no recursive/automatic second model attempt is allowed.
+- Same key resolves the same reserved attempt. Different key after reservation returns
+  409 `REPAIR_ALREADY_ATTEMPTED`; wrong-operation key returns `IDEMPOTENCY_MISMATCH`.
+  Disabled/new-ineligible calls return `REPAIR_DISABLED`/`REPAIR_UNAVAILABLE`; head change returns
+  `REVISION_CONFLICT`. Provider/invalid-output failure is sanitized 502 `AI_REPAIR_FAILED` and consumes
+  the slot. Persistence uncertainty is 503 `OUTCOME_UNKNOWN`: keep the key, never assume a free retry.
+- GET generation status is no-store and never does work. Failed status adds `repairAvailable` and
+  nullable `repairAttemptId`; raw diagnostics/source logs never enter this public DTO.
+  Saved-result replay may resume its captured build even after flags are disabled. A reserved attempt
+  with no saved result never repeats inference, including after a crash. There is no durable worker queue.
+
+`npm --workspace project-service run test:repair` requires an **empty dedicated** local
+`AGENTFORGE_TEST_MONGODB_URI=.../agentforge_test_<unique_run>`. Default tests use real HTTP/Mongo
+and deterministic AI/build transports. Opt in with `RUN_DOCKER_TESTS=1` plus an already built trusted
+`PREVIEW_RUNNER_IMAGE` for a real failing compile → fixture repair → fresh passing Docker build.
+This does not call a paid provider or prove real-model repair quality.
+
 ```powershell
 npm --workspace project-service test
 npm --workspace project-service run typecheck

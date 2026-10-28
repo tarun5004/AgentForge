@@ -1,6 +1,14 @@
 import { env } from "../config/env.js";
 import { AppError } from "../middlewares/error.middleware.js";
 import { buildVerificationSchema, type BuildVerification } from "./build-verification.js";
+import { safeRepairDiagnostics, type RepairDiagnostic } from "./repair.contract.js";
+
+// Typed safe feedback is distinct from infrastructure uncertainty and unstructured upstream text.
+export class BuildVerificationFailure extends AppError {
+  constructor(generationId: string, public diagnostics: RepairDiagnostic[]) {
+    super(502, "Generated code did not pass the static build check.", "BUILD_VERIFICATION_FAILED", generationId);
+  }
+}
 
 // Read only a small result envelope; build logs or oversized internal bodies must not enter memory.
 async function readCheckResponse(response: Response): Promise<unknown> {
@@ -22,8 +30,9 @@ export async function requestCandidateCheck(input: { projectId: string; generati
       method: "POST", headers: { "Content-Type": "application/json", authorization, "x-execution-check-token": env.EXECUTION_CHECK_TOKEN },
       body: JSON.stringify(input), redirect: "error", signal: AbortSignal.timeout(180_000),
     });
-    const body = await readCheckResponse(response) as { code?: unknown; buildVerification?: unknown };
+    const body = await readCheckResponse(response) as { code?: unknown; buildVerification?: unknown; diagnostics?: unknown };
     if (response.status === 422 && typeof body.code === "string" && ["BUILD_VERIFICATION_FAILED", "CANDIDATE_UNSUPPORTED"].includes(body.code)) {
+      if (body.code === "BUILD_VERIFICATION_FAILED") throw new BuildVerificationFailure(input.generationId, safeRepairDiagnostics(body.diagnostics));
       throw new AppError(502, "Generated code did not pass the static build check.", "BUILD_VERIFICATION_FAILED", input.generationId);
     }
     if (!response.ok) throw new Error("Check not confirmed.");

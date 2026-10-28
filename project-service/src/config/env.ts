@@ -33,6 +33,9 @@ if (checkToken !== undefined && (!/^[A-Za-z0-9_-]{32,256}$/.test(checkToken) ||
 }
 if (buildGate === "true" && !checkToken) throw new Error("Build gate requires EXECUTION_CHECK_TOKEN.");
 if (buildGate === "true" && nodeEnv === "production") throw new Error("Local build gate is not approved for public production.");
+const repair = process.env.REPAIR_ENABLED ?? "false";
+if (!["true", "false"].includes(repair)) throw new Error("REPAIR_ENABLED must be true or false.");
+if (repair === "true" && buildGate !== "true") throw new Error("Repair requires BUILD_GATE_ENABLED=true.");
 // Reject nonlocal targets with a fixed error, without echoing possibly sensitive URL text.
 function executionOrigin(): string {
   try {
@@ -60,6 +63,7 @@ export const env = {
   AI_ORCHESTRATOR_URL: aiOrchestratorUrl,
   INTERNAL_SERVICE_TOKEN: getRequiredEnv("INTERNAL_SERVICE_TOKEN"),
   BUILD_GATE_ENABLED: buildGate === "true",
+  REPAIR_ENABLED: repair === "true",
   EXECUTION_CHECK_TOKEN: checkToken,
   EXECUTION_SERVICE_URL: executionOrigin(),
 };

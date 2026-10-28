@@ -8,6 +8,7 @@ import {
   getRevisionController,
   listRevisionsController,
   getGenerationController,
+  createRepairController,
 } from "../controllers/project.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
 import * as brief from "../controllers/brief.controller.js";
@@ -25,6 +26,7 @@ projectRouter.get("/:projectId", authenticate, getProjectController);
 projectRouter.get("/:projectId/revisions", authenticate, listRevisionsController);
 projectRouter.get("/:projectId/revisions/:revisionId", authenticate, getRevisionController);
 projectRouter.get("/:projectId/generations/:generationId", authenticate, getGenerationController);
+projectRouter.post("/:projectId/generations/:generationId/repair", authenticate, createRepairController);
 
 projectRouter.post("/", authenticate, createProjectController);
 projectRouter.post(

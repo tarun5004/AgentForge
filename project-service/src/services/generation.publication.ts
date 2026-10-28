@@ -1,6 +1,7 @@
 import { prepareGenerationRequest, validateGenerationResponse } from "../clients/generation.contract.js";
 import { AppError } from "../middlewares/error.middleware.js";
 import { matchingBuildVerification } from "../clients/build-verification.js";
+import type { RepairDiagnostic } from "../clients/repair.contract.js";
 import {
   markGenerationFailed,
   markGenerationReady,
@@ -47,9 +48,9 @@ export async function repairPublishedGeneration(generation: GenerationReadRecord
 }
 
 // A failed attempt does not make an older saved revision disappear or reserve a new version.
-export async function recordGenerationFailure(generation: GenerationReadRecord, code: string): Promise<void> {
+export async function recordGenerationFailure(generation: GenerationReadRecord, code: string, diagnostics?: RepairDiagnostic[]): Promise<void> {
   const id = generation._id.toString();
-  try { await markGenerationFailed(id, code); }
+  try { await markGenerationFailed(id, code, diagnostics); }
   catch (error) { logGenerationBookkeepingFailure("mark_failed", id, error); }
   try {
     const projectId = generation.projectId.toString();
