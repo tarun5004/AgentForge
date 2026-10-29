@@ -4,6 +4,21 @@
 
 **Purpose:** Convert the current synchronous generation demo into a reliable, explainable code-generation platform through small, verifiable milestones.
 
+## Current correction — 2026-10-29
+
+Follow the [simplification recovery plan](AI_PORTFOLIO_DELIVERY_PLAN.md#simplification-recovery--2026-10-29-current-priority).
+The polished real-model attempt failed at its whole-response output limit before an accepted revision
+or build. Earlier counter/fixture checks do not establish website quality. The disconnected, unmerged
+AI per-file streaming experiment has been removed from active source and preserved in an ignored
+local backup. Project still uses the existing JSON generator. Prioritize that connected workflow,
+not more features or parallel implementations; review call budgets before separately testing live.
+The connected JSON generator now reads fixed guidance locally, plans paths, then generates one file
+per bounded call in its existing modules. Offline verification passed (116 AI tests and 45 Project
+units/contracts); real Docker/Mongo/browser fixture checks passed after a separate frontend hand-off
+race fix. These are pre-delivery verification results, not merge evidence. No live provider call was
+made; real portfolio quality is still pending a separately budget-approved acceptance run.
+The older sections below are dated evidence, not current end-to-end acceptance.
+
 ## Conversation reliability extension — 2026-10-26
 
 Current verified core and real-provider evidence are in [Local workspace delivery](LOCAL_WORKSPACE_DELIVERY.md).

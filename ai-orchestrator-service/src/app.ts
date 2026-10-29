@@ -12,7 +12,12 @@ import { createConversationStreamController } from "./features/conversations/con
 import { repairProject, repairRequestSchema } from "./features/generations/repair.service.js";
 
 // Internal workflows share authentication and the configured model; injection is only a test seam.
-export function createApp(requirementAssessor: typeof assessRequirements = assessRequirements, conversationResponder: typeof respondToConversation = respondToConversation, conversationStreamer: typeof streamConversation = streamConversation, repairer: typeof repairProject = repairProject) {
+export function createApp(
+  requirementAssessor: typeof assessRequirements = assessRequirements,
+  conversationResponder: typeof respondToConversation = respondToConversation,
+  conversationStreamer: typeof streamConversation = streamConversation,
+  repairer: typeof repairProject = repairProject,
+) {
   const app = express();
 
   app.use(morgan("dev"));

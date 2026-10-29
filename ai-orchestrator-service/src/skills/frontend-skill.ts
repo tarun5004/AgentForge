@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 export const FRONTEND_SKILL_ID = "frontend-design";
-export const FRONTEND_SKILL_HASH = "dc626b4d8f8e805ddc392b9cf68a595471ee7e788a6ef48f4871842f8125c2ee";
+export const FRONTEND_SKILL_HASH = "8fb7c1f599ebfb4092a6db059feba446c6b060d92056c6fa14ec14e63bffb45e";
 
 // Pin reviewed text, not a mutable GitHub URL; tolerate Git's Windows line-ending conversion only.
 export function validateFrontendSkill(text: string): string {
@@ -19,7 +19,7 @@ export async function loadFrontendSkill() {
   const text = await readFile(new URL("../../skills/frontend-design/SKILL.md", import.meta.url), "utf8");
   return {
     id: FRONTEND_SKILL_ID,
-    version: "agentforge-frontend-design-v1",
+    version: "agentforge-frontend-design-v2",
     sourceRevision: "dbd4588f9e1033efb41dad4bef2f7947c8993d44",
     contentSha256: FRONTEND_SKILL_HASH,
     instructions: validateFrontendSkill(text),
