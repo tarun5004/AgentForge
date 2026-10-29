@@ -1,5 +1,104 @@
 # AgentForge — applied AI portfolio delivery contract
 
+## Simplification recovery — 2026-10-29 (current priority)
+
+**Goal:** one understandable local workflow: prompt -> appropriate reply/plan or explicit build ->
+generated files -> real build -> saved revision -> local Preview -> targeted follow-up edit.
+Keep the existing services; this is not a rewrite, a public SaaS, or a Cursor clone.
+
+### Evidence and first cleanup
+
+| Finding | Action |
+| --- | --- |
+| Project's `ai-orchestrator.client.ts` calls `/internal/generations` and reads one JSON result. | Keep that connected contract while investigating its failure. |
+| The unmerged website stream route, schema, service and tests have no Project/frontend caller. | Remove that disconnected experiment and its app/test wiring. Exact local copies are preserved under ignored `output/cleanup-backups/20261029-ai-incremental/`. |
+| Splitting frontend rules existed only to serve both generators. | Keep one rules constant in the existing prompt module; keep path/file validators private where external callers are no longer needed. |
+| The saved polished real-model test ended with `MAX_TOKENS` / `AI_NoObjectGeneratedError`, zero accepted revisions and no build. | The product acceptance remains failed. Cleanup is not a generation fix or live verification. Evidence: ignored `output/playwright/polished-live-20261028/result.json`. |
+| Brief APIs still support historical requirements/replay; auth, ownership, immutable history, validation and build checks have callers. | Keep them. No data migration or compatibility removal is approved by a file-count cleanup. |
+
+### Next bounded slices
+
+### Approved recovery execution — 2026-10-29
+
+The user approved backend-first recovery; live inference remains blocked until a separate budget is
+agreed. Execute inline on the existing AI branch without new application files or dependencies.
+Git delivery was excluded from recovery implementation; the user subsequently approved focused
+commit/push/PR/merge delivery. This section is the execution checklist and historical ledger.
+
+- [x] **Task 1 — zero-credit baseline:** run existing candidate/Docker Preview integration checks.
+  Exercise real compilation, CSS, browser interaction, invalid builds and cleanup. Fixed test source
+  is infrastructure evidence only. Do not claim these tests cover a real model or normal application DB.
+- [x] **Task 2 — connected generator:** update existing `generation.service.ts`, `generation.schema.ts`
+  and `generation.prompt.ts`; keep `generateProject(request, model?)` and its result shape unchanged.
+  Read the fixed skill directly, ask for a bounded file plan, then complete one planned file per call.
+  Maximum six changed files / seven calls, 1,000 plan tokens / 3,000 per-file tokens, zero retries,
+  and the existing shared 80-second deadline. This raises the theoretical output allocation from the
+  old 8,256 to 19,000 tokens: it is NOT enabled in any live test without a separately approved budget.
+  Preserve the existing 12-file snapshot and source/context limits. Validate plan before file calls,
+  reject mismatched paths/truncation, and validate the final change set before returning any result.
+- [x] **Task 3 — zero-credit regression:** replace obsolete skill-selection tests in existing test files.
+  Cover multi-file ordering, exact follow-up context, deletion-only changes, unsafe/duplicate plans,
+  malformed/truncated files, no retries, shared cancellation, usage and Google JSON adapter behavior.
+  Run AI tests/typecheck/build and Project unit/contract tests. Public progress streaming is deferred:
+  the existing editor receives files only after acceptance, not during these internal file calls.
+- [x] **Task 4 — review and handoff:** review the changed workflow and document its real limits.
+  Live portfolio/brand quality, normal browser publication and follow-up acceptance remain pending
+  until a separately bounded provider run. Do not describe offline checks as full product completion.
+
+**Pre-flight:** Tasks 2/3 share the existing generation request/result contract; Project's 90-second
+HTTP timeout remains unchanged. Task 1 is independent and adds no AI/provider calls. The current
+repository plan is reused instead of generating more planning/ledger files (user preference).
+
+**Execution ledger:**
+- Task 1 partial: existing real Docker/browser export test and candidate-build test passed, including
+  CSS, interactive counter, isolation probes, invalid source and exact container cleanup. Their source
+  and ownership transport are fixtures. The first full Auth/Project/Mongo/browser check failed before
+  a generation POST; its dedicated test data and owned Mongo container were cleaned successfully.
+- Task 1 backend publication: all six Project/Mongo/Execution gate tests passed, including the real
+  Docker case. This separates backend publication from the browser hand-off failure. The test used
+  deterministic AI transport, not the configured model, and its temporary Mongo container was removed.
+- Task 2: replaced the connected generator in existing modules; 12 new-contract tests were observed
+  failing against the old implementation before the first 15 passed. Follow-up size review found an
+  intermediate-snapshot rejection; its reproducer failed, then passed after validating each file
+  immediately and aggregate size on the final manifest. Per-call context bounds remain enforced.
+- Task 3: 116 AI tests, AI typecheck/build and 45 Project unit/contract tests passed after review.
+  No live inference was made. The Google adapter was exercised through intercepted HTTP responses.
+- Ruling: the browser failure required an independent frontend guard fix, not another generator
+  change. It is isolated on `fix/frontend-initial-generation-handoff` in the existing clean frontend
+  worktree, based on the same `origin/main`, with no dependency on the AI changes. It admits only the
+  exact newly created project/chat URL before chat linking can trigger a redirect. The existing
+  browser suite now forces that timing: old guard failed before any generation POST; the small fix
+  passed real Auth/Project/Mongo/Docker/iframe publication, reload, failed-build preservation,
+  ownership, replay and Stop checks. AI transport remained a fixture; both runs cleaned scoped data.
+  Broadening this exception to arbitrary navigation would be unsafe and is not done.
+- Ruling: shared 80-second deadlines and the legacy response/API stay unchanged. Large/slow requests
+  can still fail; live acceptance and dollar-budget approval are pending, not inferred from mocks.
+- Final review: one independent AI finding (intermediate aggregate-size rejection) was reproduced
+  RED -> GREEN and the 116-test suite passed after the fix. The separate frontend review found no
+  actionable issue; 63 frontend units and lint passed. Production build result is recorded below.
+- Frontend production build passed, including TypeScript and static-page generation. The final lint
+  rerun passed after the guard fix was restored. At that pre-delivery checkpoint both branches were
+  uncommitted/unmerged and separate; the AI checkout did not include the frontend fix. All owned test listeners
+  and containers were removed; normal application data was not used.
+- Evidence: ignored `output/playwright/recovery-20261029/` contains SDK red/green logs, gate/Preview
+  logs, the copied successful browser report, and fixture-only screenshots. No new application file,
+  provider call, application-database write or Git delivery was part of recovery.
+
+### Follow-on work (not silently included)
+
+1. Deliver the verified AI recovery and frontend hand-off fix through separate focused PRs; verify
+   the combined main checkout. Git delivery does not establish live-model quality.
+2. Run a separately budgeted real brand/portfolio test covering requested pages, navigation,
+   interactions, compilation, Preview and follow-up editing. Stop on failure rather than retrying
+   automatically. Do not infer live quality from mocked SDK responses.
+3. After live acceptance, consider actual file progress in service-scoped slices.
+   Keep candidates distinct from accepted revisions; never fake progress or enable Preview early.
+
+**Working rules:** the existing root `AGENTS.md` holds the minimal-code/root-cause policy.
+Explain each slice before editing. Prefer existing modules; justify any necessary new file.
+Ask about material ambiguity. No automatic paid repair/fallback or infrastructure expansion. Git
+delivery requires explicit user approval. Older notes below are not current product acceptance.
+
 ## Stabilization priority — 2026-10-25
 
 This user-requested revision takes priority over adding portfolio features below. The goal is a small,

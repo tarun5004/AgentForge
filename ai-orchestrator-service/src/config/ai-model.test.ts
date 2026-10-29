@@ -92,10 +92,10 @@ test("requirements use the real Google JSON adapter with no Gateway auth or netw
   assert.ok(sent.body.generationConfig?.responseJsonSchema);
 });
 
-test("Google generation calls the local skill then returns validated files with summed usage", async () => {
+test("Google generation uses JSON plan/file calls with local guidance and no skill-selection inference", async () => {
   const fixture = googleFixture([
-    [{ functionCall: { name: "loadSkill", args: { skillId: "frontend-design" } }, thoughtSignature: "test-signature" }],
-    [{ text: JSON.stringify(manifest) }],
+    [{ text: JSON.stringify({ ...manifest, files: manifest.files.map(file => file.path) }) }],
+    [{ text: JSON.stringify(manifest.files[0]) }],
   ]);
   const result = await generateProject({ ...request, template: "nextjs", mode: "economy" }, fixture.model);
   assert.equal(fixture.requests.length, 2);
@@ -104,11 +104,10 @@ test("Google generation calls the local skill then returns validated files with 
   assert.deepEqual(result.files, manifest.files);
   assert.deepEqual(result.usage, { inputTokens: 20, outputTokens: 40, totalTokens: 60 });
   const first = fixture.requests[0]!.body;
-  assert.deepEqual(first.toolConfig?.functionCallingConfig?.allowedFunctionNames, ["loadSkill"]);
-  assert.equal(first.generationConfig?.responseMimeType, undefined, "The forced tool step must not enable JSON response mode");
+  assert.equal(first.toolConfig?.functionCallingConfig?.allowedFunctionNames, undefined);
+  assert.equal(first.generationConfig?.responseMimeType, "application/json");
   const second = fixture.requests[1]!.body;
-  assert.ok(JSON.stringify(second.contents).includes("small name component stays small"));
-  assert.ok(JSON.stringify(second.contents).includes("test-signature"));
+  assert.ok(JSON.stringify(second).includes("small name component stays small"));
   assert.equal(second.generationConfig?.responseMimeType, "application/json");
   assert.equal((second.tools ?? []).length, 0);
 });
@@ -121,9 +120,8 @@ test("Google quota failure is not retried or routed to paid Gateway", async () =
 
 test("Google output still passes independent frontend safety validation", async () => {
   const fixture = googleFixture([
-    [{ functionCall: { name: "loadSkill", args: { skillId: "frontend-design" } }, thoughtSignature: "test-signature" }],
-    [{ text: JSON.stringify({ ...manifest, files: [{ path: "app/api/route.ts", content: "export function GET() {}" }] }) }],
+    [{ text: JSON.stringify({ ...manifest, files: ["app/api/route.ts"] }) }],
   ]);
   await assert.rejects(generateProject({ ...request, template: "nextjs", mode: "economy" }, fixture.model), /Unsafe generated frontend file path/);
-  assert.equal(fixture.requests.length, 2);
+  assert.equal(fixture.requests.length, 1);
 });

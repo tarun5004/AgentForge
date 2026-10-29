@@ -12,3 +12,8 @@ Adapted from Anthropic's `frontend-design` skill.
 SKILL.md is MODIFIED, not the original upstream file. AgentForge condenses the design/copy/accessibility guidance and replaces broad design-studio workflow with a small frontend-only generation policy. External fonts/assets/packages, extra approval conversations, tool acquisition, screenshots and speculative execution claims are excluded. Small tasks and targeted follow-ups remain small. The adaptation is not endorsed by Anthropic.
 
 Runtime uses only this reviewed local copy, never the current GitHub main branch. Source/license review does not establish model quality or sandbox security.
+
+2026-10-29 adaptation update: guidance now explicitly covers websites as well as small components.
+The output instruction follows the connected workflow's supplied JSON schema (plan, complete file,
+or repair manifest). The unconnected streaming experiment was removed during simplification.
+Original attribution/license, frontend-only restrictions and tamper validation are unchanged.

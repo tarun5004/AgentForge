@@ -4,7 +4,7 @@ import { z } from "zod";
 export const MAX_CONTEXT_BYTES = 240_000;
 export const MANIFEST_POLICY_VERSION = "frontend-manifest-v1";
 
-const fileSchema = z.strictObject({
+export const fileSchema = z.strictObject({
   path: z.string().min(1).max(120).describe("Canonical relative frontend path using forward slashes."),
   content: z.string().min(1).max(30_000).describe("Complete file contents without Markdown fences."),
 });
@@ -79,6 +79,36 @@ export const generatedManifestSchema = z.strictObject({
 
 export type GenerationRequest = z.infer<typeof generationRequestSchema>;
 export type GeneratedManifest = z.infer<typeof generatedManifestSchema>;
+
+export const generationPlanSchema = z.strictObject({
+  summary: z.string().min(10).max(240),
+  files: z.array(z.string().min(1).max(120)).max(6)
+    .describe("Added/modified paths in generation order: shared styles/data/components before pages that use them."),
+  deletedPaths: z.array(z.string().min(1).max(120)).max(12),
+});
+
+// Reject impossible operations before spending on file contents; final validation still checks actual source.
+export function validateGenerationPlan(input: unknown, base: z.infer<typeof fileSchema>[] = []) {
+  const plan = generationPlanSchema.parse(input);
+  const paths = new Map(base.map(file => [file.path.toLowerCase(), file.path]));
+  const seen = new Set<string>();
+  for (const path of [...plan.files, ...plan.deletedPaths]) {
+    validatePath(path);
+    const key = path.toLowerCase();
+    if (seen.has(key)) throw new Error("Duplicate or conflicting planned path.");
+    if (paths.has(key) && paths.get(key) !== path) throw new Error("Case-only file path changes are not allowed.");
+    seen.add(key);
+  }
+  for (const path of plan.deletedPaths) {
+    if (paths.get(path.toLowerCase()) !== path) throw new Error("Deleted file does not belong to the selected base.");
+    paths.delete(path.toLowerCase());
+  }
+  for (const path of plan.files) paths.set(path.toLowerCase(), path);
+  if (!seen.size || paths.size > 12 || paths.get("app/page.tsx") !== "app/page.tsx") {
+    throw new Error("Plan must change files and retain a homepage within the snapshot limit.");
+  }
+  return plan;
+}
 
 // Check the change operations against the selected base before returning model output.
 // Project Service still independently merges/revalidates before it ever publishes a revision.
