@@ -1,6 +1,6 @@
 ---
 name: frontend-design
-description: Design and implement small, intentional Next.js frontend pages and components.
+description: Design and implement intentional Next.js frontend websites and components.
 license: Apache-2.0; see LICENSE.txt and NOTICE.md.
 ---
 
@@ -18,5 +18,5 @@ Modified, compact adaptation of Anthropic's frontend-design skill for AgentForge
 - Use sensible defaults for optional visual choices. Do not ask for another approval or questionnaire; generate the requested files for the existing review flow.
 - Keep components readable and CSS selectors predictable. Avoid specificity clashes and unnecessary abstractions.
 - For follow-ups, preserve the selected base and unrelated files. Apply the requested change, not a redesign.
-- Check the code against the request before returning the manifest. Do not claim screenshots, tests, builds or execution that no tool actually performed.
-- Return only the required structured file manifest; do not add a design essay or expose internal reasoning.
+- Check the requested pages and interactions before completing the active workflow. Do not claim screenshots, tests, builds or execution that no tool actually performed.
+- Follow the supplied JSON output schema for this call. This skill does not choose or authorize tools. Do not add a design essay or expose internal reasoning.

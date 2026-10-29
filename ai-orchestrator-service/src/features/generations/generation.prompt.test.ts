@@ -16,6 +16,12 @@ test("initial prompt remains readable and contains no fabricated revision histor
   assert.match(GENERATION_INSTRUCTIONS, /untrusted data/);
 });
 
+test("website requests are not artificially reduced to a small one-page or fixed three-file demo", () => {
+  assert.match(GENERATION_INSTRUCTIONS, /requested pages, navigation, content and interactions/);
+  assert.match(GENERATION_INSTRUCTIONS, /small component should stay small/);
+  assert.doesNotMatch(GENERATION_INSTRUCTIONS, /generate a small frontend-only|prefer 1-3 files/);
+});
+
 test("follow-up prompt contains only the selected base and requested change as escaped data", () => {
   const baseRevision = {
     id: "abcdef1234567890abcdef12", version: 3,

@@ -1,83 +1,85 @@
-import { isStepCount, Output, tool, ToolLoopAgent, type LanguageModel } from "ai";
+import { generateText, NoObjectGeneratedError, Output, type LanguageModel } from "ai";
 import { z } from "zod";
-
 import { env } from "../../config/env.js";
 import { createAIModel, modelProvider } from "../../config/ai-model.js";
 import {
-  generatedManifestSchema,
-  type GenerationRequest,
-  MANIFEST_POLICY_VERSION,
-  validateManifest,
+  fileSchema, generationPlanSchema, generationRequestSchema, MANIFEST_POLICY_VERSION,
+  MAX_CONTEXT_BYTES, validateFiles, validateGenerationPlan, validateManifest, type GenerationRequest,
 } from "./generation.schema.js";
-import { buildGenerationPrompt, GENERATION_INSTRUCTIONS } from "./generation.prompt.js";
-import { FRONTEND_SKILL_ID, loadFrontendSkill } from "../../skills/frontend-skill.js";
+import { GENERATION_INSTRUCTIONS } from "./generation.prompt.js";
+import { loadFrontendSkill } from "../../skills/frontend-skill.js";
 import { retrieveFrontendGuidance } from "../conversations/frontend-knowledge.js";
 
-// One read-only skill call precedes generation; tests inject an SDK mock, never a production fake mode.
-export async function generateProject(request: GenerationRequest, model: LanguageModel = createAIModel()) {
+// Names are safe diagnostics; raw provider responses and generated source never belong in error logs.
+class GenerationError extends Error {
+  constructor(name: string, message: string) {
+    super(message);
+    this.name = name;
+  }
+}
+
+// One connected workflow: read fixed guidance locally, plan, then generate complete files before acceptance.
+export async function generateProject(input: GenerationRequest, model: LanguageModel = createAIModel(), signal?: AbortSignal) {
+  const request = generationRequestSchema.parse(input);
   const startedAt = Date.now();
-  // Missing/changed local guidance fails before spending on a model request.
+  const abortSignal = AbortSignal.any([AbortSignal.timeout(80_000), ...(signal ? [signal] : [])]);
+  abortSignal.throwIfAborted();
   const skill = await loadFrontendSkill();
-  let skillLoaded = false;
-  const agent = new ToolLoopAgent({
-    model,
-    instructions: `${GENERATION_INSTRUCTIONS}\nReviewed local references: ${JSON.stringify(retrieveFrontendGuidance(request.prompt).map(({ id, title, text }) => ({ id, title, text })))}`,
-    maxOutputTokens: 8_000,
-    maxRetries: 0,
-    stopWhen: isStepCount(2),
-    tools: {
-      loadSkill: tool({
-        description: "Read the reviewed frontend-design skill before generating frontend files. No files are executed or changed.",
-        inputSchema: z.strictObject({ skillId: z.literal(FRONTEND_SKILL_ID) }),
-        // Budget lives inside this request; another generation gets its own single read.
-        execute: async () => {
-          if (skillLoaded) throw new Error("Frontend skill may be loaded only once per generation.");
-          skillLoaded = true;
-          process.stdout.write(`${JSON.stringify({
-            level: "info", service: "ai-orchestrator-service", event: "skill_loaded",
-            skillId: skill.id, skillVersion: skill.version, contentSha256: skill.contentSha256,
-          })}\n`);
-          return skill;
-        },
-      }),
-    },
-    // Require one real tool result, then disable tools for the final structured answer.
-    prepareStep: ({ stepNumber, steps, messages }) => {
-      if (stepNumber === 0) {
-        return { toolChoice: { type: "tool", toolName: "loadSkill" }, maxOutputTokens: 256 };
+  const instructions = `${GENERATION_INSTRUCTIONS}
+Reviewed local frontend skill (${skill.id}, ${skill.version}, ${skill.contentSha256}): ${skill.instructions}
+Reviewed local references: ${JSON.stringify(retrieveFrontendGuidance(request.prompt).map(({ id, title, text }) => ({ id, title, text })))}`;
+  const usage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+
+  // All calls share one deadline, no retry, and a bounded escaped context; a failed step ends the request.
+  async function generateStep<T>(schema: z.ZodType<T>, data: unknown, maxOutputTokens: number): Promise<T> {
+    abortSignal.throwIfAborted();
+    const prompt = JSON.stringify(data);
+    if (Buffer.byteLength(JSON.stringify({ instructions, prompt }), "utf8") > MAX_CONTEXT_BYTES) {
+      throw new GenerationError("GENERATION_CONTEXT_LIMIT", "Generation context exceeds its allowed size.");
+    }
+    try {
+      const result = await generateText({ model, instructions, prompt, output: Output.object({ schema }),
+        maxOutputTokens, maxRetries: 0, abortSignal });
+      abortSignal.throwIfAborted();
+      if (result.finishReason === "length") {
+        throw new GenerationError("GENERATION_OUTPUT_LIMIT", "The model reached this step's output limit.");
       }
-      if (stepNumber !== 1 || !skillLoaded || steps[0]?.toolCalls.length !== 1 || steps[0]?.toolResults.length !== 1) {
-        throw new Error("Generation requires exactly one successful frontend skill read.");
+      if (result.finishReason !== "stop") throw new Error("Generation step did not complete.");
+      usage.inputTokens += result.totalUsage.inputTokens ?? 0;
+      usage.outputTokens += result.totalUsage.outputTokens ?? 0;
+      usage.totalTokens += result.totalUsage.totalTokens ?? 0;
+      return result.output;
+    } catch (error) {
+      // Truncated JSON can fail SDK parsing before a result is available.
+      if (NoObjectGeneratedError.isInstance(error) && error.finishReason === "length") {
+        throw new GenerationError("GENERATION_OUTPUT_LIMIT", "The model reached this step's output limit.");
       }
-      // Base files are needed for editing, not for selecting the only frontend skill.
-      const finalMessages = [...messages];
-      if (request.baseRevision) finalMessages.push({ role: "user", content: buildGenerationPrompt(request) });
-      return { toolChoice: "none", activeTools: [], messages: finalMessages };
-    },
-    output: Output.object({ schema: generatedManifestSchema }),
-  });
-  const result = await agent.generate({ prompt: request.prompt, timeout: 80_000 });
-  if (!skillLoaded || result.steps.length !== 2 || result.steps[1]?.toolCalls.length !== 0) {
-    throw new Error("Generation did not follow the bounded skill workflow.");
+      throw error;
+    }
   }
 
-  const manifest = validateManifest(result.output, request.baseRevision?.files);
-
+  const plan = validateGenerationPlan(await generateStep(generationPlanSchema, {
+    task: request.prompt, phase: "plan", baseRevision: request.baseRevision ?? null,
+  }, 1000), request.baseRevision?.files);
+  const workingFiles = new Map((request.baseRevision?.files ?? []).map(file => [file.path, file]));
+  for (const path of plan.deletedPaths) workingFiles.delete(path);
+  const files: z.infer<typeof fileSchema>[] = [];
+  for (const path of plan.files) {
+    // One snapshot replaces previous context: already received files are not duplicated in a tool transcript.
+    const file = await generateStep(fileSchema, {
+      task: request.prompt, phase: "file", path, plan, workingFiles: [...workingFiles.values()],
+    }, 3000);
+    if (file.path !== path) throw new Error("Generated file does not match the planned path.");
+    // An earlier addition may precede a later shrink; enforce aggregate size on the completed snapshot.
+    validateFiles([file]);
+    workingFiles.set(path, file);
+    files.push(file);
+  }
+  const manifest = validateManifest({ summary: plan.summary, files, deletedPaths: plan.deletedPaths }, request.baseRevision?.files);
   return {
-    requestId: request.requestId,
-    provider: modelProvider,
-    model: env.AI_MODEL,
-    summary: manifest.summary,
-    files: manifest.files,
-    deletedPaths: manifest.deletedPaths,
-    // This proves manifest checks only, never a build or sandbox execution.
+    requestId: request.requestId, provider: modelProvider, model: env.AI_MODEL, ...manifest,
+    // Acceptance proves the manifest policy only; Execution must still compile before publication.
     validation: { policyVersion: MANIFEST_POLICY_VERSION, status: "manifest_validated" as const },
-    usage: {
-      // Sum both model steps; reporting only the final generation would hide the skill-selection cost.
-      inputTokens: result.totalUsage.inputTokens ?? 0,
-      outputTokens: result.totalUsage.outputTokens ?? 0,
-      totalTokens: result.totalUsage.totalTokens ?? 0,
-    },
-    latencyMs: Date.now() - startedAt,
+    usage, latencyMs: Date.now() - startedAt,
   };
 }
