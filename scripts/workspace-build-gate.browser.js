@@ -105,6 +105,17 @@ async (page) => {
   const prompt = page.getByRole('textbox', { name: 'Message AgentForge' });
   const dialog = page.getByRole('dialog', { name: 'Saved revision preview' });
   if (selection.phase === 0) {
+    // Reproduce the saved-chat redirect before the linking response reaches the awaiting caller.
+    await page.route('**/api/conversations/*/project', async route => {
+      const response = await route.fetch();
+      if (!response.ok()) throw new Error('Chat/project linking failed.');
+      const projectId = route.request().postDataJSON().projectId;
+      const conversationId = new URL(route.request().url()).pathname.split('/')[3];
+      await page.evaluate(({ projectId, conversationId }) => {
+        window.history.replaceState(window.history.state, '', `/workspace?project=${projectId}&conversation=${conversationId}`);
+      }, { projectId, conversationId });
+      await route.fulfill({ response });
+    });
     await page.evaluate(() => window.buildGateAction('hold-check'));
     await prompt.fill('Build a portfolio website page');
     await prompt.press('Enter');

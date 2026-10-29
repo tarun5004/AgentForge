@@ -377,11 +377,12 @@ export function useWorkspace(
           if (!stillSelected()) return;
           setProject(savedProject); setRevision(null); setRevisions([]);
           chat.adoptProject(savedProject);
+          const url = workspaceUrl(savedProject.id, null, threadRef.current);
+          // Linking can trigger the saved-chat redirect before this await returns; admit only our new project.
+          allowedUrls.add(url);
           if (threadRef.current) await linkChatProject(threadRef.current, savedProject.id, session);
           if (!stillSelected()) return;
-          const url = workspaceUrl(savedProject.id, null, threadRef.current);
           setLoadedKey(url);
-          allowedUrls.add(url);
           router.replace(url, { scroll: false });
           void loadProjectPage();
         }
