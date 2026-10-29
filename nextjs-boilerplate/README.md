@@ -15,6 +15,19 @@ Start from the repository root with `npm run dev:web` and the Auth/Project/AI se
 
 Small file map: `ChatPanel` renders the composer/history; `ConversationTimeline` renders safe Markdown/activity/results; `useWorkspace` coordinates saved files and requests; `useConversation` owns display storage; `lib/conversation-api` validates chat replies and bounds the request context. None of these modules stores provider secrets.
 
+### Initial build hand-off
+
+Creating a project also links its saved chat. A concurrent saved-chat reload can redirect to that
+project before the linking request returns. `useWorkspace` admits the exact newly created project/chat
+URL before awaiting that link, so its navigation guard does not abandon its own build. Unrelated
+project/chat URLs remain rejected. The existing build-gate browser suite exercises the first prompt
+through the generation request and publication; fixture model output is not live AI quality evidence.
+
+2026-10-29 verification: the forced-redirect browser regression failed with the old guard, then
+passed with the fix using real Auth/Project/Mongo/Docker and fixture AI. All 63 frontend unit tests,
+lint and production build passed. That pre-delivery verification made no live provider call or
+application-data write; Git delivery is a separate step.
+
 ### Optional one-attempt repair
 
 After a known candidate compile failure, the composer remains usable. If Project reports
