@@ -42,6 +42,16 @@
 - State important assumptions and mention risks or test gaps briefly.
 - Prefer real behavior tests and focused validation over superficial checks.
 
+### Root-cause fixes and minimal code
+
+- Reproduce a bug and trace its cause before changing code. Fix the responsible existing module; do not add a wrapper, fallback, or parallel workflow merely to hide the symptom.
+- Reuse existing files by default. Create a file only for a distinct, necessary responsibility that cannot stay readable in an existing module; explain that reason before adding it.
+- Before removing code, check imports, routes, scripts, tests, and compatibility callers. Preserve recoverable copies of uncommitted work before deleting it.
+- Prefer fewer moving parts and clear control flow, not compressed one-liners or giant files. Keep useful tests and security checks even when they add lines.
+- Tell the user the finding, proposed change, and reason before each focused slice. Ask when missing requirements would materially change behavior; do not guess business rules.
+- Explain meaningful changes briefly enough for the student to describe their purpose, data flow, and tradeoffs in an interview.
+- Report evidence precisely: unit tests, real-service integration, real-model generation, build success, and working Preview are separate claims. Never substitute one for another.
+
 ## Response Style
 
 - Use the fewest tokens needed to be useful and avoid repeating context.
