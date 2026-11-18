@@ -2,6 +2,21 @@
 
 AgentForge is a local AI frontend coding workspace. Chat or plan with one configured model, explicitly request a website/change, inspect saved files, and open a restricted Docker-built Preview.
 
+## At a glance
+
+- **Focus:** structured AI decisions, streaming conversation, immutable project revisions, idempotent retries and restricted local builds.
+- **Stack:** Next.js, React, TypeScript, Express, MongoDB and the Vercel AI SDK.
+- **Service boundaries:** Auth owns identity, Project owns saved work, AI Orchestrator owns model/output policy, and Execution owns local builds and previews.
+- **Start here:** [local setup](docs/LOCAL_DOCKER.md), [system design and trade-offs](docs/SYSTEM_DESIGN_QA.md), and [verification evidence](docs/LOCAL_WORKSPACE_DELIVERY.md).
+
+```text
+Next.js workspace -> Auth / Project APIs -> AI Orchestrator -> configured model
+                           |
+                           +-> MongoDB revisions -> opt-in local Docker Preview
+```
+
+The preview is a localhost portfolio workflow. Kubernetes execution and background job queues remain roadmap items.
+
 **Delivery target:** a free-first localhost portfolio demo, source/design explanation, screen recording and an optional static showcase page. The full platform is not intended for public users or paid cloud deployment. Production architecture will be documented separately from what actually runs. Fixture/recorded AI output must be labelled; it is not proof of live model generation. See [current scope and cost boundaries](docs/AI_ENGINEERING_ROADMAP.md#current-product-boundary--local-portfolio-free-first-2026-10-23).
 
 See the [current delivery, actual test evidence and remaining limits](docs/LOCAL_WORKSPACE_DELIVERY.md)
