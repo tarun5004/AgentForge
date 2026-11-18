@@ -2,6 +2,19 @@
 
 AgentForge is a local AI frontend coding workspace. Chat or plan with one configured model, explicitly request a website/change, inspect saved files, and open a restricted Docker-built Preview.
 
+## Engineering highlights
+
+| Concern | Implemented approach |
+| --- | --- |
+| Intent and generation | Structured reply/clarify/build decisions, streaming conversation and validated generated-file contracts |
+| Context | Small reviewed knowledge corpus, TF-IDF retrieval by default and optional embedding-based retrieval |
+| State | Immutable revisions, selected-base follow-ups, ownership checks and idempotent generation requests |
+| Recovery | Same-key retry/status reconciliation, retained inputs and bounded repair attempts |
+| Execution | Restricted local Docker builds with owner-scoped status, cancellation, cleanup and expiry |
+| Verification | Unit/contract tests, real-service fixtures, browser recovery scenarios and an explicitly separate live-model path |
+
+These concerns are implemented across the existing service boundaries rather than a single model-call endpoint. [Delivery evidence](docs/LOCAL_WORKSPACE_DELIVERY.md) explains which paths were exercised and their limits.
+
 ## At a glance
 
 - **Focus:** structured AI decisions, streaming conversation, immutable project revisions, idempotent retries and restricted local builds.
